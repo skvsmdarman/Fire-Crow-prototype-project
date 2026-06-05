@@ -1,35 +1,46 @@
 import os
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+import tempfile
+from pathlib import Path
 
-# 1. Set environment variables at the very top to force in-memory or SQLite database for tests
+import pytest
+from sqlalchemy.orm import close_all_sessions
+
+# 1. Set environment variables at the very top to force a dedicated SQLite database for tests
 # This must happen before any backend imports are triggered.
-os.environ["DATABASE_URL"] = "sqlite:///test_firecrow.db"
+TEST_DB_PATH = Path(tempfile.gettempdir()) / "firecrow_pytest.db"
+
+if TEST_DB_PATH.exists():
+    TEST_DB_PATH.unlink()
+
+os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["SECRET_KEY"] = "test_secret_key"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
 
-from backend.app.models.database import Base, engine, SessionLocal
+from backend.app.models.database import Base, engine
 
 
 @pytest.fixture(autouse=True, scope="function")
 def setup_test_db():
     """
     Ensure the test database schema is created before each test and dropped after.
-    Since DATABASE_URL is set to a local SQLite file, all imports use this database.
+    Since DATABASE_URL is set to a temp SQLite file, all imports use this database.
     """
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-    
-    yield
-    
-    # Drop tables to ensure clean slate for subsequent tests
+    close_all_sessions()
     Base.metadata.drop_all(bind=engine)
-    
-    # Remove the temporary database file if it exists
-    if os.path.exists("test_firecrow.db"):
-        try:
-            os.remove("test_firecrow.db")
-        except Exception:
-            pass
+    Base.metadata.create_all(bind=engine)
+
+    yield
+
+    close_all_sessions()
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def cleanup_test_database():
+    yield
+
+    close_all_sessions()
+    engine.dispose()
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
