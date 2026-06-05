@@ -83,14 +83,24 @@ FireCrow currently exposes these orchestration roles through the runtime and sys
 
 Backend configuration lives in `backend/.env.example`.
 
+```powershell
+Copy-Item backend/.env.example backend/.env.local
+```
+
 Key local-development defaults:
 
 - `DEBUG=true`
 - `FRONTEND_URL=http://localhost:3000`
-- `DATABASE_URL=sqlite:///./firecrow.db` in local override files
-- `FIRE_CROW_MOCK_SANDBOX=True` for local sandbox simulation
+- `DATABASE_URL=sqlite:///./firecrow.db`
+- `FIRE_CROW_MOCK_SANDBOX=true` for local sandbox simulation
+
+The backend also reads `.env`, `backend/.env`, `.env.local`, and `backend/.env.local`, with later files taking precedence.
 
 Frontend configuration lives in `frontend/.env.example`.
+
+```powershell
+Copy-Item frontend/.env.example frontend/.env.local
+```
 
 Primary frontend setting:
 
