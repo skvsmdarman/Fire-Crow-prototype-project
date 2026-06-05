@@ -18,6 +18,7 @@ jobs:
           pip install -r backend/requirements.txt
       - name: Run backend tests
         env:
+          PYTHONPATH: ${{ github.workspace }}
           DATABASE_URL: sqlite:///test_firecrow.db
           SECRET_KEY: test_secret_key
           DEBUG: "True"
