@@ -6,6 +6,7 @@ import { ChevronDown } from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Badge from "../../../components/ui/Badge";
 import styles from "../page.module.css";
+import mobile from "../mobile.module.css";
 
 interface Finding {
   id: string;
@@ -72,12 +73,12 @@ export default function FindingsList({ findings, loading }: FindingsListProps) {
         </div>
       </div>
 
-      <div className={styles.filterRail} role="toolbar" aria-label="Filter findings by severity">
+      <div className={mobile.filterRail} role="toolbar" aria-label="Filter findings by severity">
         {FILTERS.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={filter === item.id ? styles.filterChipActive : styles.filterChip}
+            className={filter === item.id ? mobile.filterChipActive : mobile.filterChip}
             aria-pressed={filter === item.id}
             onClick={() => setFilter(item.id)}
           >
@@ -89,63 +90,29 @@ export default function FindingsList({ findings, loading }: FindingsListProps) {
 
       <div className={styles.findingList}>
         {findings.length === 0 ? (
-          <div className={styles.emptyState}>
-            {loading ? "Checking findings records..." : "No findings released for this audit."}
-          </div>
+          <div className={styles.emptyState}>{loading ? "Checking findings records..." : "No findings released for this audit."}</div>
         ) : filteredFindings.length === 0 ? (
           <div className={styles.emptyState}>No findings match this severity filter.</div>
         ) : (
           filteredFindings.map((finding) => {
             const isExpanded = expandedId === finding.id;
             return (
-              <div
-                key={finding.id}
-                className={[
-                  styles.findingRowContainer,
-                  isExpanded ? styles.findingExpanded : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleExpand(finding.id)}
-                  className={styles.findingRowHeader}
-                  aria-expanded={isExpanded}
-                >
+              <div key={finding.id} className={[styles.findingRowContainer, isExpanded ? styles.findingExpanded : ""].filter(Boolean).join(" ")}>
+                <button type="button" onClick={() => toggleExpand(finding.id)} className={styles.findingRowHeader} aria-expanded={isExpanded}>
                   <div className={styles.findingRowMain}>
-                    <Badge variant="severity" type={finding.severity}>
-                      {severityLabel(finding.severity)}
-                    </Badge>
+                    <Badge variant="severity" type={finding.severity}>{severityLabel(finding.severity)}</Badge>
                     <h3 className={styles.findingTitle}>{finding.title}</h3>
                   </div>
                   <div className={styles.findingRowMeta}>
                     <span className={styles.findingAgent}>{finding.agent_source}</span>
-                    <strong className={styles.findingCvss}>
-                      {finding.cvss_score ? `CVSS ${finding.cvss_score.toFixed(1)}` : "CVSS not set"}
-                    </strong>
-                    <ChevronDown
-                      size={16}
-                      aria-hidden="true"
-                      className={[
-                        styles.expandArrow,
-                        isExpanded ? styles.arrowRotated : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    />
+                    <strong className={styles.findingCvss}>{finding.cvss_score ? `CVSS ${finding.cvss_score.toFixed(1)}` : "CVSS not set"}</strong>
+                    <ChevronDown size={16} aria-hidden="true" className={[styles.expandArrow, isExpanded ? styles.arrowRotated : ""].filter(Boolean).join(" ")} />
                   </div>
                 </button>
 
                 <AnimatePresence initial={false}>
                   {isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 26 }}
-                      className={styles.findingDetailPanel}
-                    >
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: "spring", stiffness: 300, damping: 26 }} className={styles.findingDetailPanel}>
                       <div className={styles.findingDetailContent}>
                         <section className={styles.detailSection}>
                           <h4>Risk explanation</h4>
@@ -162,9 +129,7 @@ export default function FindingsList({ findings, loading }: FindingsListProps) {
                         {finding.evidence && (
                           <div className={styles.detailSection}>
                             <h4>Evidence</h4>
-                            <pre className={styles.evidenceBlock}>
-                              <code>{finding.evidence}</code>
-                            </pre>
+                            <pre className={styles.evidenceBlock}><code>{finding.evidence}</code></pre>
                           </div>
                         )}
 
@@ -177,9 +142,7 @@ export default function FindingsList({ findings, loading }: FindingsListProps) {
 
                         <div className={styles.detailSection}>
                           <h4>Verification steps</h4>
-                          <p className={styles.findingDescription}>
-                            Re-run an authorized audit after applying the remediation and confirm this finding is absent or resolved in the next report.
-                          </p>
+                          <p className={styles.findingDescription}>Re-run an authorized audit after applying the remediation and confirm this finding is absent or resolved in the next report.</p>
                         </div>
                       </div>
                     </motion.div>
