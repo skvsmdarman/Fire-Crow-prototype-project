@@ -2,10 +2,10 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { LayoutGrid, FileText, Cpu, Settings, LucideIcon } from "lucide-react";
+import { FileText, Home, LucideIcon, Search, Settings, ShieldCheck } from "lucide-react";
 import styles from "../page.module.css";
 
-export type Section = "operations" | "reports" | "agents" | "settings";
+export type Section = "home" | "audits" | "findings" | "reports" | "settings";
 
 interface SidebarProps {
   activeSection: Section;
@@ -14,11 +14,12 @@ interface SidebarProps {
   userId: string;
 }
 
-const sections: { id: Section; label: string; mobileLabel: string; icon: LucideIcon }[] = [
-  { id: "operations", label: "Operations", mobileLabel: "Home", icon: LayoutGrid },
-  { id: "reports", label: "Reports", mobileLabel: "Reports", icon: FileText },
-  { id: "agents", label: "Agents", mobileLabel: "Agents", icon: Cpu },
-  { id: "settings", label: "Settings", mobileLabel: "Settings", icon: Settings },
+const sections: { id: Section; label: string; mobileLabel: string; icon: LucideIcon; ariaLabel: string }[] = [
+  { id: "home", label: "Home", mobileLabel: "Home", icon: Home, ariaLabel: "Open dashboard home" },
+  { id: "audits", label: "Audits", mobileLabel: "Audits", icon: ShieldCheck, ariaLabel: "Open audit operations" },
+  { id: "findings", label: "Findings", mobileLabel: "Findings", icon: Search, ariaLabel: "Open findings" },
+  { id: "reports", label: "Reports", mobileLabel: "Reports", icon: FileText, ariaLabel: "Open reports" },
+  { id: "settings", label: "Settings", mobileLabel: "Settings", icon: Settings, ariaLabel: "Open settings" },
 ];
 
 export default function Sidebar({
@@ -32,7 +33,7 @@ export default function Sidebar({
       <div className={`${styles.brandBlock} fc-dashboard-brand`}>
         <div className={styles.brandMark}>FC</div>
         <div>
-          <div className={styles.brandName}>FireCrow</div>
+          <div className={styles.brandName}>Fire Crow</div>
           <div className={styles.brandSubtitle}>FCv1 Security Audit</div>
         </div>
       </div>
@@ -53,6 +54,7 @@ export default function Sidebar({
                 .filter(Boolean)
                 .join(" ")}
               type="button"
+              aria-label={section.ariaLabel}
               aria-current={isActive ? "page" : undefined}
               onClick={() => setActiveSection(section.id)}
               style={{ position: "relative" }}
