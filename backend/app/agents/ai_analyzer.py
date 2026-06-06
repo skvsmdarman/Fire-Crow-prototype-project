@@ -115,67 +115,84 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
         }
     }
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    try:
-        req_data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=req_data)
-        req.add_header("Content-Type", "application/json")
-        
-        with urllib.request.urlopen(req, timeout=30) as response:
-            res_content = response.read().decode("utf-8")
-            res_json = json.loads(res_content)
+    models_to_try = list(dict.fromkeys([settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
+    success = False
+
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        logger.info(f"Attempting Gemini call for AI Analyzer using model: {model_name}")
+        try:
+            req_data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=req_data)
+            req.add_header("Content-Type", "application/json")
             
-            # Extract text response
-            text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-            
-            # Strip markdown block formatting if present
-            if text.startswith("```"):
-                lines = text.splitlines()
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                text = "\n".join(lines).strip()
-            
-            parsed = json.loads(text)
-            
-            # Process false positives
-            false_positives = parsed.get("false_positives", [])
-            
-            # Map deduplicated findings back to Finding schema objects
-            deduplicated = []
-            for item in parsed.get("deduplicated_findings", []):
-                fid = item.get("id")
-                if fid in false_positives:
-                    continue
-                orig = next((x for x in all_findings if x.id == fid), None)
-                source = orig.agent_source if orig else "ai_analyzer"
+            with urllib.request.urlopen(req, timeout=30) as response:
+                res_content = response.read().decode("utf-8")
+                res_json = json.loads(res_content)
                 
-                sev_str = item.get("severity", "medium").lower()
-                sev = Severity.MEDIUM
-                for val in Severity:
-                    if val.value == sev_str:
-                        sev = val
-                        break
+                # Extract text response
+                text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+                
+                # Strip markdown block formatting if present
+                if text.startswith("```"):
+                    lines = text.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    text = "\n".join(lines).strip()
+                
+                parsed = json.loads(text)
+                
+                # Process false positives
+                false_positives = parsed.get("false_positives", [])
+                
+                # Map deduplicated findings back to Finding schema objects
+                deduplicated = []
+                for item in parsed.get("deduplicated_findings", []):
+                    fid = item.get("id")
+                    if fid in false_positives:
+                        continue
+                    orig = next((x for x in all_findings if x.id == fid), None)
+                    source = orig.agent_source if orig else "ai_analyzer"
+                    
+                    sev_str = item.get("severity", "medium").lower()
+                    sev = Severity.MEDIUM
+                    for val in Severity:
+                        if val.value == sev_str:
+                            sev = val
+                            break
 
-                deduplicated.append(Finding(
-                    id=fid,
-                    agent_source=source,
-                    title=item.get("title", "AI Audited Finding"),
-                    description=item.get("description", ""),
-                    severity=sev,
-                    evidence=item.get("evidence", ""),
-                    remediation=item.get("remediation", ""),
-                    cwe_id=item.get("cwe_id"),
-                    owasp_category=item.get("owasp_category")
-                ))
+                    deduplicated.append(Finding(
+                        id=fid,
+                        agent_source=source,
+                        title=item.get("title", "AI Audited Finding"),
+                        description=item.get("description", ""),
+                        severity=sev,
+                        evidence=item.get("evidence", ""),
+                        remediation=item.get("remediation", ""),
+                        cwe_id=item.get("cwe_id"),
+                        owasp_category=item.get("owasp_category")
+                    ))
 
-            attack_chains = parsed.get("attack_chains", [])
-            remediations = parsed.get("remediations", [])
-            logger.info(f"AI Analyzer finished successfully via Gemini. {len(deduplicated)} deduplicated findings, {len(false_positives)} false positives.")
-            
-    except Exception as exc:
-        logger.exception(f"Gemini API call failed, falling back to mock: {exc}")
+                attack_chains = parsed.get("attack_chains", [])
+                remediations = parsed.get("remediations", [])
+                logger.info(f"AI Analyzer finished successfully via Gemini ({model_name}). {len(deduplicated)} deduplicated findings, {len(false_positives)} false positives.")
+                success = True
+                break
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                logger.warning(f"Model {model_name} returned 404. Trying next fallback model...")
+                continue
+            else:
+                logger.exception(f"Gemini API call failed for model {model_name} with status {err.code}: {err}")
+                break
+        except Exception as exc:
+            logger.exception(f"Gemini API call failed for model {model_name}: {exc}")
+            break
+
+    if not success:
+        logger.error("All Gemini models failed. Falling back to local/mock analysis.")
         # Default mock fallback
         remediations.append({
             "finding_id": all_findings[0].id,

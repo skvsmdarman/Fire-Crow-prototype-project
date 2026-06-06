@@ -96,30 +96,48 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             }
         }
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        try:
-            req_data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(url, data=req_data)
-            req.add_header("Content-Type", "application/json")
-            
-            with urllib.request.urlopen(req, timeout=30) as response:
-                res_content = response.read().decode("utf-8")
-                res_json = json.loads(res_content)
-                text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        models_to_try = list(dict.fromkeys([settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
+        success = False
+
+        for model_name in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            logger.info(f"Attempting Gemini call for Google Security Agent using model: {model_name}")
+            try:
+                req_data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=req_data)
+                req.add_header("Content-Type", "application/json")
                 
-                # Strip markdown blocks
-                if text.startswith("```"):
-                    lines = text.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    text = "\n".join(lines).strip()
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    res_content = response.read().decode("utf-8")
+                    res_json = json.loads(res_content)
+                    text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
                     
-                pr_risk_analysis = json.loads(text)
-                logs.append("Successfully evaluated Pull Request security risks using Gemini.")
-        except Exception as exc:
-            logs.append(f"AI PR Risk evaluation failed: {exc}. Using fallback analysis.")
+                    # Strip markdown blocks
+                    if text.startswith("```"):
+                        lines = text.splitlines()
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        text = "\n".join(lines).strip()
+                        
+                    pr_risk_analysis = json.loads(text)
+                    logs.append(f"Successfully evaluated Pull Request security risks using Gemini ({model_name}).")
+                    success = True
+                    break
+            except urllib.error.HTTPError as err:
+                if err.code == 404:
+                    logger.warning(f"Model {model_name} returned 404. Trying next fallback model...")
+                    continue
+                else:
+                    logger.exception(f"Gemini API call failed for model {model_name} with status {err.code}: {err}")
+                    break
+            except Exception as exc:
+                logger.exception(f"Gemini API call failed for model {model_name}: {exc}")
+                break
+
+        if not success:
+            logs.append("All Gemini models failed. Using fallback simulation.")
             pr_risk_analysis = {
                 "overall_pr_risk": "HIGH" if findings else "LOW",
                 "risk_description": "Failed to run LLM assessment. Fallback analysis flags high risk due to presence of unresolved findings.",
