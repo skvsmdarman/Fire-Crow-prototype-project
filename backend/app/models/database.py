@@ -67,6 +67,10 @@ def _ensure_user_compatibility() -> None:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_id VARCHAR(255)")
         if "google_id" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN google_id VARCHAR(255)")
+        if "privacy_policy_version" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(64)")
+        if "privacy_policy_accepted_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_accepted_at DATETIME")
 
 
 _ensure_audit_job_compatibility()

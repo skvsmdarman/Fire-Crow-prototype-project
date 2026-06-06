@@ -7,9 +7,11 @@ from backend.app.config import settings
 
 # HTTPBearer security scheme to extract Authorization Bearer header
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours expiry for dev ease
+OAUTH_STATE_EXPIRE_MINUTES = 15
 
 
 def create_access_token(user_id: str, username: Optional[str] = None) -> str:
@@ -24,6 +26,17 @@ def create_access_token(user_id: str, username: Optional[str] = None) -> str:
     return encoded_jwt
 
 
+def create_oauth_state(provider: str, privacy_policy_version: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=OAUTH_STATE_EXPIRE_MINUTES)
+    to_encode = {
+        "type": "oauth_state",
+        "provider": provider,
+        "privacy_policy_version": privacy_policy_version,
+        "exp": expire,
+    }
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
 def verify_access_token(token: str) -> Optional[dict]:
     """Verify and decode a JWT access token."""
     try:
@@ -31,6 +44,13 @@ def verify_access_token(token: str) -> Optional[dict]:
         return payload
     except jwt.PyJWTError:
         return None
+
+
+def verify_oauth_state(token: str) -> Optional[dict]:
+    payload = verify_access_token(token)
+    if not payload or payload.get("type") != "oauth_state":
+        return None
+    return payload
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
@@ -53,6 +73,17 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return user_id
 
 
+def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+) -> Optional[str]:
+    if credentials is None:
+        return None
+    payload = verify_access_token(credentials.credentials)
+    if not payload:
+        return None
+    return payload.get("sub")
+
+
 import hashlib
 import os
 
@@ -73,4 +104,3 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return pw_hash == expected_hash
     except Exception:
         return False
-

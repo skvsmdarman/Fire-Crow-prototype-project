@@ -13,7 +13,7 @@ if TEST_DB_PATH.exists():
     TEST_DB_PATH.unlink()
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
-os.environ["SECRET_KEY"] = "test_secret_key"
+os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
 

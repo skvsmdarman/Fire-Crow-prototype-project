@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import FireCrowLoader from "../../components/FireCrowLoader";
+
 type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
 type Severity = "critical" | "high" | "medium" | "low" | "info";
 type Section = "operations" | "reports" | "agents" | "settings";
@@ -152,6 +154,7 @@ export default function Dashboard() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [systemError, setSystemError] = useState("");
   const [loadingSystem, setLoadingSystem] = useState(false);
+  const [reportError, setReportError] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const terminalEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -167,10 +170,13 @@ export default function Dashboard() {
   const reportJobs = jobs.filter((job) => TERMINAL_STATUSES.includes(job.status));
 
   const fetchSystemStatus = useCallback(async () => {
+    if (!token) return;
     setLoadingSystem(true);
     setSystemError("");
     try {
-      const response = await fetch(`${API_BASE_URL}/system/status`);
+      const response = await fetch(`${API_BASE_URL}/system/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!response.ok) {
         throw new Error("System status endpoint is unavailable.");
       }
@@ -180,7 +186,31 @@ export default function Dashboard() {
     } finally {
       setLoadingSystem(false);
     }
-  }, []);
+  }, [token]);
+
+  const openReport = useCallback(
+    async (jobId: string) => {
+      if (!token) return;
+      setReportError("");
+      try {
+        const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}/report`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => null);
+          throw new Error(errorBody?.detail || "Unable to open this report.");
+        }
+
+        const blob = await response.blob();
+        const reportUrl = window.URL.createObjectURL(blob);
+        window.open(reportUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => window.URL.revokeObjectURL(reportUrl), 60_000);
+      } catch (error: unknown) {
+        setReportError(getErrorMessage(error, "Unable to open this report."));
+      }
+    },
+    [token],
+  );
 
   const fetchJobs = useCallback(async () => {
     if (!token) return;
@@ -362,11 +392,16 @@ export default function Dashboard() {
   }, [router]);
 
   const signOut = () => {
+    if (token) {
+      void fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => undefined);
+    }
     stopLogStream();
     localStorage.removeItem("fc_token");
     localStorage.removeItem("fc_username");
     localStorage.removeItem("fc_user_id");
-    localStorage.removeItem("fc_terms_accepted");
     router.push("/signin");
   };
 
@@ -404,6 +439,7 @@ export default function Dashboard() {
     return (
       <main className="auth-shell">
         <section className="auth-card">
+          <FireCrowLoader size="lg" />
           <div className="section-kicker">Session</div>
           <h1>Opening FireCrow console</h1>
           <p>Checking for an authenticated Nova Devs workspace session.</p>
@@ -543,9 +579,9 @@ export default function Dashboard() {
               </div>
               <div className="header-actions">
                 {selectedJob?.report_pdf_url && (
-                  <a className="ghost-action" href={selectedJob.report_pdf_url} target="_blank" rel="noreferrer">
+                  <button className="ghost-action" type="button" onClick={() => openReport(selectedJob.id)}>
                     Report
-                  </a>
+                  </button>
                 )}
                 {selectedJob && (selectedJob.status === "queued" || selectedJob.status === "running") && !selectedJob.cancel_requested && (
                   <button className="danger-action" type="button" onClick={() => cancelScan(selectedJob.id)}>
@@ -570,6 +606,7 @@ export default function Dashboard() {
             {selectedJob && TERMINAL_STATUSES.includes(selectedJob.status) && selectedJob.error_message && (
               <div className="notice notice-error">{selectedJob.error_message}</div>
             )}
+            {reportError && <div className="notice notice-error">{reportError}</div>}
           </div>
 
           <div className="panel findings-panel">
@@ -643,6 +680,7 @@ export default function Dashboard() {
               </div>
 
               <div className="report-list">
+                {reportError && <div className="notice notice-error">{reportError}</div>}
                 {!token ? (
                   <div className="empty-state">Connect a workspace to view reports.</div>
                 ) : reportJobs.length === 0 ? (
@@ -658,9 +696,9 @@ export default function Dashboard() {
                         </p>
                       </div>
                       {job.report_pdf_url ? (
-                        <a className="ghost-action" href={job.report_pdf_url} target="_blank" rel="noreferrer">
+                        <button className="ghost-action" type="button" onClick={() => openReport(job.id)}>
                           Open report
-                        </a>
+                        </button>
                       ) : (
                         <span className="report-missing">No PDF artifact</span>
                       )}

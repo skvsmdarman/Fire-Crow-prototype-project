@@ -2,6 +2,8 @@ import logging
 import os
 from typing import List, Tuple, Optional, Any
 
+from backend.app.config import settings
+
 logger = logging.getLogger("firecrow.services.sandbox")
 
 # Try importing docker SDK
@@ -26,8 +28,8 @@ class SandboxManager:
         self.client = None
         self.mock_mode = True
         
-        if os.getenv("FIRE_CROW_MOCK_SANDBOX") == "True":
-            logger.info("FIRE_CROW_MOCK_SANDBOX environment variable is set. Running in simulation mode.")
+        if settings.FIRE_CROW_MOCK_SANDBOX:
+            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in simulation mode.")
         elif DOCKER_AVAILABLE:
             try:
                 self.client = docker.from_env()

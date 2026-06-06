@@ -1,0 +1,85 @@
+.loader {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.sm {
+  width: 20px;
+  height: 20px;
+}
+
+.md {
+  width: 48px;
+  height: 48px;
+}
+
+.lg {
+  width: 72px;
+  height: 72px;
+}
+
+.ring {
+  transform-origin: center;
+  animation: spin 2.8s linear infinite;
+  opacity: 0.9;
+}
+
+.wing {
+  transform-origin: center;
+  animation: drift 2.3s ease-in-out infinite;
+}
+
+.flame {
+  transform-origin: center bottom;
+  animation: flicker 1.6s ease-in-out infinite;
+}
+
+.spark {
+  fill: #ffe0bc;
+  opacity: 0.9;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-1px) rotate(-1deg);
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.03);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}

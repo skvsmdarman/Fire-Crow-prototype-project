@@ -1,15 +1,15 @@
 import logging
 import socket
 from datetime import datetime, timezone
+from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from typing import List
-import os
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from backend.app.api.audit_queries import get_owned_job_or_404
-from backend.app.config import settings
+from backend.app.config import WORKSPACE_DIR, settings
 from backend.app.models import get_db, AuditJob, FindingModel, AgentLog
 from backend.app.schemas import (
     JobDetailResponse,
@@ -25,6 +25,9 @@ from backend.app.workers.celery_app import run_audit_job_task, celery_app
 
 logger = logging.getLogger("firecrow.api.audit")
 router = APIRouter(prefix="/audit", tags=["Security Auditing"])
+
+MAX_ACTIVE_JOBS_PER_USER = 5
+REPORTS_DIR = WORKSPACE_DIR / "workspace" / "reports"
 
 
 def _is_broker_reachable() -> bool:
@@ -82,6 +85,53 @@ def _dispatch_audit_job(
         )
 
 
+def _active_job_count(db: Session, user_id: str) -> int:
+    return (
+        db.query(AuditJob)
+        .filter(AuditJob.user_id == user_id)
+        .filter(AuditJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]))
+        .count()
+    )
+
+
+def _safe_local_report_path(report_pdf_url: str) -> tuple[Path, str, str]:
+    parsed = urlparse(report_pdf_url)
+    report_path = parsed.path if parsed.scheme else report_pdf_url
+    if not report_path.startswith("/reports/"):
+        raise HTTPException(status_code=400, detail="Unsupported local report URL")
+
+    file_name = unquote(report_path.removeprefix("/reports/"))
+    if "/" in file_name or "\\" in file_name or Path(file_name).name != file_name:
+        raise HTTPException(status_code=400, detail="Invalid report file path")
+    if Path(file_name).suffix.lower() not in {".pdf", ".html"}:
+        raise HTTPException(status_code=400, detail="Invalid report file type")
+
+    reports_root = REPORTS_DIR.resolve()
+    file_path = (reports_root / file_name).resolve()
+    try:
+        file_path.relative_to(reports_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid report file path") from exc
+
+    media_type = "text/html" if file_path.suffix.lower() == ".html" else "application/pdf"
+    return file_path, file_name, media_type
+
+
+def _allowed_external_report_url(report_pdf_url: str) -> bool:
+    parsed = urlparse(report_pdf_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return False
+
+    allowed_hosts: set[str] = set()
+    if settings.R2_ENDPOINT_URL:
+        endpoint_host = urlparse(settings.R2_ENDPOINT_URL).hostname
+        if endpoint_host:
+            allowed_hosts.add(endpoint_host.lower())
+
+    hostname = (parsed.hostname or "").lower()
+    return any(hostname == allowed_host or hostname.endswith(f".{allowed_host}") for allowed_host in allowed_hosts)
+
+
 @router.post("/submit", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 async def submit_audit(
     request: SubmitJobRequest,
@@ -90,6 +140,12 @@ async def submit_audit(
     user_id: str = Depends(get_current_user)
 ):
     """Submit a security audit job for a remote repository. Dispatches Celery task or falls back to BackgroundTasks."""
+    if _active_job_count(db, user_id) >= MAX_ACTIVE_JOBS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {MAX_ACTIVE_JOBS_PER_USER}.",
+        )
+
     job = AuditJob(
         user_id=user_id,
         repo_url=request.repo_url,
@@ -181,15 +237,22 @@ async def download_report(
     job = get_owned_job_or_404(db, job_id, user_id)
     if not job.report_pdf_url:
         raise HTTPException(status_code=404, detail="Report not ready or missing")
-    
-    if not job.report_pdf_url.startswith("/reports/"):
+
+    parsed_report_url = urlparse(job.report_pdf_url)
+    is_legacy_local_report = (
+        parsed_report_url.scheme in {"http", "https"}
+        and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+        and parsed_report_url.path.startswith("/reports/")
+    )
+    if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
+        file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Report file not found on disk")
+
+        return FileResponse(path=file_path, filename=file_name, media_type=media_type)
+
+    if _allowed_external_report_url(job.report_pdf_url):
         return RedirectResponse(job.report_pdf_url)
-        
-    from backend.app.config import WORKSPACE_DIR
-    file_name = job.report_pdf_url.split("/reports/")[-1]
-    file_path = os.path.join(WORKSPACE_DIR, "workspace", "reports", file_name)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Report file not found on disk")
-        
-    return FileResponse(path=file_path, filename=file_name, media_type="application/pdf")
+
+    logger.warning("Rejected unsafe report URL for job %s: %s", job_id, job.report_pdf_url)
+    raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")

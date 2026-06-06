@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Text
 from backend.app.models.database import Base
 
 class SecurityLog(Base):
@@ -12,7 +12,7 @@ class SecurityLog(Base):
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    details = Column(String, nullable=True)
+    details = Column(Text, nullable=True)
 
     def __repr__(self):
         return f"<SecurityLog {self.action} by {self.user_id} at {self.timestamp}>"

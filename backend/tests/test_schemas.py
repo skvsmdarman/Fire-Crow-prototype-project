@@ -1,4 +1,9 @@
 from datetime import datetime
+import pytest
+
+from pydantic import ValidationError
+
+from backend.app.schemas.audit_api import SubmitJobRequest
 from backend.app.schemas import AuditState, JobStatus, Finding, Severity
 
 
@@ -31,3 +36,15 @@ def test_finding_validation():
     assert finding.id == "finding-1"
     assert finding.severity == Severity.HIGH
     assert finding.cvss_score == 8.5
+
+
+def test_submit_job_request_normalizes_empty_branch():
+    request = SubmitJobRequest(repo_url="https://github.com/example/repo", repo_branch="  ")
+
+    assert request.repo_branch == "main"
+
+
+@pytest.mark.parametrize("branch", ["../main", "/main", "feature//x", "feature.lock", "release@{1}", ".hidden"])
+def test_submit_job_request_rejects_unsafe_branch_refs(branch: str):
+    with pytest.raises(ValidationError):
+        SubmitJobRequest(repo_url="https://github.com/example/repo", repo_branch=branch)

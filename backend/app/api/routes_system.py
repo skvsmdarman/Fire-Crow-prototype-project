@@ -6,22 +6,31 @@ from sqlalchemy.orm import Session
 
 from backend.app.config import settings
 from backend.app.models import AuditJob, FindingModel, get_db
+from backend.app.services.auth import get_current_user
 
 
 router = APIRouter(prefix="/system", tags=["System"])
 
 
 @router.get("/status")
-async def system_status(db: Session = Depends(get_db)):
-    """Return backend readiness and integration configuration for the frontend control panel."""
+async def system_status(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
+    """Return backend readiness and tenant-scoped operational status for the control panel."""
     try:
         db.execute(text("SELECT 1"))
         database = "connected"
     except Exception as exc:
         database = f"error: {exc}"
 
-    total_jobs = db.query(AuditJob).count()
-    total_findings = db.query(FindingModel).count()
+    total_jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).count()
+    total_findings = (
+        db.query(FindingModel)
+        .join(AuditJob, FindingModel.job_id == AuditJob.id)
+        .filter(AuditJob.user_id == user_id)
+        .count()
+    )
 
     return {
         "api": "online",
@@ -34,6 +43,7 @@ async def system_status(db: Session = Depends(get_db)):
         },
         "integrations": {
             "github_oauth": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
+            "google_oauth": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
             "redis": bool(settings.REDIS_URL),
             "report_storage": bool(
                 settings.R2_ACCESS_KEY_ID
@@ -43,6 +53,10 @@ async def system_status(db: Session = Depends(get_db)):
             ),
             "email": bool(settings.RESEND_API_KEY),
             "ai_models": bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY),
+        },
+        "legal": {
+            "privacy_policy_version": "2026-06-06",
+            "terms_version": "2026-06-06",
         },
         "agents": [
             {"name": "MAESTRO", "role": "Orchestration", "status": "ready"},
@@ -58,4 +72,3 @@ async def system_status(db: Session = Depends(get_db)):
             {"name": "GOOGLE_AGENT", "role": "PR risk assessment and email alerts", "status": "ready"},
         ],
     }
-

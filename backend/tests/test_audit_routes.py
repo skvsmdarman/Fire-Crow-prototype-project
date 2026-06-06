@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from backend.app.main import app
+from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
 from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal
 from backend.app.schemas import JobStatus, Severity
 
@@ -9,7 +10,24 @@ client = TestClient(app)
 
 
 def _auth_headers(username: str = "auditor") -> dict[str, str]:
-    login_response = client.post("/api/v1/auth/login", json={"username": username})
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": username,
+            "password": "supersecretpassword",
+            "privacy_policy_accepted": True,
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+    )
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": username,
+            "password": "supersecretpassword",
+            "privacy_policy_accepted": True,
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+    )
     token = login_response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
@@ -102,6 +120,41 @@ def test_submit_audit_dispatches_celery_task(monkeypatch):
     assert calls[0]["kwargs"]["user_id"] == "usr_auditor"
 
 
+def test_submit_audit_enforces_active_job_limit(monkeypatch):
+    calls = []
+
+    def fake_apply_async(*, kwargs, task_id):
+        calls.append({"kwargs": kwargs, "task_id": task_id})
+
+    db = SessionLocal()
+    try:
+        for index in range(5):
+            db.add(
+                AuditJob(
+                    id=f"job-active-{index}",
+                    user_id="usr_auditor",
+                    repo_url=f"https://example.com/repo-{index}",
+                    repo_branch="main",
+                    status=JobStatus.RUNNING,
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr("backend.app.api.routes_audit._is_broker_reachable", lambda: True)
+    monkeypatch.setattr("backend.app.api.routes_audit.run_audit_job_task.apply_async", fake_apply_async)
+
+    response = client.post(
+        "/api/v1/audit/submit",
+        json={"repo_url": "https://github.com/example/repo", "repo_branch": "main"},
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 429
+    assert calls == []
+
+
 def test_cancel_job_sets_cancel_intent_without_forcing_terminal_state():
     db = SessionLocal()
     try:
@@ -130,6 +183,95 @@ def test_cancel_job_sets_cancel_intent_without_forcing_terminal_state():
         assert job.cancel_requested_at is not None
     finally:
         db.close()
+
+
+def test_download_report_serves_local_report(monkeypatch, tmp_path):
+    monkeypatch.setattr("backend.app.api.routes_audit.REPORTS_DIR", tmp_path)
+    (tmp_path / "job-report.pdf").write_bytes(b"%PDF-1.4 test report")
+
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditJob(
+                id="job-report",
+                user_id="usr_auditor",
+                repo_url="https://example.com/report",
+                repo_branch="main",
+                status=JobStatus.COMPLETED,
+                report_pdf_url="/reports/job-report.pdf",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/audit/job/job-report/report", headers=_auth_headers())
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF-1.4")
+
+
+@pytest.mark.parametrize("report_url", ["/reports/../secret.pdf", "file:///tmp/report.pdf", "https://evil.example/report.pdf"])
+def test_download_report_rejects_unsafe_report_locations(report_url: str):
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditJob(
+                id="job-unsafe-report",
+                user_id="usr_auditor",
+                repo_url="https://example.com/report",
+                repo_branch="main",
+                status=JobStatus.COMPLETED,
+                report_pdf_url=report_url,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/audit/job/job-unsafe-report/report", headers=_auth_headers())
+
+    assert response.status_code == 400
+
+
+def test_system_status_requires_auth_and_scopes_stats_to_current_user():
+    db = SessionLocal()
+    try:
+        db.add_all(
+            [
+                AuditJob(id="job-system-user", user_id="usr_auditor", repo_url="https://example.com/user", repo_branch="main"),
+                AuditJob(id="job-system-other", user_id="usr_other", repo_url="https://example.com/other", repo_branch="main"),
+            ]
+        )
+        db.add_all(
+            [
+                FindingModel(
+                    job_id="job-system-user",
+                    agent_source="SAST",
+                    title="User finding",
+                    description="Current tenant finding",
+                    severity=Severity.HIGH,
+                ),
+                FindingModel(
+                    job_id="job-system-other",
+                    agent_source="SAST",
+                    title="Other finding",
+                    description="Another tenant finding",
+                    severity=Severity.CRITICAL,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    unauthenticated = client.get("/api/v1/system/status")
+    response = client.get("/api/v1/system/status", headers=_auth_headers())
+
+    assert unauthenticated.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["stats"] == {"jobs": 1, "findings": 1}
 
 
 @pytest.mark.parametrize("status_value", ["completed", "failed", "cancelled", "partial"])

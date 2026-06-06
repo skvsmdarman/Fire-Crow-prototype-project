@@ -28,10 +28,12 @@ Create a new database-backed user/workspace.
   {
     "username": "my-secure-workspace",
     "password": "strongpassword123",
-    "email": "security@mycompany.com"
+    "email": "security@mycompany.com",
+    "privacy_policy_accepted": true,
+    "privacy_policy_version": "2026-06-06"
   }
   ```
-  *Note: `username` and `password` are required. `email` is optional. Password must be at least 6 characters.*
+  *Note: `username`, `password`, `privacy_policy_accepted`, and `privacy_policy_version` are required. `email` is optional. Password must be at least 8 characters.*
 
 * **Success Response (200 OK)**:
   ```json
@@ -59,10 +61,11 @@ Authenticate workspace credentials and receive a JWT token.
   {
     "username": "my-secure-workspace",
     "password": "strongpassword123",
-    "code": null
+    "privacy_policy_accepted": true,
+    "privacy_policy_version": "2026-06-06"
   }
   ```
-  *Note: `username` is required. `password` is optional in local debug mode (auto-creates workspace with default password if debug is enabled).*
+  *Note: `username`, `password`, and current Privacy Policy consent fields are required.*
 
 * **Success Response (200 OK)**:
   ```json
@@ -102,13 +105,14 @@ Retrieve current session tenant details. Used to validate token expiration on lo
   ```
 
 ### 2.4 GitHub OAuth Initiation
-Start GitHub OAuth flow. If settings.GITHUB_CLIENT_ID is not configured, returns a mock authorize sandbox card.
+Start GitHub OAuth flow. If GitHub OAuth credentials are not configured, the endpoint returns `503 Service Unavailable`.
 
 * **Route**: `GET /api/v1/auth/github?state=some_random_state`
 * **Query Parameters**:
   * `state` (optional string)
+  * `privacy_policy_accepted` (required boolean)
+  * `privacy_policy_version` (required string)
 * **Success Response (302 Redirect)**: Redirects browser to `https://github.com/login/oauth/authorize`
-* **Sandbox Response (200 OK HTML)**: Serves full interactive HTML page simulating GitHub approval.
 
 ### 2.5 GitHub Callback Handler
 Receives GitHub authorization code and returns user profile session redirect.
@@ -124,13 +128,14 @@ Receives GitHub authorization code and returns user profile session redirect.
   Redirects to: `{FRONTEND_URL}/signin?token={JWT_TOKEN}&username={username}&user_id={user_id}`
 
 ### 2.6 Google OAuth Initiation
-Start Google OpenID flow. If settings.GOOGLE_CLIENT_ID is not configured, returns a mock authorize sandbox card.
+Start Google OpenID flow. If Google OAuth credentials are not configured, the endpoint returns `503 Service Unavailable`.
 
 * **Route**: `GET /api/v1/auth/google?state=some_random_state`
 * **Query Parameters**:
   * `state` (optional string)
+  * `privacy_policy_accepted` (required boolean)
+  * `privacy_policy_version` (required string)
 * **Success Response (302 Redirect)**: Redirects browser to `https://accounts.google.com/o/oauth2/v2/auth`
-* **Sandbox Response (200 OK HTML)**: Serves full interactive HTML page simulating Google approval.
 
 ### 2.7 Google Callback Handler
 Receives Google authorization code and returns user profile session redirect.
@@ -283,7 +288,8 @@ Downloads the compiled executive PDF audit report.
 
 * **Route**: `GET /api/v1/audit/job/{job_id}/report`
 * **Headers**: `Authorization: Bearer <token>`
-* **Success Response**: Returns binary file (`application/pdf`) or redirects browser to pre-signed Cloudflare R2 bucket url.
+* **Success Response**: Returns a local binary file (`application/pdf`) or redirects only to the configured Cloudflare R2 HTTPS host.
+* **Error Response (400 Bad Request)**: Returned when a stored report URL is not a safe local report path or configured report-storage URL.
 
 ---
 
@@ -324,7 +330,7 @@ Establishes a continuous SSE streaming channel to push agent execution logs and 
 Retrieves current system details, database check, integrations and ready security nodes status.
 
 * **Route**: `GET /api/v1/system/status`
-* **Headers**: None (Public Endpoint)
+* **Headers**: `Authorization: Bearer <token>`
 * **Success Response (200 OK)**:
   ```json
   {
@@ -333,8 +339,8 @@ Retrieves current system details, database check, integrations and ready securit
     "debug": true,
     "sandbox_mode": "docker",
     "stats": {
-      "jobs": 15,
-      "findings": 42
+      "jobs": 3,
+      "findings": 12
     },
     "integrations": {
       "github_oauth": true,
@@ -357,3 +363,4 @@ Retrieves current system details, database check, integrations and ready securit
     ]
   }
   ```
+  *Note: `stats` are scoped to the authenticated workspace. The public `/health` endpoint remains available for uptime checks.*

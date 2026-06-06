@@ -1,391 +1,475 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
-/* ─── data ─── */
+import PolicyLink from "../components/PolicyLink";
+import styles from "./page.module.css";
+
+const HERO_METRICS = [
+  { value: "9", label: "Specialist agents" },
+  { value: "<5 min", label: "Audit loop" },
+  { value: "CVSS 3.1", label: "Risk scoring" },
+  { value: "PR-ready", label: "Fix output" },
+];
+
+const CONTROL_BOARD = [
+  { label: "Repository intake", hint: "Stack fingerprint and branch context", state: "Ready" },
+  { label: "Static analysis", hint: "Secret leaks and sink discovery", state: "Watching" },
+  { label: "Runtime validation", hint: "Sandboxed payload execution", state: "Contained" },
+  { label: "Reporting", hint: "Evidence trail and remediation handoff", state: "Exporting" },
+];
+
+const FIRST_RUN_HINTS = [
+  {
+    title: "Start with a repo the team already knows",
+    body: "A smaller service, staging branch, or recent hotfix usually makes the first audit feel grounded instead of abstract.",
+  },
+  {
+    title: "Treat the first report like calibration",
+    body: "The first pass should start a useful conversation. Teams almost always tighten scope after they see one real run.",
+  },
+  {
+    title: "Pull one engineer into the first review",
+    body: "Findings move faster when the person reading them can map the trace back to code they touched recently.",
+  },
+];
+
+const CAPABILITIES = [
+  {
+    title: "Evidence before opinion",
+    stat: "Live trace",
+    body: "Every audit keeps the stream of agent actions, confirmed findings, and report artifacts so the team can review the why, not just the result.",
+  },
+  {
+    title: "Safe runtime validation",
+    stat: "Ephemeral sandbox",
+    body: "Dynamic checks execute inside isolated Kali containers with dropped capabilities, bounded resources, and automatic teardown after each run.",
+  },
+  {
+    title: "Remediation with momentum",
+    stat: "Fix branch",
+    body: "When issues are confirmed, FireCrow can package severity context, evidence, and patch guidance into a handoff your engineers can act on immediately.",
+  },
+  {
+    title: "Designed for busy teams",
+    stat: "One console",
+    body: "Repository intake, findings, scorecards, and exports stay in one operational surface instead of living across disconnected scripts and spreadsheets.",
+  },
+];
+
+const PIPELINE = [
+  {
+    id: "01",
+    title: "Intake and stack mapping",
+    body: "Clone the target, resolve dependencies, and understand the application shape before any validation begins.",
+    output: "Stack map + branch context",
+  },
+  {
+    id: "02",
+    title: "Static pressure test",
+    body: "Sweep the codebase for secrets, risky sinks, auth drift, and framework-specific patterns that deserve deeper validation.",
+    output: "Candidate findings",
+  },
+  {
+    id: "03",
+    title: "Sandboxed runtime checks",
+    body: "Replay safe payloads against the live surface inside a constrained environment to separate noise from confirmed weaknesses.",
+    output: "Validated evidence",
+  },
+  {
+    id: "04",
+    title: "Risk and severity scoring",
+    body: "Normalize duplicate findings, add CVSS context, and rank what needs engineering attention first.",
+    output: "Prioritized queue",
+  },
+  {
+    id: "05",
+    title: "Executive-ready delivery",
+    body: "Publish the final trace, issue summary, and remediation materials for operators, developers, and stakeholders.",
+    output: "Report + handoff package",
+  },
+];
 
 const AGENTS = [
-  { id: "MAESTRO", role: "Orchestration", desc: "Coordinates and schedules multi-agent pipeline runs end-to-end." },
-  { id: "RECON", role: "Repository Intel", desc: "Clones targets, fingerprints tech stacks, maps dependency trees." },
-  { id: "SAST", role: "Static Analysis", desc: "Scans source for hardcoded secrets, injection sinks, and misconfigurations." },
-  { id: "SANDBOX", role: "Runtime Isolation", desc: "Provisions ephemeral Kali containers with memory caps and PID limits." },
-  { id: "NETWORK", role: "Port Scanning", desc: "Discovers open services, maps exposed API surfaces and protocols." },
-  { id: "ATTACK", role: "Active Validation", desc: "Runs safe injection payloads and boundary fuzzing against live endpoints." },
-  { id: "EXPLOIT", role: "Proof Generation", desc: "Generates proof-of-concept evidence and reproduces confirmed weaknesses." },
-  { id: "SCORING", role: "CVSS Prioritization", desc: "Assigns CVSS 3.1 vectors, deduplicates findings, and ranks by risk." },
-  { id: "REPORTER", role: "Report Generation", desc: "Compiles executive PDF reports and submits remediation Pull Requests." },
+  { id: "MAESTRO", role: "Orchestrates jobs, timing, and clean-up." },
+  { id: "RECON", role: "Builds repository and dependency context." },
+  { id: "SAST", role: "Flags secrets, sinks, and code risk." },
+  { id: "SANDBOX", role: "Maintains isolated runtime execution." },
+  { id: "NETWORK", role: "Maps ports, protocols, and exposure." },
+  { id: "ATTACK", role: "Runs safe validation payloads." },
+  { id: "EXPLOIT", role: "Generates reproducible evidence." },
+  { id: "SCORING", role: "Ranks findings with CVSS context." },
+  { id: "REPORTER", role: "Packages reports and remediation handoff." },
 ];
 
-const STATS = [
-  { value: "9", label: "Autonomous agents" },
-  { value: "< 5min", label: "Full audit cycle" },
-  { value: "99.7%", label: "Detection accuracy" },
-  { value: "0", label: "False positive tolerance" },
-];
-
-const PIPELINE_LABELS = ["RECON", "SAST", "SANDBOX", "NETWORK", "ATTACK", "EXPLOIT", "SCORING", "REPORTER"];
+type TerminalTone = "info" | "success" | "warning" | "error";
 
 interface TerminalLine {
   text: string;
-  type: "info" | "success" | "warning" | "error" | "prompt";
+  tone: TerminalTone;
 }
 
 const INITIAL_LINES: TerminalLine[] = [
-  { text: "FireCrow Security Orchestrator v1.0.0", type: "info" },
-  { text: "All 9 agent nodes online. Awaiting target.", type: "success" },
-  { text: "Enter a repository URL below and press Launch Audit to begin.", type: "prompt" },
+  { text: "FireCrow orchestration room online.", tone: "success" },
+  { text: "Agents standing by for repository intake.", tone: "info" },
+  { text: "Launch a sample run to preview the audit flow.", tone: "warning" },
 ];
 
-const SIM_STEPS: { text: string; type: TerminalLine["type"]; delay: number }[] = [
-  { text: "[RECON] Cloning target repository metadata…", type: "info", delay: 700 },
-  { text: "[RECON] Discovered Python (FastAPI) backend & React frontend", type: "success", delay: 900 },
-  { text: "[SAST] Running 47 static analysis signatures…", type: "info", delay: 1100 },
-  { text: "[SAST] WARNING: Hardcoded database credentials found in config.py:L14", type: "warning", delay: 1000 },
-  { text: "[SAST] WARNING: Potential SQL injection in routes/audit.py:L48", type: "warning", delay: 1100 },
-  { text: "[SANDBOX] Spawning secure Kali execution context (cap_drop=ALL)…", type: "info", delay: 1400 },
-  { text: "[NETWORK] Scanning external API endpoints on ports 80, 443, 8080…", type: "info", delay: 1200 },
-  { text: "[ATTACK] Initiating safe validation injection payloads…", type: "info", delay: 1300 },
-  { text: "[ATTACK] EXPLOIT CONFIRMED: Password constraint bypassed via raw SQL", type: "error", delay: 1500 },
-  { text: "[SCORING] Final severity: CVSS 8.8 (HIGH)", type: "error", delay: 900 },
-  { text: "[REPORTER] Generating executive PDF report…", type: "info", delay: 1100 },
-  { text: "[REPORTER] Created branch 'fix/security-remediations' & submitted PR #4", type: "success", delay: 1300 },
-  { text: "[SYSTEM] Audit completed. Review full trace inside dashboard.", type: "prompt", delay: 700 },
+const SIMULATION_STEPS: Array<TerminalLine & { delay: number; phase: number }> = [
+  { text: "[INTAKE] Cloning repository metadata and branch state...", tone: "info", delay: 550, phase: 0 },
+  { text: "[RECON] FastAPI backend and Next.js frontend identified.", tone: "success", delay: 800, phase: 0 },
+  { text: "[SAST] 47 signatures loaded for static pressure test.", tone: "info", delay: 950, phase: 1 },
+  { text: "[SAST] Warning: database credentials appear hardcoded in config.", tone: "warning", delay: 950, phase: 1 },
+  { text: "[SANDBOX] Ephemeral validation environment sealed and ready.", tone: "success", delay: 1100, phase: 2 },
+  { text: "[ATTACK] Safe boundary payload confirms auth bypass path.", tone: "error", delay: 1150, phase: 2 },
+  { text: "[SCORING] Severity normalized to CVSS 8.8 (HIGH).", tone: "warning", delay: 850, phase: 3 },
+  { text: "[REPORTER] Evidence package and remediation brief generated.", tone: "success", delay: 900, phase: 4 },
 ];
 
-/* ─── component ─── */
+const cx = (...tokens: Array<string | false | null | undefined>) => tokens.filter(Boolean).join(" ");
 
 export default function LandingPage() {
-  /* terminal state */
   const [scanUrl, setScanUrl] = useState("github.com/nova-devs/vulnerable-app");
   const [scanning, setScanning] = useState(false);
-  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>(INITIAL_LINES);
-  const [activePipelineIdx, setActivePipelineIdx] = useState(-1);
+  const [activePhase, setActivePhase] = useState(-1);
+  const [terminalLines, setTerminalLines] = useState(INITIAL_LINES);
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
-  /* newsletter */
-  const [newsEmail, setNewsEmail] = useState("");
-  const [newsSubscribed, setNewsSubscribed] = useState(false);
-
-  /* intersection observer for scroll-triggered reveals */
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            entry.target.classList.add("revealed");
+            entry.target.classList.add(styles.revealed);
           }
         });
       },
-      { threshold: 0.12 },
+      { threshold: 0.18 },
     );
-    document.querySelectorAll(".reveal-on-scroll").forEach((el) => observer.observe(el));
+
+    document.querySelectorAll<HTMLElement>("[data-reveal]").forEach((node) => observer.observe(node));
     return () => observer.disconnect();
   }, []);
 
-  /* terminal auto-scroll */
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    terminalEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [terminalLines]);
 
-  /* audit simulator */
-  const simulateAudit = useCallback(async () => {
-    if (scanning) return;
+  const runSimulation = async () => {
+    if (scanning) {
+      return;
+    }
+
     setScanning(true);
-    setActivePipelineIdx(0);
-    setTerminalLines([{ text: `[SYSTEM] Initializing audit for: ${scanUrl}`, type: "info" }]);
+    setActivePhase(0);
+    setTerminalLines([{ text: `[SYSTEM] Preparing audit for ${scanUrl}`, tone: "info" }]);
 
-    for (let i = 0; i < SIM_STEPS.length; i++) {
-      const step = SIM_STEPS[i];
-      await new Promise((r) => setTimeout(r, step.delay));
-      setTerminalLines((prev) => [...prev, { text: step.text, type: step.type }]);
-      /* advance pipeline indicator when a new agent tag appears */
-      const agentMatch = step.text.match(/^\[(\w+)]/);
-      if (agentMatch) {
-        const idx = PIPELINE_LABELS.indexOf(agentMatch[1]);
-        if (idx >= 0) setActivePipelineIdx(idx);
-      }
+    for (const step of SIMULATION_STEPS) {
+      await new Promise((resolve) => window.setTimeout(resolve, step.delay));
+      setTerminalLines((current) => [...current, { text: step.text, tone: step.tone }]);
+      setActivePhase(step.phase);
     }
-    setActivePipelineIdx(PIPELINE_LABELS.length);
+
+    setTerminalLines((current) => [
+      ...current,
+      { text: "[SYSTEM] Preview complete. Open the console to run the real pipeline.", tone: "success" },
+    ]);
+    setActivePhase(PIPELINE.length - 1);
     setScanning(false);
-  }, [scanning, scanUrl]);
-
-  const handleNewsSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newsEmail.trim()) {
-      setNewsSubscribed(true);
-      setTimeout(() => { setNewsSubscribed(false); setNewsEmail(""); }, 5000);
-    }
   };
 
   return (
-    <main className="public-shell" style={{ position: "relative", overflow: "hidden" }}>
-      {/* ambient blobs */}
-      <div className="glowing-bg-blob" />
-      <div className="glowing-bg-blob-2" />
-      <div className="glowing-bg-blob-3" />
+    <main className={styles.page}>
+      <div className={styles.backdrop} aria-hidden="true" />
+      <div className={styles.noise} aria-hidden="true" />
 
-      {/* ── NAV ── */}
-      <nav className="public-nav animate-fade-in" aria-label="Primary navigation" id="nav-primary">
-        <Link className="public-brand" href="/">
-          <span className="brand-mark">FC</span>
-          <span>
-            <strong>FireCrow</strong>
-            <small>by Nova Devs</small>
-          </span>
-        </Link>
-        <div className="public-nav-links">
-          <a href="#platform">Platform</a>
-          <a href="#agents">Agents</a>
-          <a href="#sandbox">Live Demo</a>
-          <Link href="/terms">Terms</Link>
-          <Link className="nav-cta" href="/signin" id="nav-signin-cta">Open Console</Link>
-        </div>
-      </nav>
-
-      {/* ── HERO ── */}
-      <section className="hero-section animate-fade-in delay-100" id="hero">
-        <div className="hero-copy">
-          <div className="section-kicker">AI-Powered Security Audit Platform</div>
-          <h1>Ship code that<br /><span className="hero-gradient-text">attackers can&apos;t break.</span></h1>
-          <p>
-            FireCrow orchestrates 9 autonomous security agents to clone, analyze, sandbox, attack, score,
-            and remediate vulnerabilities in your GitHub repositories — end to end, in under five minutes.
-          </p>
-          <div className="hero-actions">
-            <Link className="primary-action public-action hero-primary-btn" href="/signin" id="hero-cta">
-              Start Free Audit
-              <svg className="hero-cta-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-            </Link>
-            <a className="ghost-action public-action" href="#sandbox">Watch Demo</a>
-          </div>
-
-          {/* stats row */}
-          <div className="hero-stats">
-            {STATS.map((s) => (
-              <div className="hero-stat" key={s.label}>
-                <strong>{s.value}</strong>
-                <span>{s.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* console preview */}
-        <div className="hero-console animate-fade-in delay-200" aria-label="FireCrow pipeline preview" id="hero-pipeline-preview">
-          <div className="hero-console-top">
-            <span>MAESTRO PIPELINE</span>
-            <strong style={{ color: "var(--green)" }}>● ACTIVE</strong>
-          </div>
-          <div className="hero-pipeline">
-            {PIPELINE_LABELS.map((phase, index) => (
-              <div className={`hero-pipeline-step${activePipelineIdx > index ? " hero-step-done" : ""}${activePipelineIdx === index ? " hero-step-active" : ""}`} key={phase}>
-                <span>{String(index).padStart(2, "0")}</span>
-                <strong>{phase}</strong>
-                <div className="pipeline-indicator">
-                  {activePipelineIdx > index && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
-                  {activePipelineIdx === index && <span className="pipeline-pulse" />}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── TRUSTED BY BANNER ── */}
-      <section className="trusted-banner reveal-on-scroll" id="trusted-bar">
-        <span className="trusted-label">TRUSTED BY SECURITY TEAMS AT</span>
-        <div className="trusted-logos">
-          {["Stripe", "Vercel", "Supabase", "Linear", "Resend"].map((name) => (
-            <span className="trusted-logo" key={name}>{name}</span>
-          ))}
-        </div>
-      </section>
-
-      {/* ── PLATFORM PILLARS ── */}
-      <section className="public-section reveal-on-scroll" id="platform">
-        <div>
-          <div className="section-kicker">Platform</div>
-          <h2>Security infrastructure,<br />not security theater.</h2>
-        </div>
-        <div className="pillar-grid">
-          {[
-            { icon: "🔗", title: "Orchestrated audits", body: "FireCrow coordinates repository intake, static analysis, sandbox execution, network probing, attack simulation, scoring, reporting, and cleanup through one auditable workflow." },
-            { icon: "📋", title: "Operational evidence", body: "Every audit keeps a live trace of agent activity, terminal status, findings, CVSS context, and report artifacts so teams can review what happened after the run." },
-            { icon: "🛡️", title: "Local-first reliability", body: "The platform runs with lightweight local services for development while preserving the same API contracts used by the production orchestration path." },
-            { icon: "⚡", title: "Automated remediation", body: "Generate fix branches, submit Pull Requests with inline code patches, and open GitHub Issues — all without leaving the console." },
-            { icon: "📊", title: "Executive-ready reports", body: "Compiled PDF reports include CVSS scores, evidence screenshots, remediation guidance, and severity distribution charts for stakeholder review." },
-            { icon: "🔒", title: "Zero-trust sandbox", body: "Every scan runs inside ephemeral containers with dropped capabilities, memory limits, and auto-delete timers to prevent lateral movement." },
-          ].map((p) => (
-            <article className="pillar-card" key={p.title}>
-              <span className="pillar-icon">{p.icon}</span>
-              <h3>{p.title}</h3>
-              <p>{p.body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      {/* ── AGENTS GRID ── */}
-      <section className="public-section reveal-on-scroll" id="agents">
-        <div>
-          <div className="section-kicker">Agent Network</div>
-          <h2>9 specialized agents.<br />One unified pipeline.</h2>
-        </div>
-        <div className="agents-showcase-grid">
-          {AGENTS.map((agent, i) => (
-            <div className="agent-showcase-card" key={agent.id} style={{ animationDelay: `${i * 60}ms` }}>
-              <div className="agent-showcase-header">
-                <span className="agent-idx">{String(i + 1).padStart(2, "0")}</span>
-                <span className="agent-status-dot" />
-              </div>
-              <h3>{agent.id}</h3>
-              <span className="agent-role">{agent.role}</span>
-              <p>{agent.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── INTERACTIVE SANDBOX ── */}
-      <section className="public-section reveal-on-scroll" id="sandbox" style={{ scrollMarginTop: "24px" }}>
-        <div style={{ marginBottom: "24px" }}>
-          <div className="section-kicker">Live Demo</div>
-          <h2>Experience the orchestration pipeline.</h2>
-          <p style={{ color: "var(--dim)", marginTop: "8px", maxWidth: "640px" }}>
-            Watch FireCrow coordinate multi-stage static analysis, dynamic sandbox payloads, and automated
-            pull request generation in real time.
-          </p>
-        </div>
-
-        <div className="simulator-card">
-          <div className="simulator-header">
-            <div className="simulator-dots">
-              <span className="simulator-dot red" />
-              <span className="simulator-dot yellow" />
-              <span className="simulator-dot green" />
-            </div>
-            <div className="simulator-title">security-agent@firecrow: ~/maestro-audit</div>
-            <div style={{ width: 42 }} />
-          </div>
-
-          <div className="simulator-body" id="simulator-terminal">
-            {terminalLines.map((line, idx) => (
-              <div className="terminal-line" key={idx}>
-                <span className="terminal-prompt">&gt;</span>
-                <span className={`terminal-output terminal-${line.type}`}>{line.text}</span>
-              </div>
-            ))}
-            <div ref={terminalEndRef} />
-          </div>
-
-          <div className="simulator-footer">
-            <input
-              type="text"
-              className="simulator-input"
-              value={scanUrl}
-              onChange={(e) => setScanUrl(e.target.value)}
-              placeholder="e.g. github.com/user/vulnerable-repo"
-              disabled={scanning}
-              id="simulator-url-input"
-            />
-            <button className="simulator-btn" onClick={simulateAudit} disabled={scanning} id="simulator-launch-btn">
-              {scanning ? "Auditing…" : "Launch Audit"}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA BAND ── */}
-      <section className="cta-band reveal-on-scroll" id="cta-final">
-        <div className="cta-band-content">
-          <div className="section-kicker">Get Started</div>
-          <h2>Start securing your repositories today.</h2>
-          <p>Create a workspace, connect your GitHub, and run your first audit in under two minutes.</p>
-          <div className="hero-actions" style={{ marginTop: "16px" }}>
-            <Link className="primary-action public-action hero-primary-btn" href="/signin">
-              Open Console
-              <svg className="hero-cta-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-            </Link>
-            <Link className="ghost-action public-action" href="/terms">Review Terms</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FOOTER ── */}
-      <footer className="footer-container animate-fade-in delay-400" id="site-footer">
-        <div className="footer-brand-col">
-          <Link className="public-brand" href="/">
-            <span className="brand-mark">FC</span>
-            <span>
+      <div className={styles.container}>
+        <nav className={styles.nav} aria-label="Primary navigation">
+          <Link href="/" className={styles.brand}>
+            <span className={styles.brandMark}>FC</span>
+            <span className={styles.brandText}>
               <strong>FireCrow</strong>
-              <small>by Nova Devs</small>
+              <small>Autonomous security audit</small>
             </span>
           </Link>
-          <p>
-            AI-powered repository security auditing. Vulnerability verification, sandbox automation, and secure code remediation — all from one console.
-          </p>
-          <div className="system-status-pill">
-            <span className="status-dot" />
-            ALL SYSTEMS OPERATIONAL
+
+          <div className={styles.navLinks}>
+            <a href="#capabilities" className={styles.navLink}>Platform</a>
+            <a href="#live-demo" className={styles.navLink}>Live Demo</a>
+            <a href="#agents" className={styles.navLink}>Agents</a>
+            <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_nav" className={styles.navLink}>
+              Privacy
+            </PolicyLink>
+            <Link href="/signin" className={styles.navCta}>Open Console</Link>
           </div>
-        </div>
+        </nav>
 
-        <div className="footer-col">
-          <h4>Platform</h4>
-          <ul>
-            <li><Link href="/signin">Access Console</Link></li>
-            <li><a href="#platform">Audit Pipeline</a></li>
-            <li><a href="#agents">Agent Network</a></li>
-            <li><a href="#sandbox">Demo Sandbox</a></li>
-          </ul>
-        </div>
+        <section className={styles.hero}>
+          <div className={styles.heroCopy}>
+            <p className={styles.eyebrow}>For the moment before “can someone sanity-check this?”</p>
+            <h1 className={styles.heroTitle}>
+              Catch the risky path,
+              <span className={styles.heroAccent}>keep the proof,</span>
+              hand your team something useful.
+            </h1>
+            <p className={styles.heroBody}>
+              FireCrow helps teams run a serious first pass on a repo without turning the process
+              into screenshots, shell scripts, and a week of back-and-forth.
+            </p>
 
-        <div className="footer-col">
-          <h4>Resources</h4>
-          <ul>
-            <li><a href="#docs">API Documentation</a></li>
-            <li><a href="#handbook">Security Handbook</a></li>
-            <li><a href="#threats">Threat Database</a></li>
-            <li><a href="#status">System Health</a></li>
-          </ul>
-        </div>
+            <div className={styles.heroActions}>
+              <Link href="/signin" className={styles.primaryButton}>Start an audit</Link>
+              <a href="#live-demo" className={styles.secondaryButton}>See the live run</a>
+            </div>
 
-        <div className="footer-col">
-          <h4>Stay Informed</h4>
-          <p style={{ color: "var(--dim)", fontSize: 13, margin: "0 0 8px" }}>
-            Subscribe to security advisories and release updates.
-          </p>
-          <form className="newsletter-form" onSubmit={handleNewsSubmit}>
-            <input
-              type="email"
-              className="newsletter-input"
-              placeholder="security@company.com"
-              value={newsEmail}
-              onChange={(e) => setNewsEmail(e.target.value)}
-              required
-              disabled={newsSubscribed}
-              id="newsletter-email-input"
-            />
-            <button className="newsletter-btn" type="submit" disabled={newsSubscribed} id="newsletter-submit-btn">
-              {newsSubscribed ? "✓" : "Join"}
-            </button>
-          </form>
-          {newsSubscribed && (
-            <span style={{ color: "var(--green)", fontSize: 12, marginTop: 6, display: "block" }}>
-              Successfully registered!
-            </span>
-          )}
-        </div>
-      </footer>
+            <aside className={styles.heroNote}>
+              <span className={styles.heroNoteLabel}>Good first run</span>
+              <p>
+                Start with a service your team already talks about by name. Familiar context makes the
+                first audit feel a lot more trustworthy.
+              </p>
+            </aside>
 
-      <div className="footer-bottom">
-        <span>© {new Date().getFullYear()} Nova Devs. All rights reserved.</span>
-        <div style={{ display: "flex", gap: 20 }}>
-          <Link href="/terms">Terms of Service</Link>
-          <Link href="/terms">Privacy Policy</Link>
-          <a href="mailto:security@novadevs.dev">Responsible Disclosure</a>
-        </div>
+            <div className={styles.heroFootnotes}>
+              <span className={styles.heroFootnote}>Start with staging or a hotfix branch</span>
+              <span className={styles.heroFootnote}>GitHub and workspace auth</span>
+              <span className={styles.heroFootnote}>Reports people can actually read</span>
+            </div>
+
+            <div className={styles.heroMetrics}>
+              {HERO_METRICS.map((metric) => (
+                <article key={metric.label} className={styles.metricCard}>
+                  <strong className={styles.metricValue}>{metric.value}</strong>
+                  <span className={styles.metricLabel}>{metric.label}</span>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <aside className={styles.heroBoard} aria-label="Operational preview">
+            <div className={styles.boardHeader}>
+              <div>
+                <p className={styles.boardLabel}>Control room preview</p>
+                <h2 className={styles.boardTitle}>What the first audit actually gives you</h2>
+              </div>
+              <span className={styles.boardBadge}>All systems ready</span>
+            </div>
+
+            <div className={styles.boardList}>
+              {CONTROL_BOARD.map((row, index) => (
+                <article className={styles.boardItem} key={row.label}>
+                  <span className={styles.boardIndex}>{String(index + 1).padStart(2, "0")}</span>
+                  <div className={styles.boardBody}>
+                    <strong>{row.label}</strong>
+                    <span>{row.hint}</span>
+                  </div>
+                  <span className={styles.boardState}>{row.state}</span>
+                </article>
+              ))}
+            </div>
+
+            <div className={styles.boardFooter}>
+              <div>
+                <span className={styles.boardFooterLabel}>Default output</span>
+                <p className={styles.boardFooterValue}>Trace logs, finding evidence, CVSS ranking, and a remediation handoff package.</p>
+              </div>
+              <Link href="/signin" className={styles.boardFooterLink}>Launch workspace</Link>
+            </div>
+          </aside>
+        </section>
+
+        <section id="capabilities" className={cx(styles.section, styles.reveal)} data-reveal>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Why it feels tighter</p>
+              <h2 className={styles.sectionTitle}>Less dashboard theater. More useful context.</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              The UI should explain itself in plain language, especially when someone from engineering opens it for the first time.
+            </p>
+          </div>
+
+          <div className={styles.capabilityGrid}>
+            {CAPABILITIES.map((item) => (
+              <article key={item.title} className={styles.capabilityCard}>
+                <div className={styles.capabilityMeta}>
+                  <span>{item.stat}</span>
+                </div>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className={cx(styles.section, styles.hintsSection, styles.reveal)} data-reveal>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Helpful hints</p>
+              <h2 className={styles.sectionTitle}>A few cues that make the first run land better.</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              These are the little things a real teammate would tell you before asking you to trust a new security tool.
+            </p>
+          </div>
+
+          <div className={styles.hintGrid}>
+            {FIRST_RUN_HINTS.map((hint) => (
+              <article key={hint.title} className={styles.hintCard}>
+                <span className={styles.hintMarker}>Note</span>
+                <h3>{hint.title}</h3>
+                <p>{hint.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="live-demo" className={cx(styles.section, styles.demoSection, styles.reveal)} data-reveal>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Live walkthrough</p>
+              <h2 className={styles.sectionTitle}>Preview the audit flow before you ever open the dashboard.</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              A tighter marketing page should still prove the interaction model. This sample run shows how the pipeline moves from repo intake to report delivery.
+            </p>
+          </div>
+
+          <div className={styles.demoSplit}>
+            <div className={styles.pipelinePanel}>
+              {PIPELINE.map((step, index) => (
+                <article
+                  key={step.id}
+                  className={cx(
+                    styles.pipelineCard,
+                    activePhase === index && styles.pipelineCardActive,
+                    activePhase > index && styles.pipelineCardDone,
+                  )}
+                >
+                  <div className={styles.pipelineHeader}>
+                    <span>{step.id}</span>
+                    <strong>{step.output}</strong>
+                  </div>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className={styles.simulator}>
+              <div className={styles.simulatorHeader}>
+                <div className={styles.simulatorDots} aria-hidden="true">
+                  <span className={styles.simulatorDotRed} />
+                  <span className={styles.simulatorDotAmber} />
+                  <span className={styles.simulatorDotGreen} />
+                </div>
+                <span className={styles.simulatorTitle}>firecrow@maestro / live-preview</span>
+              </div>
+
+              <div className={styles.simulatorBody}>
+                {terminalLines.map((line, index) => (
+                  <div className={styles.terminalLine} key={`${line.text}-${index}`}>
+                    <span className={styles.terminalPrompt}>&gt;</span>
+                    <span
+                      className={cx(
+                        styles.terminalText,
+                        line.tone === "info" && styles.infoTone,
+                        line.tone === "success" && styles.successTone,
+                        line.tone === "warning" && styles.warningTone,
+                        line.tone === "error" && styles.errorTone,
+                      )}
+                    >
+                      {line.text}
+                    </span>
+                  </div>
+                ))}
+                <div ref={terminalEndRef} />
+              </div>
+
+              <div className={styles.simulatorFooter}>
+                <input
+                  type="text"
+                  value={scanUrl}
+                  onChange={(event) => setScanUrl(event.target.value)}
+                  className={styles.urlInput}
+                  placeholder="github.com/team/repository"
+                  disabled={scanning}
+                />
+                <button type="button" onClick={runSimulation} className={styles.launchButton} disabled={scanning}>
+                  {scanning ? "Running preview..." : "Run preview"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="agents" className={cx(styles.section, styles.reveal)} data-reveal>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Agent network</p>
+              <h2 className={styles.sectionTitle}>Each agent has one clear job.</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              No mystery roles, no sci-fi flavor text. Just a readable pipeline with responsibilities your team can follow.
+            </p>
+          </div>
+
+          <div className={styles.agentGrid}>
+            {AGENTS.map((agent, index) => (
+              <article className={styles.agentCard} key={agent.id}>
+                <div className={styles.agentHeader}>
+                  <span className={styles.agentIndex}>{String(index + 1).padStart(2, "0")}</span>
+                  <span className={styles.agentTag}>Online</span>
+                </div>
+                <h3>{agent.id}</h3>
+                <p>{agent.role}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className={cx(styles.cta, styles.reveal)} data-reveal>
+          <div className={styles.ctaContent}>
+            <p className={styles.eyebrow}>Next step</p>
+            <h2 className={styles.ctaTitle}>Run it on a repo your team already knows.</h2>
+            <p className={styles.ctaCopy}>
+              That first pass is where trust gets built. Keep the scope familiar, keep the language human, and the review moves faster.
+            </p>
+            <div className={styles.heroActions}>
+              <Link href="/signin" className={styles.primaryButton}>Go to sign in</Link>
+              <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>
+                Review privacy policy
+              </PolicyLink>
+            </div>
+          </div>
+        </section>
+
+        <footer className={styles.footer}>
+          <div className={styles.footerBrand}>
+            <Link href="/" className={styles.brand}>
+              <span className={styles.brandMark}>FC</span>
+              <span className={styles.brandText}>
+                <strong>FireCrow</strong>
+                <small>Autonomous security audit</small>
+              </span>
+            </Link>
+            <p>
+              Repository intake, runtime validation, CVSS scoring, and remediation handoff in a single security workflow.
+            </p>
+          </div>
+
+          <div className={styles.footerLinks}>
+            <a href="#capabilities">Platform</a>
+            <a href="#live-demo">Live demo</a>
+            <a href="#agents">Agents</a>
+            <Link href="/signin">Sign in</Link>
+            <PolicyLink href="/terms" policy="terms" source="landing_footer">Terms</PolicyLink>
+            <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_footer">
+              Privacy
+            </PolicyLink>
+          </div>
+        </footer>
       </div>
     </main>
   );

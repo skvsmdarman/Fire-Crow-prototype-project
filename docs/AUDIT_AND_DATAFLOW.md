@@ -299,10 +299,10 @@ erDiagram
 | `GET` | `/api/v1/audit/job/{id}` | ✓ | Job detail + findings |
 | `DELETE` | `/api/v1/audit/job/{id}` | ✓ | Request job cancellation |
 | `GET` | `/api/v1/audit/{id}/stream` | ✓ | SSE live log stream |
-| `GET` | `/api/v1/system/status` | ✗ | Health, stats, agent manifest |
+| `GET` | `/api/v1/system/status` | ✓ | Tenant-scoped readiness, stats, and agent manifest |
 | `GET` | `/health` | ✗ | DB connection check |
 | `GET` | `/` | ✗ | API root status |
-| `GET` | `/reports/{file}` | ✗ | Static file serving for reports |
+| `GET` | `/api/v1/audit/job/{id}/report` | ✓ | Authenticated report download/allowed storage redirect |
 
 ### 5.2 Authentication
 
@@ -404,7 +404,7 @@ A `@model_validator` on `Settings` raises `ValueError` at startup if `DEBUG=fals
 
 - **HTML**: Generates premium styled executive audit report with severity badges, evidence blocks, and summary table
 - **PDF**: Compiles via WeasyPrint (falls back to simulated PDF if unavailable)
-- **Upload**: Cloudflare R2 with 7-day pre-signed URL (falls back to local `/reports/` static mount)
+- **Upload**: Cloudflare R2 with 7-day pre-signed URL (falls back to authenticated local report download through `/api/v1/audit/job/{id}/report`)
 - **Email**: Sends via Resend API with HTML template containing download link
 
 ### 7.9 GITHUB_MCP (`agents/github_mcp.py`)
@@ -565,6 +565,6 @@ DEBUG=false → PostgreSQL required, explicit user registration, Docker sandbox,
 | Redis | Celery task queue | FastAPI BackgroundTasks (in-process) |
 | Docker | Kali sandbox | Simulated mock responses |
 | WeasyPrint (GTK libs) | PDF reports | Simulated PDF stub |
-| Cloudflare R2 | Report hosting | Local `/reports/` static mount |
+| Cloudflare R2 | Report hosting | Authenticated local report download endpoint |
 | Resend | Email delivery | Skipped silently |
 | GitHub Token | Issue creation | Skipped with warning log |

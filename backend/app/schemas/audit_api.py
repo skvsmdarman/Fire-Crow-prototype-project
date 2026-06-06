@@ -23,12 +23,23 @@ class SubmitJobRequest(BaseModel):
 
     @field_validator("repo_branch")
     @classmethod
-    def validate_repo_branch(cls, v: str) -> str:
-        if v and not re.match(r"^[a-zA-Z0-9._/-]+$", v):
+    def validate_repo_branch(cls, v: str | None) -> str:
+        if v is None or not v.strip():
+            return "main"
+
+        branch = v.strip()
+        if not re.match(r"^[a-zA-Z0-9._/-]+$", branch):
             raise ValueError("Invalid branch name format.")
-        if v and v.startswith("-"):
-            raise ValueError("Branch name cannot start with a dash.")
-        return v
+        if branch.startswith(("-", "/")):
+            raise ValueError("Branch name cannot start with a dash or slash.")
+        if branch.endswith(("/", ".", ".lock")):
+            raise ValueError("Branch name cannot end with a slash, dot, or .lock.")
+        if ".." in branch or "//" in branch or "@{" in branch or "\\" in branch:
+            raise ValueError("Branch name contains an unsafe ref sequence.")
+        for component in branch.split("/"):
+            if not component or component.startswith(".") or component.endswith(".lock"):
+                raise ValueError("Branch name contains an unsafe path component.")
+        return branch
 
 
 class JobResponse(BaseModel):

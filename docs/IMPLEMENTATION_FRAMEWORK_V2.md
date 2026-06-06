@@ -30,7 +30,7 @@
 | **S-03** | No input validation on `repo_url` | CRITICAL | Any string accepted — SSRF via `git clone` to internal IPs |
 | **S-04** | No request body size limits | MEDIUM | Unbounded POST payloads |
 | **S-05** | No CSP/security headers | MEDIUM | Missing X-Frame-Options, X-Content-Type, HSTS |
-| **S-06** | Reports served without auth | HIGH | `/reports/` static mount has no token check |
+| **S-06** | Reports served without auth | HIGH | Mitigated by authenticated `/api/v1/audit/job/{id}/report` and safe report URL validation |
 | **S-07** | No encryption at rest | HIGH | Findings/evidence stored as plaintext in SQLite/PostgreSQL |
 | **S-08** | No RBAC | MEDIUM | All users have equal permissions |
 | **S-09** | JWT uses HS256 | MEDIUM | Should use RS256/ES256 with key rotation |
@@ -510,9 +510,9 @@ These can be implemented immediately with minimal code changes:
 - [ ] **repo_url regex**: Add Pydantic validator to `SubmitJobRequest`
 - [ ] **Git hooks removal**: Add `shutil.rmtree(os.path.join(target_dir, ".git", "hooks"))` after clone
 - [ ] **Symlink check**: Add post-clone `os.walk` to reject repos with external symlinks
-- [ ] **Report auth**: Replace `/reports/` static mount with authenticated endpoint
+- [x] **Report auth**: Replace `/reports/` static mount with authenticated endpoint
 - [ ] **Security headers**: Add `Starlette` middleware with CSP/HSTS/X-Frame
 - [ ] **Rate limiting**: Install `slowapi` and add decorators to auth + submit endpoints
 - [ ] **Clone size limit**: Check `du -s` after clone, reject if >500MB
-- [ ] **HTML escape findings**: `html.escape()` all finding fields before reporter template
+- [x] **HTML escape findings**: `html.escape()` all finding fields before reporter template
 - [ ] **Redis password**: Add `REDIS_PASSWORD` to config, use in connection URL

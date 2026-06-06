@@ -99,6 +99,30 @@ def test_github_mcp_run_mock():
     assert any("Simulating GitHub Issue creation" in log for log in res["github_mcp_logs"])
 
 
+def test_github_mcp_markdown_escapes_content_and_safe_fences():
+    from backend.app.agents.github_mcp import format_findings_markdown
+    from backend.app.schemas import Finding, Severity
+
+    findings = [
+        Finding(
+            id="f-escape",
+            agent_source="SAST|scanner",
+            title="[Critical](https://attacker.example) *boom*",
+            description="Description with # heading and > quote",
+            severity=Severity.CRITICAL,
+            evidence="before\n```\nmalicious fence\n```\nafter",
+            remediation="Patch [now](https://attacker.example).",
+        )
+    ]
+
+    body = format_findings_markdown("https://github.com/example/repo", findings)
+
+    assert "\\[Critical\\]" in body
+    assert "\\*boom\\*" in body
+    assert "\\> quote" in body
+    assert "````\nbefore\n```\nmalicious fence\n```\nafter\n````" in body
+
+
 def test_google_agent_run_mock():
     from backend.app.agents.google_agent import run_google_agent
     from backend.app.schemas import Finding, Severity
@@ -134,5 +158,4 @@ def test_google_agent_run_mock():
     assert "key_risk_factors" in res["google_agent_risk_report"]
     assert "merge_recommendation" in res["google_agent_risk_report"]
     assert any("Started Google Agent" in log for log in res["google_agent_logs"])
-
 

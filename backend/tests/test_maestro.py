@@ -1,5 +1,5 @@
-from backend.app.schemas import AuditState, JobStatus
-from backend.app.orchestrator.maestro import maestro_graph
+from backend.app.schemas import AuditState, Finding, JobStatus, Severity
+from backend.app.orchestrator.maestro import get_reportable_findings, maestro_graph
 from backend.app.models import SessionLocal, AuditJob
 
 
@@ -107,3 +107,54 @@ def test_maestro_vuln_exploit_path():
     assert "Outdated Web Component Vulnerability" in titles
     assert len(final_state["exploit_proofs"]) == 1
     assert final_state["exploit_proofs"][0].title == "Exploitable SQL Injection Proof"
+
+
+def test_reportable_findings_include_all_agent_classes():
+    state = AuditState(
+        job_id="job-reportable",
+        user_id="usr_tester",
+        repo_url="https://github.com/example/repo",
+        static_findings=[
+            Finding(id="static-1", agent_source="SAST", title="Static", description="Static issue", severity=Severity.HIGH)
+        ],
+        semgrep_findings=[
+            Finding(id="semgrep-1", agent_source="SEMGREP", title="Semgrep", description="Semgrep issue", severity=Severity.HIGH)
+        ],
+        dependency_vulns=[
+            Finding(id="dep-1", agent_source="DEPENDENCY", title="Dependency", description="Dependency issue", severity=Severity.MEDIUM)
+        ],
+        iac_findings=[
+            Finding(id="iac-1", agent_source="IAC", title="IaC", description="IaC issue", severity=Severity.LOW)
+        ],
+        dynamic_findings=[
+            Finding(id="dynamic-1", agent_source="ATTACK", title="Dynamic", description="Dynamic issue", severity=Severity.CRITICAL)
+        ],
+        exploit_proofs=[
+            Finding(id="exploit-1", agent_source="EXPLOIT", title="Exploit", description="Exploit proof", severity=Severity.CRITICAL)
+        ],
+    )
+
+    titles = {finding.title for finding in get_reportable_findings(state)}
+
+    assert titles == {"Static", "Semgrep", "Dependency", "IaC", "Dynamic", "Exploit"}
+
+
+def test_reportable_findings_keep_ai_dedupe_and_exploit_proofs():
+    state = AuditState(
+        job_id="job-reportable",
+        user_id="usr_tester",
+        repo_url="https://github.com/example/repo",
+        static_findings=[
+            Finding(id="static-1", agent_source="SAST", title="Static", description="Static issue", severity=Severity.HIGH)
+        ],
+        deduplicated_findings=[
+            Finding(id="dedupe-1", agent_source="AI_ANALYZER", title="Deduped", description="Retained issue", severity=Severity.HIGH)
+        ],
+        exploit_proofs=[
+            Finding(id="exploit-1", agent_source="EXPLOIT", title="Exploit", description="Exploit proof", severity=Severity.CRITICAL)
+        ],
+    )
+
+    titles = [finding.title for finding in get_reportable_findings(state)]
+
+    assert titles == ["Deduped", "Exploit"]

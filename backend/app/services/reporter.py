@@ -69,6 +69,10 @@ class ReportGenerator:
 
     def generate_html_report(self, job_id: str, repo_url: str, branch: str, findings: List[Finding]) -> str:
         """Generates a premium executive vulnerability audit HTML string."""
+        safe_job_id = html.escape(job_id)
+        safe_repo_url = html.escape(repo_url)
+        safe_branch = html.escape(branch)
+
         # Calculate summary metrics
         counts = {Severity.CRITICAL: 0, Severity.HIGH: 0, Severity.MEDIUM: 0, Severity.LOW: 0, Severity.INFO: 0}
         for f in findings:
@@ -114,6 +118,7 @@ class ReportGenerator:
             safe_desc = html.escape(f.description)
             safe_evidence = html.escape(f.evidence) if f.evidence else ""
             safe_cvss_vector = html.escape(f.cvss_vector) if f.cvss_vector else "N/A"
+            safe_cvss_score = html.escape(str(f.cvss_score)) if f.cvss_score is not None else "N/A"
             remediation_val = getattr(f, "remediation", None)
             safe_remediation = html.escape(remediation_val) if remediation_val else ""
             
@@ -151,7 +156,7 @@ class ReportGenerator:
                 <div class="finding-meta">
                     <strong>Source Agent:</strong> {safe_agent} &nbsp;|&nbsp; 
                     <strong>CWE Link:</strong> {cwe_badge or "N/A"} &nbsp;|&nbsp;
-                    <strong>CVSS:</strong> {f.cvss_score or "N/A"} ({safe_cvss_vector})
+                    <strong>CVSS:</strong> {safe_cvss_score} ({safe_cvss_vector})
                 </div>
 
                 <div class="section-title">Vulnerability Description</div>
@@ -160,7 +165,7 @@ class ReportGenerator:
                 {evidence_block}
 
                 <div class="section-title">Remediation Guidance</div>
-                <p class="remediation-text">{f.remediation or "Follow standard secure coding patterns, validate all entry points, and sanitise parameters."}</p>
+                <p class="remediation-text">{safe_remediation or "Follow standard secure coding patterns, validate all entry points, and sanitise parameters."}</p>
             </div>
             """
 
@@ -183,7 +188,7 @@ class ReportGenerator:
                         color: #94a3b8;
                     }}
                     @bottom-left {{
-                        content: "Fire Crow Security Audit • Job {job_id}";
+                        content: "Fire Crow Security Audit • Job {safe_job_id}";
                         font-family: 'Inter', sans-serif;
                         font-size: 9pt;
                         color: #94a3b8;
@@ -464,15 +469,15 @@ class ReportGenerator:
                     <div class="metadata-grid">
                         <div class="metadata-row">
                             <div class="metadata-label">Job ID:</div>
-                            <div class="metadata-value">{job_id}</div>
+                            <div class="metadata-value">{safe_job_id}</div>
                         </div>
                         <div class="metadata-row">
                             <div class="metadata-label">Repository URL:</div>
-                            <div class="metadata-value">{repo_url}</div>
+                            <div class="metadata-value">{safe_repo_url}</div>
                         </div>
                         <div class="metadata-row">
                             <div class="metadata-label">Branch:</div>
-                            <div class="metadata-value">{branch}</div>
+                            <div class="metadata-value">{safe_branch}</div>
                         </div>
                         <div class="metadata-row">
                             <div class="metadata-label">Audit Date:</div>
@@ -570,8 +575,7 @@ class ReportGenerator:
         """
         if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
             logger.info("Cloudflare R2 environment variables not fully configured. Serving locally.")
-            filename = f"{job_id}.html" if not WEASYPRINT_AVAILABLE else f"{job_id}.pdf"
-            return f"http://localhost:{settings.PORT}/reports/{filename}"
+            return f"/reports/{job_id}.pdf"
 
         try:
             import boto3  # type: ignore
@@ -600,16 +604,17 @@ class ReportGenerator:
             return url
         except Exception as e:
             logger.error(f"R2 upload failed: {str(e)}. Falling back to local HTTP URL.")
-            filename = f"{job_id}.html" if not WEASYPRINT_AVAILABLE else f"{job_id}.pdf"
-            return f"http://localhost:{settings.PORT}/reports/{filename}"
+            return f"/reports/{job_id}.pdf"
 
     def send_email_report(self, to_email: str, report_url: str, job_id: str, counts: Dict[Severity, int]) -> bool:
         """Sends a beautiful transactional email with the PDF link via Google/SMTP or Resend."""
+        safe_job_id = html.escape(job_id)
+        safe_report_url = html.escape(report_url, quote=True)
         html_body = f"""
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
             <h2 style="color: #0f172a; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-top: 0;">🔥 Fire Crow Security Audit Complete</h2>
             <p style="font-size: 16px; line-height: 1.6; color: #334155;">Hello,</p>
-            <p style="font-size: 16px; line-height: 1.6; color: #334155;">Your autonomous security audit job <strong>{job_id}</strong> is complete. The system scanned code files, constructed a dynamic network sandbox, and validated potential exploit vectors.</p>
+            <p style="font-size: 16px; line-height: 1.6; color: #334155;">Your autonomous security audit job <strong>{safe_job_id}</strong> is complete. The system scanned code files, constructed a dynamic network sandbox, and validated potential exploit vectors.</p>
             
             <h4 style="color: #475569; text-transform: uppercase; margin-bottom: 10px;">Audit Summary</h4>
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -628,7 +633,7 @@ class ReportGenerator:
             </table>
 
             <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                <a href="{report_url}" style="background-color: #7c3aed; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Download PDF Audit Report</a>
+                <a href="{safe_report_url}" style="background-color: #7c3aed; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Download PDF Audit Report</a>
             </div>
 
             <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 30px;">This email was automatically generated by Fire Crow Security Platform. Keep your dependencies patched and code safe.</p>

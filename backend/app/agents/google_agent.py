@@ -128,8 +128,12 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             }
 
     # 2. Format a gorgeous Google Agent PR Risk Alert email
-    risk_level = pr_risk_analysis.get("overall_pr_risk", "UNKNOWN").upper()
-    recommendation = pr_risk_analysis.get("merge_recommendation", "REVIEW").upper()
+    risk_level = str(pr_risk_analysis.get("overall_pr_risk", "UNKNOWN")).upper()
+    recommendation = str(pr_risk_analysis.get("merge_recommendation", "REVIEW")).upper()
+    if risk_level not in {"CRITICAL", "HIGH", "MEDIUM", "LOW"}:
+        risk_level = "UNKNOWN"
+    if recommendation not in {"BLOCK", "REVIEW", "APPROVE"}:
+        recommendation = "REVIEW"
     risk_desc = pr_risk_analysis.get("risk_description", "")
     key_factors = pr_risk_analysis.get("key_risk_factors", [])
     
@@ -147,6 +151,9 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         rec_badge_style = "background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0;"
 
     factors_html = "".join(f"<li style='margin-bottom: 8px;'>⚠️ {html_escape(factor)}</li>" for factor in key_factors)
+    safe_repo_url = html_escape(repo_url)
+    safe_risk_level = html_escape(risk_level)
+    safe_recommendation = html_escape(recommendation)
 
     html_body = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -156,12 +163,12 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         </div>
         
         <p style="font-size: 16px; line-height: 1.6; color: #334155;">Hello Security Team,</p>
-        <p style="font-size: 16px; line-height: 1.6; color: #334155;">The <strong>Google Security Agent</strong> has finished evaluating PR merge risks for repository: <br><code style="background-color: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-size: 14px;">{repo_url}</code></p>
+        <p style="font-size: 16px; line-height: 1.6; color: #334155;">The <strong>Google Security Agent</strong> has finished evaluating PR merge risks for repository: <br><code style="background-color: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-size: 14px;">{safe_repo_url}</code></p>
         
         <div style="margin: 25px 0; padding: 15px; border-radius: 8px; border-left: 5px solid {risk_color}; background-color: #f8fafc;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <span style="font-size: 18px; font-weight: 700; color: #0f172a;">Risk Assessment: <span style="color: {risk_color};">{risk_level}</span></span>
-                <span style="padding: 4px 10px; font-size: 12px; font-weight: bold; border-radius: 4px; {rec_badge_style}">REC: {recommendation}</span>
+                <span style="font-size: 18px; font-weight: 700; color: #0f172a;">Risk Assessment: <span style="color: {risk_color};">{safe_risk_level}</span></span>
+                <span style="padding: 4px 10px; font-size: 12px; font-weight: bold; border-radius: 4px; {rec_badge_style}">REC: {safe_recommendation}</span>
             </div>
             <p style="font-size: 14px; line-height: 1.5; color: #475569; margin: 5px 0 0 0;">{html_escape(risk_desc)}</p>
         </div>

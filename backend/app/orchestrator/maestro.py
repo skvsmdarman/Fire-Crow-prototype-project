@@ -91,6 +91,46 @@ def persist_findings(db: Session, job_id: str, findings: Sequence[Finding]) -> N
     db.commit()
 
 
+def _finding_fingerprint(finding: Finding) -> tuple[str, str, str, str]:
+    return (
+        finding.id,
+        finding.agent_source,
+        finding.title,
+        finding.evidence or "",
+    )
+
+
+def _dedupe_findings(findings: Sequence[Finding]) -> list[Finding]:
+    seen: set[tuple[str, str, str, str]] = set()
+    unique_findings: list[Finding] = []
+    for finding in findings:
+        fingerprint = _finding_fingerprint(finding)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        unique_findings.append(finding)
+    return unique_findings
+
+
+def get_reportable_findings(state: AuditState) -> list[Finding]:
+    """Return the tenant-visible finding set used by reports and external agent handoffs."""
+    if state.deduplicated_findings:
+        return _dedupe_findings([*state.deduplicated_findings, *state.exploit_proofs])
+    if state.scored_findings:
+        return _dedupe_findings(state.scored_findings)
+
+    return _dedupe_findings(
+        [
+            *state.static_findings,
+            *state.semgrep_findings,
+            *state.dependency_vulns,
+            *state.iac_findings,
+            *state.dynamic_findings,
+            *state.exploit_proofs,
+        ]
+    )
+
+
 def check_cancel_requested(db: Session, job_id: str, phase_name: str) -> None:
     db.expire_all()
     job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
@@ -402,7 +442,7 @@ def scoring_node(state: AuditState) -> Dict[str, Any]:
 
 
 def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
-    all_findings = [*state.static_findings, *state.dynamic_findings, *state.exploit_proofs]
+    all_findings = get_reportable_findings(state)
 
     reports_dir = os.path.join("workspace", "reports")
     os.makedirs(reports_dir, exist_ok=True)
@@ -457,11 +497,7 @@ def reporter_node(state: AuditState) -> Dict[str, Any]:
 
 
 def github_mcp_body(db: Session, state: AuditState) -> Dict[str, Any]:
-    # Pass deduplicated findings instead of raw ones if available
-    if state.deduplicated_findings:
-        all_findings = state.deduplicated_findings
-    else:
-        all_findings = [*state.static_findings, *state.dynamic_findings, *state.exploit_proofs]
+    all_findings = get_reportable_findings(state)
         
     result = run_github_mcp(
         job_id=state.job_id,
@@ -485,11 +521,7 @@ def github_mcp_node(state: AuditState) -> Dict[str, Any]:
 
 
 def google_agent_body(db: Session, state: AuditState) -> Dict[str, Any]:
-    # Obtain findings and remediations
-    if state.deduplicated_findings:
-        all_findings = state.deduplicated_findings
-    else:
-        all_findings = [*state.static_findings, *state.dynamic_findings, *state.exploit_proofs]
+    all_findings = get_reportable_findings(state)
         
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
     recipient_email = "audit-recipient@firecrow.dev"

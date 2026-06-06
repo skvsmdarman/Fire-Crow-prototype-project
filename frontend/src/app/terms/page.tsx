@@ -1,47 +1,53 @@
 import Link from "next/link";
 
+import PolicyLink from "../../components/PolicyLink";
+import PolicyPageTracker from "../../components/PolicyPageTracker";
+import { TERMS_VERSION } from "../../lib/policy";
+
 const TERMS = [
   {
     title: "1. Service Scope",
-    body: "FireCrow provides security audit orchestration for repositories and related runtime analysis workflows. The service may clone submitted repositories, execute scanners, generate findings, create reports, and retain operational logs required to show audit history.",
+    body: "FireCrow provides repository security audit orchestration, including repository intake, scanner execution, runtime validation workflows, report generation, and operational logging needed to show audit history and security events.",
   },
   {
-    title: "2. Authorized Use",
-    body: "You may only submit repositories, applications, systems, or targets that you own or are explicitly authorized to test. You are responsible for ensuring that each audit request complies with applicable law, internal policy, and third-party platform rules.",
+    title: "2. Authorized Use Only",
+    body: "You may only submit repositories, systems, applications, endpoints, or environments that you own or are explicitly authorized to test. You remain responsible for ensuring each audit request is lawful and contractually permitted.",
   },
   {
     title: "3. Security Testing Boundaries",
-    body: "FireCrow is designed for controlled defensive security work. You must not use the platform to attack, disrupt, overload, exfiltrate from, or gain unauthorized access to systems outside the scope of your authorization.",
+    body: "FireCrow is intended for controlled defensive security work. You must not use it to gain unauthorized access, exfiltrate data, overload services, or interfere with systems outside the scope of your authorization.",
   },
   {
-    title: "4. Workspace Sessions",
-    body: "Workspace sessions identify the tenant context used to access audit jobs and reports. Keep access tokens and workstation sessions secure. Notify Nova Devs if you believe a workspace token or report artifact has been exposed.",
+    title: "4. Workspace Authentication",
+    body: "Access to FireCrow depends on real workspace credentials or configured OAuth providers. You are responsible for protecting passwords, provider accounts, access tokens, and report artifacts associated with your workspace.",
   },
   {
-    title: "5. Data and Artifacts",
-    body: "Audit inputs, findings, logs, cloned repository metadata, and generated reports may contain sensitive security information. You are responsible for reviewing outputs before sharing them and for protecting downloaded report artifacts.",
+    title: "5. Reports and Remediation Output",
+    body: "Audit findings, evidence, remediation notes, and generated reports may contain sensitive security information. Review outputs carefully before sharing them outside the approved team or customer context.",
   },
   {
-    title: "6. No Guarantee of Complete Coverage",
-    body: "Security tooling can reduce risk but cannot guarantee that every vulnerability, misconfiguration, dependency issue, exploit path, or secret exposure will be detected. FireCrow findings should be reviewed by qualified personnel before remediation decisions are finalized.",
+    title: "6. No Warranty of Complete Detection",
+    body: "Security tooling can reduce risk but cannot guarantee detection of every vulnerability, misconfiguration, dependency issue, exploit path, or secret exposure. Findings should be reviewed by qualified personnel before remediation decisions are finalized.",
   },
   {
-    title: "7. Availability and Changes",
-    body: "Nova Devs may modify, suspend, or improve FireCrow components, agent behavior, reports, authentication flows, or integrations to improve reliability, security, or compliance.",
+    title: "7. Service Changes",
+    body: "Nova Devs may modify, suspend, replace, or improve FireCrow components, authentication flows, legal notices, integrations, reports, or agent behavior to improve reliability, security, and compliance.",
   },
   {
-    title: "8. Limitation of Liability",
-    body: "To the maximum extent permitted by law, Nova Devs is not liable for indirect, incidental, special, consequential, or punitive damages arising from use of FireCrow, including loss of data, revenue, profits, business opportunity, or security posture.",
+    title: "8. Liability Limits",
+    body: "To the maximum extent permitted by law, Nova Devs is not liable for indirect, incidental, special, consequential, or punitive damages arising from use of FireCrow, including losses connected with data, revenue, business opportunity, or security posture.",
   },
   {
-    title: "9. Contact",
-    body: "Questions about these terms, responsible disclosure, security concerns, or workspace access can be sent to security@novadevs.dev.",
+    title: "9. Contact and Grievance Channel",
+    body: "Questions about these terms, privacy, security concerns, or workspace access can be sent to the designated Grievance Officer / operator contact at security@novadevs.dev. Production deployments should replace this with the real grievance officer name, postal address, and contact details used by the operator.",
   },
 ];
 
 export default function TermsPage() {
   return (
     <main className="legal-shell">
+      <PolicyPageTracker policy="terms" policyVersion={TERMS_VERSION} source="terms_page" />
+
       <nav className="public-nav legal-nav" aria-label="Terms navigation">
         <Link className="public-brand" href="/">
           <span className="brand-mark">FC</span>
@@ -52,17 +58,20 @@ export default function TermsPage() {
         </Link>
         <div className="public-nav-links">
           <Link href="/">Home</Link>
+          <PolicyLink href="/privacy-policy" policy="privacy_policy" source="terms_nav">
+            Privacy Policy
+          </PolicyLink>
           <Link className="nav-cta" href="/signin">Sign in</Link>
         </div>
       </nav>
 
       <section className="legal-hero">
         <div className="section-kicker">Legal</div>
-        <h1>Terms and Conditions</h1>
+        <h1>Terms of Use</h1>
         <p>
-          These terms govern access to FireCrow FCv1, a security audit orchestration platform provided by Nova Devs.
+          These terms govern how FireCrow may be accessed and used for authorized security audit work.
         </p>
-        <span>Effective date: June 5, 2026</span>
+        <span>Version: {TERMS_VERSION}</span>
       </section>
 
       <section className="legal-card">
@@ -81,6 +90,9 @@ export default function TermsPage() {
         </div>
         <div className="footer-links">
           <Link href="/">Home</Link>
+          <PolicyLink href="/privacy-policy" policy="privacy_policy" source="terms_footer">
+            Privacy Policy
+          </PolicyLink>
           <Link href="/signin">Sign in</Link>
           <a href="mailto:security@novadevs.dev">security@novadevs.dev</a>
         </div>
