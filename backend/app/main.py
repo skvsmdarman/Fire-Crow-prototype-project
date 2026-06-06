@@ -1,6 +1,8 @@
 import os
+from pathlib import Path
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 
@@ -76,16 +78,6 @@ reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
 os.makedirs(reports_dir, exist_ok=True)
 
 
-@app.get("/")
-async def root():
-    return {
-        "name": "Fire Crow API",
-        "status": "healthy",
-        "version": "1.0.0",
-        "debug_mode": settings.DEBUG
-    }
-
-
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
     db_error = ""
@@ -101,3 +93,8 @@ async def health_check(db: Session = Depends(get_db)):
         "status": "up",
         "database": "connected" if db_ok else f"error: {db_error}"
     }
+
+
+frontend_dist_dir = Path(WORKSPACE_DIR) / "frontend" / "out"
+if frontend_dist_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist_dir), html=True), name="frontend")

@@ -1,0 +1,36 @@
+FROM node:20-alpine AS frontend-build
+WORKDIR /app/frontend
+
+COPY frontend/package*.json ./
+RUN npm install
+
+COPY frontend/ ./
+ENV NEXT_PUBLIC_API_URL=/api/v1
+RUN npm run build
+
+FROM python:3.12-slim AS backend-build
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       libpango-1.0-0 \
+       libpangocairo-1.0-0 \
+       libcairo2 \
+       libgdk-pixbuf-2.0-0 \
+       libffi-dev \
+       shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+COPY backend/ backend/
+COPY --from=frontend-build /app/frontend/out frontend/out
+
+EXPOSE 10000
+
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]

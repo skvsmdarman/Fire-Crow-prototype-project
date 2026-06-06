@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 export const PRIVACY_POLICY_VERSION = "2026-06-06";
 export const TERMS_VERSION = "2026-06-06";
 

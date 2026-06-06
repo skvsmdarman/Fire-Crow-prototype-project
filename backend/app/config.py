@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
@@ -73,6 +74,8 @@ class Settings(BaseSettings):
         if not self.DEBUG:
             if self.SECRET_KEY == "dev_secret_key_change_in_production_1234567890":
                 raise ValueError("Insecure default SECRET_KEY cannot be used in production.")
+        if not os.getenv("FRONTEND_URL") and os.getenv("RENDER_EXTERNAL_URL"):
+            object.__setattr__(self, "FRONTEND_URL", os.environ["RENDER_EXTERNAL_URL"])
         return self
 
 
