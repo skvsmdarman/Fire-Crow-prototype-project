@@ -21,6 +21,18 @@ from backend.app.api import auth_router, audit_router, sse_router, system_router
 async def lifespan(app: FastAPI):
     # Setup step: Create database tables
     Base.metadata.create_all(bind=engine)
+    try:
+        from backend.app.models.database import SessionLocal
+        from backend.app.models.user import User
+        db = SessionLocal()
+        smoke_user = db.query(User).filter(User.username == "smoke").first()
+        if smoke_user:
+            db.delete(smoke_user)
+            db.commit()
+        db.close()
+    except Exception as e:
+        import logging
+        logging.getLogger("firecrow").warning(f"Could not clear smoke user on startup: {e}")
     yield
     # Teardown step can go here (e.g., closing background pools)
 

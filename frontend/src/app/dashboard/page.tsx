@@ -4,22 +4,34 @@ import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Play, Square, RefreshCw, FileText, AlertTriangle, Terminal, Settings, LayoutGrid, Cpu, LogOut, HardDrive, Database, Globe, Fingerprint, User, Download
+  RefreshCw, FileText, Cpu, LogOut, HardDrive, Database, Globe, Fingerprint, User
 } from "lucide-react";
 
 import FireCrowLoader from "../../components/FireCrowLoader";
+import { useToast } from "../../components/ui/Toast";
+import Button from "../../components/ui/Button";
+import Card from "../../components/ui/Card";
+import Badge from "../../components/ui/Badge";
+
+import Sidebar, { Section } from "./components/Sidebar";
+import MetricsRow from "./components/MetricsRow";
+import AuditForm from "./components/AuditForm";
+import JobList from "./components/JobList";
+import PipelineViz from "./components/PipelineViz";
+import FindingsList from "./components/FindingsList";
+import LogStream from "./components/LogStream";
+
 import {
   fadeIn,
   fadeInUp,
-  fadeInLeft,
   staggerContainer,
   scaleUp,
   tabTransition
 } from "../../lib/animations";
+import styles from "./page.module.css";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
 type Severity = "critical" | "high" | "medium" | "low" | "info";
-type Section = "operations" | "reports" | "agents" | "settings";
 
 interface Job {
   id: string;
@@ -80,21 +92,8 @@ interface SystemStatus {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-
-const PIPELINE = [
-  "INTAKE",
-  "STATIC SCAN",
-  "SANDBOX",
-  "NETWORK",
-  "ATTACK",
-  "EXPLOIT",
-  "SCORING",
-  "REPORTER",
-  "GOOGLE AGENT",
-  "CLEANUP",
-];
-
 const TERMINAL_STATUSES: JobStatus[] = ["completed", "failed", "cancelled", "partial"];
+const TABS: Section[] = ["operations", "reports", "agents", "settings"];
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -114,7 +113,7 @@ function formatDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
-function statusLabel(job: Job): string {
+function statusLabel(job: Job): "queued" | "running" | "completed" | "failed" | "cancelled" | "partial" | "cancelling" {
   if (job.cancel_requested && !TERMINAL_STATUSES.includes(job.status)) {
     return "cancelling";
   }
@@ -123,10 +122,10 @@ function statusLabel(job: Job): string {
 
 function pipelineIndex(status: JobStatus, logs: LogLine[]): number {
   if (status === "queued") return 0;
-  if (status === "completed" || status === "partial") return PIPELINE.length - 1;
+  if (status === "completed" || status === "partial") return 9; // CLEANUP
   if (status === "failed" || status === "cancelled") return -1;
 
-  let index = 1;
+  let index = 1; // STATIC SCAN
   for (const log of logs) {
     const message = log.message.toLowerCase();
     if (message.includes("static") || message.includes("sast")) index = Math.max(index, 1);
@@ -144,14 +143,14 @@ function pipelineIndex(status: JobStatus, logs: LogLine[]): number {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { toast } = useToast();
+
   const [activeSection, setActiveSection] = useState<Section>("operations");
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [userId, setUserId] = useState("");
   const [authReady, setAuthReady] = useState(false);
 
-  const [repoUrl, setRepoUrl] = useState("");
-  const [repoBranch, setRepoBranch] = useState("main");
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -167,8 +166,11 @@ export default function Dashboard() {
   const [systemError, setSystemError] = useState("");
   const [loadingSystem, setLoadingSystem] = useState(false);
   const [reportError, setReportError] = useState("");
+  
   const abortControllerRef = useRef<AbortController | null>(null);
-  const terminalEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Touch Swipe Gesture State
+  const touchStartXRef = useRef<number | null>(null);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) || selectedJobDetail?.job || null,
@@ -186,7 +188,8 @@ export default function Dashboard() {
     localStorage.removeItem("fc_username");
     localStorage.removeItem("fc_user_id");
     router.replace("/signin");
-  }, [router]);
+    toast("Session expired. Please sign in again.", "error");
+  }, [router, toast]);
 
   const fetchSystemStatus = useCallback(async () => {
     if (!token) return;
@@ -215,6 +218,7 @@ export default function Dashboard() {
     async (jobId: string) => {
       if (!token) return;
       setReportError("");
+      toast("Retrieving report PDF...", "info");
       try {
         const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}/report`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -232,11 +236,14 @@ export default function Dashboard() {
         const reportUrl = window.URL.createObjectURL(blob);
         window.open(reportUrl, "_blank", "noopener,noreferrer");
         window.setTimeout(() => window.URL.revokeObjectURL(reportUrl), 60_000);
+        toast("Report opened successfully.", "success");
       } catch (error: unknown) {
-        setReportError(getErrorMessage(error, "Unable to open this report."));
+        const msg = getErrorMessage(error, "Unable to open this report.");
+        setReportError(msg);
+        toast(msg, "error");
       }
     },
-    [token, handleUnauthorized],
+    [token, handleUnauthorized, toast],
   );
 
   const fetchJobs = useCallback(async () => {
@@ -359,8 +366,7 @@ export default function Dashboard() {
     [fetchJobDetail, fetchJobs, stopLogStream, token],
   );
 
-  const submitScan = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleLaunchScan = async (repoUrl: string, repoBranch: string) => {
     if (!token) {
       setSubmitError("Connect a workspace before launching an audit.");
       return;
@@ -372,6 +378,7 @@ export default function Dashboard() {
 
     setSubmitting(true);
     setSubmitError("");
+    toast("Submitting repository intake request...", "info");
     try {
       const response = await fetch(`${API_BASE_URL}/audit/submit`, {
         method: "POST",
@@ -393,12 +400,14 @@ export default function Dashboard() {
       }
 
       const job = (await response.json()) as Job;
-      setRepoUrl("");
       setSelectedJobId(job.id);
       await fetchJobs();
       startLogStream(job.id);
+      toast("Audit job successfully queued!", "success");
     } catch (error: unknown) {
-      setSubmitError(getErrorMessage(error, "Unable to launch audit."));
+      const msg = getErrorMessage(error, "Unable to launch audit.");
+      setSubmitError(msg);
+      toast(msg, "error");
     } finally {
       setSubmitting(false);
     }
@@ -406,6 +415,7 @@ export default function Dashboard() {
 
   const cancelScan = async (jobId: string) => {
     if (!token) return;
+    toast("Requesting job cancellation...", "info");
     const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
@@ -417,6 +427,9 @@ export default function Dashboard() {
     if (response.ok) {
       fetchJobs();
       fetchJobDetail(jobId);
+      toast("Cancellation request transmitted.", "success");
+    } else {
+      toast("Unable to cancel job.", "error");
     }
   };
 
@@ -450,18 +463,19 @@ export default function Dashboard() {
         setUserId(savedUserId);
         setAuthReady(true);
       } catch {
-        // Fallback for network error / offline development
-        setToken(savedToken);
-        setUsername(savedUsername);
-        setUserId(savedUserId);
-        setAuthReady(true);
+        // Clear session and redirect to signin if backend is unreachable
+        localStorage.removeItem("fc_token");
+        localStorage.removeItem("fc_username");
+        localStorage.removeItem("fc_user_id");
+        router.replace("/signin");
       }
     };
 
     void validateToken();
-  }, [router, handleUnauthorized]);
+  }, [router]);
 
   const signOut = () => {
+    toast("Signing out...", "info");
     if (token) {
       void fetch(`${API_BASE_URL}/auth/logout`, {
         method: "POST",
@@ -501,19 +515,37 @@ export default function Dashboard() {
     }
   }, [fetchJobDetail, fetchJobs, selectedJob, token]);
 
-  useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
-
   const activeStep = selectedJob ? pipelineIndex(selectedJob.status, logs) : 0;
 
-  const sectionIcon = (section: Section) => {
-    switch (section) {
-      case "operations": return <LayoutGrid className="nav-icon" size={16} />;
-      case "reports": return <FileText className="nav-icon" size={16} />;
-      case "agents": return <Cpu className="nav-icon" size={16} />;
-      case "settings": return <Settings className="nav-icon" size={16} />;
+  // Swipe Gesture Handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchStartXRef.current - touchEndX;
+    const currentTabIndex = TABS.indexOf(activeSection);
+
+    if (Math.abs(diffX) > 72) {
+      if (diffX > 0) {
+        // Swiped Left -> Next tab
+        if (currentTabIndex < TABS.length - 1) {
+          const nextTab = TABS[currentTabIndex + 1];
+          setActiveSection(nextTab);
+          toast(`Navigated to ${nextTab}`, "info");
+        }
+      } else {
+        // Swiped Right -> Previous tab
+        if (currentTabIndex > 0) {
+          const prevTab = TABS[currentTabIndex - 1];
+          setActiveSection(prevTab);
+          toast(`Navigated to ${prevTab}`, "info");
+        }
+      }
     }
+    touchStartXRef.current = null;
   };
 
   if (!authReady) {
@@ -530,68 +562,43 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="shell">
+    <main className={styles.shell}>
       {/* Glow Orbs */}
       <div className="auth-glow-orb auth-glow-orb-1" style={{ opacity: 0.15 }} />
       <div className="auth-glow-orb auth-glow-orb-2" style={{ opacity: 0.15 }} />
 
-      <motion.aside
-        variants={fadeInLeft}
-        initial="hidden"
-        animate="visible"
-        className="sidebar"
-      >
-        <div className="brand-block">
-          <div className="brand-mark">FC</div>
-          <div>
-            <div className="brand-name">FireCrow</div>
-            <div className="brand-subtitle">FCv1 Security Audit</div>
-          </div>
-        </div>
-
-        <nav className="nav-stack" aria-label="Primary navigation">
-          {(["operations", "reports", "agents", "settings"] as Section[]).map((section) => (
-            <motion.button
-              whileHover={{ x: 4, background: "rgba(255, 114, 0, 0.08)" }}
-              whileTap={{ scale: 0.98 }}
-              key={section}
-              className={`nav-item ${activeSection === section ? "nav-item-active" : ""}`}
-              type="button"
-              aria-current={activeSection === section ? "page" : undefined}
-              onClick={() => setActiveSection(section)}
-            >
-              {sectionIcon(section)}
-              <span style={{ textTransform: "capitalize" }}>{section}</span>
-            </motion.button>
-          ))}
-        </nav>
-
-        <div className="workspace-card" style={{ position: "relative", overflow: "hidden" }}>
-          <div className="auth-card-accent" />
-          <div className="section-kicker">Workspace</div>
-          <div className="workspace-name">{username || "Not connected"}</div>
-          <div className="workspace-id" style={{ opacity: 0.5, fontSize: "10px" }}>{userId || "Connect to access audit history"}</div>
-        </div>
-      </motion.aside>
+      <Sidebar
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+        username={username}
+        userId={userId}
+      />
 
       <motion.section
         variants={fadeIn}
         initial="hidden"
         animate="visible"
-        className="main-surface"
+        className={styles.mainSurface}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       >
-        <header className="topbar">
+        <header className={styles.topbar}>
           <div>
-            <div className="section-kicker">Command Center</div>
-            <h1 style={{ textTransform: "capitalize" }}>{activeSection}</h1>
+            <div className={styles.sectionKicker}>Command Center</div>
+            <h1>{activeSection}</h1>
           </div>
-          <div className="workspace-session">
+          <div className={styles.workspaceSession}>
             <User size={13} style={{ color: "var(--fire)", marginRight: 2 }} />
             <span>{username}</span>
-            <button className="ghost-action" type="button" onClick={signOut} style={{ height: "28px", minHeight: "28px", fontSize: "11px", padding: "0 8px" }}>
-              <LogOut size={12} style={{ marginRight: 4 }} />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              style={{ minHeight: "28px", fontSize: "11px", padding: "0 8px" }}
+            >
+              <LogOut size={12} />
               Sign out
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -604,189 +611,58 @@ export default function Dashboard() {
               exit="exit"
               variants={staggerContainer}
             >
-              <motion.section variants={fadeInUp} className="metrics-grid" aria-label="Audit metrics">
-                <Metric label="Active audits" value={activeJobs.toString()} icon={<ActivityIcon />} />
-                <Metric label="Jobs in workspace" value={jobs.length.toString()} icon={<Terminal size={18} />} />
-                <Metric label="Critical findings" value={criticalFindings.toString()} tone={criticalFindings > 0 ? "danger" : "neutral"} icon={<AlertTriangle size={18} />} />
-                <Metric label="Latest report" value={latestReport ? "Ready" : "None"} icon={<FileText size={18} />} />
-              </motion.section>
+              <motion.div variants={fadeInUp}>
+                <MetricsRow
+                  activeAudits={activeJobs}
+                  totalJobs={jobs.length}
+                  criticalFindings={criticalFindings}
+                  latestReport={latestReport}
+                />
+              </motion.div>
 
-              <div className="work-grid">
-                <motion.div variants={scaleUp} className="panel launch-panel" style={{ position: "relative", overflow: "hidden" }}>
-                  <div className="auth-card-accent" />
-                  <div className="panel-header">
-                    <div>
-                      <div className="section-kicker">New Audit</div>
-                      <h2>Repository intake</h2>
-                    </div>
-                  </div>
-
-                  <form onSubmit={submitScan} className="audit-form">
-                    <label>
-                      Repository URL
-                      <input
-                        value={repoUrl}
-                        onChange={(event) => setRepoUrl(event.target.value)}
-                        placeholder="https://github.com/org/repository"
-                      />
-                    </label>
-                    <label>
-                      Branch or ref
-                      <input value={repoBranch} onChange={(event) => setRepoBranch(event.target.value)} placeholder="main" />
-                    </label>
-                    {submitError && <div className="notice notice-error">{submitError}</div>}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="primary-action"
-                      type="submit"
-                      disabled={submitting}
-                    >
-                      {submitting ? <RefreshCw className="animate-spin" size={16} /> : <Play size={14} style={{ marginRight: 6 }} />}
-                      {submitting ? "Launching" : "Launch audit"}
-                    </motion.button>
-                  </form>
+              <div className={styles.workGrid}>
+                <motion.div variants={scaleUp}>
+                  <AuditForm
+                    onSubmit={handleLaunchScan}
+                    submitting={submitting}
+                    submitError={submitError}
+                  />
                 </motion.div>
 
-                <motion.div variants={scaleUp} className="panel queue-panel">
-                  <div className="panel-header">
-                    <div>
-                      <div className="section-kicker">Queue</div>
-                      <h2>Audit history</h2>
-                    </div>
-                    <button className="ghost-action" type="button" onClick={fetchJobs} disabled={!token || loadingJobs} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
-                      <RefreshCw className={loadingJobs ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
-                      Refresh
-                    </button>
-                  </div>
-
-                  <div className="job-list">
-                    {jobs.length === 0 ? (
-                      <div className="empty-state">No audits in this workspace.</div>
-                    ) : (
-                      jobs.map((job) => (
-                        <motion.button
-                          whileHover={{ scale: 1.01, x: 2 }}
-                          whileTap={{ scale: 0.99 }}
-                          key={job.id}
-                          className={`job-row ${job.id === selectedJobId ? "job-row-active" : ""}`}
-                          type="button"
-                          onClick={() => {
-                            setSelectedJobId(job.id);
-                            fetchJobDetail(job.id);
-                            startLogStream(job.id);
-                          }}
-                        >
-                          <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <Terminal size={14} style={{ color: "var(--fire)" }} />
-                            <span style={{ textAlign: "left" }}>
-                              <strong>{shortRepoName(job.repo_url)}</strong>
-                              <small>{job.repo_branch} / {formatDateTime(job.created_at)}</small>
-                            </span>
-                          </span>
-                          <span className={`status-pill status-${statusLabel(job)}`}>{statusLabel(job)}</span>
-                        </motion.button>
-                      ))
-                    )}
-                  </div>
+                <motion.div variants={scaleUp}>
+                  <JobList
+                    jobs={jobs}
+                    selectedJobId={selectedJobId}
+                    loadingJobs={loadingJobs}
+                    onRefresh={fetchJobs}
+                    onJobSelect={(jobId) => {
+                      setSelectedJobId(jobId);
+                      fetchJobDetail(jobId);
+                      startLogStream(jobId);
+                    }}
+                  />
                 </motion.div>
               </div>
 
-              <div className="detail-grid">
-                <motion.div variants={scaleUp} className="panel pipeline-panel">
-                  <div className="panel-header">
-                    <div>
-                      <div className="section-kicker">Maestro</div>
-                      <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
-                    </div>
-                    <div className="header-actions">
-                      {selectedJob?.report_pdf_url && (
-                        <button className="ghost-action" type="button" onClick={() => openReport(selectedJob.id)}>
-                          <Download size={14} style={{ marginRight: 4 }} />
-                          Report
-                        </button>
-                      )}
-                      {selectedJob && (selectedJob.status === "queued" || selectedJob.status === "running") && !selectedJob.cancel_requested && (
-                        <button className="danger-action" type="button" onClick={() => cancelScan(selectedJob.id)}>
-                          <Square size={12} style={{ marginRight: 4 }} />
-                          Cancel
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pipeline">
-                    {PIPELINE.map((phase, index) => (
-                      <div
-                        key={phase}
-                        className={`pipeline-step ${activeStep > index ? "pipeline-done" : ""} ${activeStep === index ? "pipeline-current" : ""}`}
-                      >
-                        <span>{String(index).padStart(2, "0")}</span>
-                        <strong>{phase}</strong>
-                      </div>
-                    ))}
-                  </div>
-
-                  {selectedJob && TERMINAL_STATUSES.includes(selectedJob.status) && selectedJob.error_message && (
-                    <div className="notice notice-error">{selectedJob.error_message}</div>
-                  )}
-                  {reportError && <div className="notice notice-error">{reportError}</div>}
+              <div className={styles.detailGrid}>
+                <motion.div variants={scaleUp}>
+                  <PipelineViz
+                    job={selectedJob}
+                    activeStep={activeStep}
+                    onOpenReport={openReport}
+                    onCancel={cancelScan}
+                    reportError={reportError}
+                  />
                 </motion.div>
 
-                <motion.div variants={scaleUp} className="panel findings-panel">
-                  <div className="panel-header">
-                    <div>
-                      <div className="section-kicker">Findings</div>
-                      <h2>{loadingDetail ? "Loading" : `${findings.length} total`}</h2>
-                    </div>
-                  </div>
-
-                  <div className="finding-list">
-                    {findings.length === 0 ? (
-                      <div className="empty-state">No findings released for this audit.</div>
-                    ) : (
-                      findings.map((finding) => (
-                        <motion.article whileHover={{ scale: 1.01 }} className="finding-row" key={finding.id}>
-                          <div>
-                            <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
-                            <h3>{finding.title}</h3>
-                            <p>{finding.description}</p>
-                          </div>
-                          <div className="finding-meta">
-                            <span>{finding.agent_source}</span>
-                            <strong>{finding.cvss_score ? finding.cvss_score.toFixed(1) : "CVSS -"}</strong>
-                          </div>
-                        </motion.article>
-                      ))
-                    )}
-                  </div>
+                <motion.div variants={scaleUp}>
+                  <FindingsList findings={findings} loading={loadingDetail} />
                 </motion.div>
               </div>
 
-              <motion.section variants={scaleUp} className="panel log-panel">
-                <div className="panel-header">
-                  <div>
-                    <div className="section-kicker">Live Trace</div>
-                    <h2>Agent stream</h2>
-                  </div>
-                  <span className={`stream-state ${streamActive ? "stream-live" : ""}`}>{streamActive ? "live" : "idle"}</span>
-                </div>
-
-                <div className="log-list">
-                  {logs.length === 0 ? (
-                    <div className="empty-state">Select a running audit to stream logs.</div>
-                  ) : (
-                    logs.map((log) => (
-                      <div className="log-row" key={`${log.id}-${log.timestamp}`}>
-                        <span>{formatDateTime(log.timestamp)}</span>
-                        <strong>{log.agent_name}</strong>
-                        <p>{log.message}</p>
-                      </div>
-                    ))
-                  )}
-                  <div ref={terminalEndRef} />
-                </div>
-              </motion.section>
+              <motion.div variants={scaleUp}>
+                <LogStream logs={logs} streamActive={streamActive} />
+              </motion.div>
             </motion.div>
           )}
 
@@ -797,49 +673,62 @@ export default function Dashboard() {
               animate="visible"
               exit="exit"
               variants={tabTransition}
-              className="section-body"
+              className={styles.sectionBody}
             >
-              <div className="panel">
-                <div className="panel-header">
+              <Card variant="surface" className={styles.panel}>
+                <div className={styles.panelHeader}>
                   <div>
-                    <div className="section-kicker">Reports</div>
+                    <div className={styles.sectionKicker}>Reports</div>
                     <h2>Released audit artifacts</h2>
                   </div>
-                  <button className="ghost-action" type="button" onClick={fetchJobs} disabled={!token || loadingJobs} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
-                    <RefreshCw className={loadingJobs ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={fetchJobs}
+                    disabled={!token || loadingJobs}
+                  >
+                    <RefreshCw className={loadingJobs ? styles.spin : ""} size={12} />
                     Refresh
-                  </button>
+                  </Button>
                 </div>
 
-                <div className="report-list">
-                  {reportError && <div className="notice notice-error">{reportError}</div>}
+                <div className={styles.reportList}>
+                  {reportError && <div className={styles.noticeError}>{reportError}</div>}
                   {!token ? (
-                    <div className="empty-state">Connect a workspace to view reports.</div>
+                    <div className={styles.emptyState}>Connect a workspace to view reports.</div>
                   ) : reportJobs.length === 0 ? (
-                    <div className="empty-state">No terminal audit reports exist in this workspace yet.</div>
+                    <div className={styles.emptyState}>
+                      No terminal audit reports exist in this workspace yet.
+                    </div>
                   ) : (
                     reportJobs.map((job) => (
-                      <motion.article whileHover={{ scale: 1.01 }} className="report-row" key={job.id}>
+                      <motion.article
+                        whileHover={{ scale: 1.01 }}
+                        className={styles.reportRow}
+                        key={job.id}
+                      >
                         <div>
-                          <span className={`status-pill status-${statusLabel(job)}`}>{statusLabel(job)}</span>
+                          <Badge variant="status" type={statusLabel(job)}>
+                            {statusLabel(job)}
+                          </Badge>
                           <h3>{shortRepoName(job.repo_url)}</h3>
                           <p>
                             Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}
                           </p>
                         </div>
                         {job.report_pdf_url ? (
-                          <button className="ghost-action" type="button" onClick={() => openReport(job.id)}>
-                            <FileText size={14} style={{ marginRight: 4 }} />
+                          <Button variant="ghost" size="sm" onClick={() => openReport(job.id)}>
+                            <FileText size={14} />
                             Open report
-                          </button>
+                          </Button>
                         ) : (
-                          <span className="report-missing">No PDF artifact</span>
+                          <span className={styles.reportMissing}>No PDF artifact</span>
                         )}
                       </motion.article>
                     ))
                   )}
                 </div>
-              </div>
+              </Card>
             </motion.div>
           )}
 
@@ -850,56 +739,59 @@ export default function Dashboard() {
               animate="visible"
               exit="exit"
               variants={tabTransition}
-              className="section-body"
+              className={styles.sectionBody}
             >
-              <div className="panel">
-                <div className="panel-header">
+              <Card variant="surface" className={styles.panel}>
+                <div className={styles.panelHeader}>
                   <div>
-                    <div className="section-kicker">Agents</div>
+                    <div className={styles.sectionKicker}>Agents</div>
                     <h2>Runtime readiness</h2>
                   </div>
-                  <button className="ghost-action" type="button" onClick={fetchSystemStatus} disabled={loadingSystem} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
-                    <RefreshCw className={loadingSystem ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={fetchSystemStatus}
+                    disabled={loadingSystem}
+                  >
+                    <RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />
                     Check status
-                  </button>
+                  </Button>
                 </div>
 
-                {systemError && <div className="notice notice-error">{systemError}</div>}
+                {systemError && <div className={styles.noticeError}>{systemError}</div>}
 
-                <div className="agent-grid">
+                <div className={styles.agentGrid}>
                   {(systemStatus?.agents || []).map((agent) => (
-                    <motion.article whileHover={{ scale: 1.02, y: -2 }} className="agent-card" key={agent.name} style={{ position: "relative", overflow: "hidden" }}>
-                      <div className="auth-card-accent" />
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                        <span className="stream-state stream-live" style={{ background: "rgba(0,230,118,0.1)", color: "var(--green)" }}>{agent.status}</span>
+                    <motion.article
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      className={styles.agentCard}
+                      key={agent.name}
+                    >
+                      <div className={styles.authCardAccent} />
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          marginBottom: 12,
+                        }}
+                      >
+                        <Badge variant="simple" type="live" pulse>
+                          {agent.status}
+                        </Badge>
                         <Cpu size={16} style={{ color: "var(--fire)" }} />
                       </div>
                       <h3>{agent.name}</h3>
-                      <p style={{ fontSize: "12px", color: "var(--dim)", marginTop: "4px" }}>{agent.role}</p>
+                      <p style={{ fontSize: "12px", color: "var(--dim)", marginTop: "4px" }}>
+                        {agent.role}
+                      </p>
                     </motion.article>
                   ))}
                   {!systemStatus && !systemError && (
-                    <div className="empty-state">Checking backend agent readiness.</div>
+                    <div className={styles.emptyState}>Checking backend agent readiness.</div>
                   )}
                 </div>
-              </div>
-
-              <div className="panel">
-                <div className="panel-header">
-                  <div>
-                    <div className="section-kicker">Maestro Topology</div>
-                    <h2>Execution graph</h2>
-                  </div>
-                </div>
-                <div className="pipeline">
-                  {PIPELINE.map((phase, index) => (
-                    <div key={phase} className="pipeline-step pipeline-current">
-                      <span>{String(index).padStart(2, "0")}</span>
-                      <strong>{phase}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              </Card>
             </motion.div>
           )}
 
@@ -910,41 +802,72 @@ export default function Dashboard() {
               animate="visible"
               exit="exit"
               variants={tabTransition}
-              className="section-body"
+              className={styles.sectionBody}
             >
-              <div className="panel">
-                <div className="panel-header">
+              <Card variant="surface" className={styles.panel}>
+                <div className={styles.panelHeader}>
                   <div>
-                    <div className="section-kicker">Settings</div>
+                    <div className={styles.sectionKicker}>Settings</div>
                     <h2>Backend and workspace status</h2>
                   </div>
-                  <button className="ghost-action" type="button" onClick={fetchSystemStatus} disabled={loadingSystem} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
-                    <RefreshCw className={loadingSystem ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={fetchSystemStatus}
+                    disabled={loadingSystem}
+                  >
+                    <RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />
                     Refresh
-                  </button>
+                  </Button>
                 </div>
 
-                {systemError && <div className="notice notice-error">{systemError}</div>}
+                {systemError && <div className={styles.noticeError}>{systemError}</div>}
 
-                <div className="settings-grid">
-                  <StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} icon={<Globe size={14} />} />
-                  <StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} icon={<Database size={14} />} />
-                  <StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Sandbox simulation"} tone="warn" icon={<HardDrive size={14} />} />
-                  <StatusCard label="Workspace" value={username || "Not connected"} tone={username ? "good" : "warn"} icon={<Fingerprint size={14} />} />
+                <div className={styles.settingsGrid}>
+                  <StatusCard
+                    label="API"
+                    value={systemStatus?.api || "checking"}
+                    tone={systemStatus?.api === "online" ? "good" : "warn"}
+                    icon={<Globe size={14} />}
+                  />
+                  <StatusCard
+                    label="Database"
+                    value={systemStatus?.database || "checking"}
+                    tone={systemStatus?.database === "connected" ? "good" : "warn"}
+                    icon={<Database size={14} />}
+                  />
+                  <StatusCard
+                    label="Sandbox"
+                    value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Simulation"}
+                    tone="warn"
+                    icon={<HardDrive size={14} />}
+                  />
+                  <StatusCard
+                    label="Workspace"
+                    value={username || "Not connected"}
+                    tone={username ? "good" : "warn"}
+                    icon={<Fingerprint size={14} />}
+                  />
                 </div>
 
-                <div className="integration-list" style={{ marginTop: "20px" }}>
+                <div className={styles.integrationList}>
                   {Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => (
-                    <motion.div whileHover={{ x: 2 }} className="integration-row" key={name} style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
-                      <span style={{ textTransform: "capitalize" }}>{name.replaceAll("_", " ")}</span>
-                      <strong className={enabled ? "integration-on" : "integration-off"}>{enabled ? "configured" : "not configured"}</strong>
+                    <motion.div
+                      whileHover={{ x: 2 }}
+                      className={styles.integrationRow}
+                      key={name}
+                    >
+                      <span>{name.replaceAll("_", " ")}</span>
+                      <strong className={enabled ? styles.integrationOn : styles.integrationOff}>
+                        {enabled ? "configured" : "not configured"}
+                      </strong>
                     </motion.div>
                   ))}
                   {!systemStatus && !systemError && (
-                    <div className="empty-state">System status has not loaded yet.</div>
+                    <div className={styles.emptyState}>System status has not loaded yet.</div>
                   )}
                 </div>
-              </div>
+              </Card>
             </motion.div>
           )}
         </AnimatePresence>
@@ -953,35 +876,29 @@ export default function Dashboard() {
   );
 }
 
-function ActivityIcon() {
-  return (
-    <span style={{ display: "inline-flex", width: "10px", height: "10px", borderRadius: "50%", background: "var(--green)", position: "relative" }}>
-      <span className="animate-ping" style={{ position: "absolute", display: "inline-flex", height: "100%", width: "100%", borderRadius: "50%", background: "var(--green)", opacity: 0.75 }} />
-    </span>
-  );
-}
+function StatusCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: string;
+  tone: "good" | "warn";
+  icon?: React.ReactNode;
+}) {
+  const cardClass = [
+    styles.statusCard,
+    tone === "good" ? styles.statusCardGood : styles.statusCardWarn,
+  ].join(" ");
 
-function Metric({ label, value, tone = "neutral", icon }: { label: string; value: string; tone?: "neutral" | "danger"; icon?: React.ReactNode }) {
   return (
-    <div className={`metric metric-${tone}`} style={{ position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-      <div className="auth-card-accent" />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+    <div className={cardClass}>
+      <div className={styles.statusCardHeader}>
         <span>{label}</span>
         {icon}
       </div>
       <strong>{value}</strong>
-    </div>
-  );
-}
-
-function StatusCard({ label, value, tone, icon }: { label: string; value: string; tone: "good" | "warn"; icon?: React.ReactNode }) {
-  return (
-    <div className={`status-card status-card-${tone}`} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span>{label}</span>
-        {icon}
-      </div>
-      <strong style={{ fontSize: "18px", marginTop: "12px", display: "block" }}>{value}</strong>
     </div>
   );
 }

@@ -24,6 +24,8 @@ export const metadata: Metadata = {
     "AI-powered security audit operations for GitHub repositories, Kali sandbox testing, CVSS scoring, and executive-ready reports.",
 };
 
+import { ToastProvider } from "../components/ui/Toast";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -31,7 +33,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable} ${rajdhani.variable}`}>
-      <body>{children}</body>
+      <body>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
+      </body>
     </html>
   );
 }

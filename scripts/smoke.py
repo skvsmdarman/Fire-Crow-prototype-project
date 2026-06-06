@@ -79,6 +79,7 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
             body={
                 "username": "smoke",
                 "password": "strongpassword123",
+                "email": "smoke-test@firecrow.dev",
                 "privacy_policy_accepted": True,
                 "privacy_policy_version": "2026-06-06"
             }

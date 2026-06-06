@@ -669,8 +669,23 @@ class ReportGenerator:
 
         # 2. Fallback to Resend
         if not (RESEND_AVAILABLE and self.resend_api_key):
-            logger.warning("Resend API key not configured or package missing. Skipping notification email.")
-            return False
+            logger.warning("Resend API key not configured or package missing. Saving notification email locally.")
+            try:
+                import re
+                from datetime import datetime
+                sent_emails_dir = os.path.join("workspace", "sent_emails")
+                os.makedirs(sent_emails_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
+                filename = f"{timestamp}_{safe_email}_audit_report.html"
+                filepath = os.path.join(sent_emails_dir, filename)
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(html_body)
+                logger.info(f"Local email report saved to: {filepath}")
+                return True
+            except Exception as le:
+                logger.error(f"Failed to save local fallback email: {le}")
+                return False
 
         try:
             logger.info(f"Sending transactional email report to {to_email} via Resend")
@@ -686,5 +701,20 @@ class ReportGenerator:
             logger.info("Transactional email successfully sent via Resend.")
             return True
         except Exception as e:
-            logger.error(f"Failed to send email via Resend: {str(e)}")
-            return False
+            logger.error(f"Failed to send email via Resend: {str(e)}. Saving notification email locally.")
+            try:
+                import re
+                from datetime import datetime
+                sent_emails_dir = os.path.join("workspace", "sent_emails")
+                os.makedirs(sent_emails_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
+                filename = f"{timestamp}_{safe_email}_audit_report.html"
+                filepath = os.path.join(sent_emails_dir, filename)
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(html_body)
+                logger.info(f"Local email report saved to: {filepath}")
+                return True
+            except Exception as le:
+                logger.error(f"Failed to save local fallback email: {le}")
+                return False

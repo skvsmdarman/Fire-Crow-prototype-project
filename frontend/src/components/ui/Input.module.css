@@ -1,0 +1,119 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.label {
+  color: var(--dim);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: rgba(5, 6, 9, 0.72);
+  color: var(--text);
+  outline: none;
+  padding: 12px 14px;
+  transition: border-color var(--duration-normal) var(--ease-smooth),
+              box-shadow var(--duration-normal) var(--ease-smooth);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.input:focus {
+  border-color: rgba(255, 114, 0, 0.72);
+  box-shadow: var(--focus-ring);
+}
+
+/* Left Icon Integration */
+.hasLeftIcon .input {
+  padding-left: 42px;
+}
+
+.leftIcon {
+  position: absolute;
+  left: 14px;
+  color: var(--muted);
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--duration-normal) var(--ease-smooth);
+}
+
+.input:focus ~ .leftIcon,
+.inputWrapper:focus-within .leftIcon {
+  color: var(--orange);
+}
+
+/* Right Icon Integration */
+.hasRightIcon .input {
+  padding-right: 42px;
+}
+
+.rightIcon,
+.rightIconButton {
+  position: absolute;
+  right: 14px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rightIcon {
+  pointer-events: none;
+}
+
+.rightIconButton {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color var(--duration-fast) var(--ease-smooth),
+              background-color var(--duration-fast) var(--ease-smooth);
+}
+
+.rightIconButton:hover {
+  color: var(--text);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Error States */
+.inputError .input {
+  border-color: rgba(255, 48, 71, 0.6);
+  background-color: rgba(255, 48, 71, 0.03);
+}
+
+.inputError .input:focus {
+  box-shadow: 0 0 0 3px rgba(255, 48, 71, 0.15);
+}
+
+.errorMessage {
+  color: var(--red);
+  font-size: 11px;
+  font-family: var(--font-mono), monospace;
+  margin-top: 2px;
+  animation: shake 0.3s var(--ease-out-expo) both;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}

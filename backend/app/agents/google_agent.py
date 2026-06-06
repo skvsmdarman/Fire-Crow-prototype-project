@@ -159,8 +159,11 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         risk_level = "UNKNOWN"
     if recommendation not in {"BLOCK", "REVIEW", "APPROVE"}:
         recommendation = "REVIEW"
-    risk_desc = pr_risk_analysis.get("risk_description", "")
-    key_factors = pr_risk_analysis.get("key_risk_factors", [])
+    risk_desc = str(pr_risk_analysis.get("risk_description", ""))
+    raw_factors = pr_risk_analysis.get("key_risk_factors", [])
+    if not isinstance(raw_factors, list):
+        raw_factors = [raw_factors]
+    key_factors: List[str] = [str(f) for f in raw_factors]
     
     # Visual styling based on risk level
     risk_color = "#ef4444"  # Red
@@ -252,7 +255,23 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             logs.append(f"Resend email delivery failed: {e}.")
 
     if not delivered:
-        logs.append("No active mail gateway was able to transmit the PR risk email. Logged output to console.")
+        try:
+            import os
+            import re
+            from datetime import datetime
+            sent_emails_dir = os.path.join("workspace", "sent_emails")
+            os.makedirs(sent_emails_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', recipient_email)
+            filename = f"{timestamp}_{safe_email}_google_agent_alert.html"
+            filepath = os.path.join(sent_emails_dir, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(html_body)
+            delivered = True
+            logs.append(f"Saved fallback local Google Security Agent PR risk assessment HTML email report to: {filepath}")
+        except Exception as le:
+            logs.append(f"Failed to write local fallback email: {le}")
+            logs.append("No active mail gateway was able to transmit the PR risk email. Logged output to console.")
         
     return {
         "google_agent_delivered": delivered,

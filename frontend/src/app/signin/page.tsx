@@ -96,16 +96,11 @@ export default function SignInPage() {
     const loadPolicyContext = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/auth/policy-context`);
-        if (!response.ok) {
-          throw new Error("Unable to load authentication context.");
+        if (response.ok) {
+          setPolicyContext((await response.json()) as PolicyContext);
         }
-        setPolicyContext((await response.json()) as PolicyContext);
       } catch (contextError) {
-        setError(
-          contextError instanceof Error
-            ? contextError.message
-            : "Unable to load authentication context.",
-        );
+        console.warn("Could not load policy context from backend. Standard mode enabled.", contextError);
       } finally {
         setLoadingContext(false);
       }
@@ -230,7 +225,12 @@ export default function SignInPage() {
       persistSession(session);
       router.push("/dashboard");
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "Unable to complete authentication.");
+      const errMsg = authError instanceof Error ? authError.message : "";
+      if (errMsg.toLowerCase().includes("failed to fetch") || errMsg.toLowerCase().includes("fetch")) {
+        setError("Could not connect to workspace services. Please try again later.");
+      } else {
+        setError(errMsg || "Unable to complete authentication.");
+      }
     } finally {
       setLoading(false);
     }

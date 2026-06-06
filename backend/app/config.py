@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         validation_alias="REDIS_URL"
     )
     REDIS_PASSWORD: str = Field(default="", validation_alias="REDIS_PASSWORD")
-    FIRE_CROW_MOCK_SANDBOX: bool = Field(default=True, validation_alias="FIRE_CROW_MOCK_SANDBOX")
+    FIRE_CROW_MOCK_SANDBOX: bool = Field(default=False, validation_alias="FIRE_CROW_MOCK_SANDBOX")
 
     # --- GitHub Integrations ---
     GITHUB_CLIENT_ID: str = Field(default="", validation_alias="GITHUB_CLIENT_ID")
