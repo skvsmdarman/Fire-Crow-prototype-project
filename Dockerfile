@@ -23,6 +23,7 @@ RUN apt-get update \
        libgdk-pixbuf-2.0-0 \
        libffi-dev \
        shared-mime-info \
+       git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt backend/requirements.txt
