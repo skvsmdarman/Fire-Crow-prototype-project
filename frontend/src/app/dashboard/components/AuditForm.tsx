@@ -6,6 +6,7 @@ import Card from "../../../components/ui/Card";
 import Input from "../../../components/ui/Input";
 import Button from "../../../components/ui/Button";
 import styles from "../page.module.css";
+import mobile from "../mobile.module.css";
 
 interface AuditFormProps {
   onSubmit: (repoUrl: string, repoBranch: string) => Promise<void>;
@@ -33,12 +34,7 @@ export default function AuditForm({ onSubmit, submitting, submitError }: AuditFo
   const [selectedScopes, setSelectedScopes] = useState<string[]>(() => [...DEFENSIVE_SCOPES]);
   const [localError, setLocalError] = useState("");
 
-  const canMoveNext = useMemo(() => {
-    if (step === 1) {
-      return repoUrl.trim().length > 0;
-    }
-    return true;
-  }, [repoUrl, step]);
+  const canMoveNext = useMemo(() => step !== 1 || repoUrl.trim().length > 0, [repoUrl, step]);
 
   const nextStep = () => {
     if (!canMoveNext) {
@@ -79,20 +75,14 @@ export default function AuditForm({ onSubmit, submitting, submitError }: AuditFo
           <div className={styles.sectionKicker}>New Audit</div>
           <h2>Authorized audit wizard</h2>
         </div>
-        <span className={styles.wizardStepPill}>
-          Step {step + 1} of {WIZARD_STEPS.length}
-        </span>
+        <span className={mobile.wizardStepPill}>Step {step + 1} of {WIZARD_STEPS.length}</span>
       </div>
 
-      <ol className={styles.wizardProgress} aria-label="Audit setup progress">
+      <ol className={mobile.wizardProgress} aria-label="Audit setup progress">
         {WIZARD_STEPS.map((label, index) => (
           <li
             key={label}
-            className={[
-              styles.wizardProgressStep,
-              index === step ? styles.wizardProgressActive : "",
-              index < step ? styles.wizardProgressDone : "",
-            ]
+            className={[mobile.wizardProgressStep, index === step ? mobile.wizardProgressActive : "", index < step ? mobile.wizardProgressDone : ""]
               .filter(Boolean)
               .join(" ")}
           >
@@ -104,69 +94,44 @@ export default function AuditForm({ onSubmit, submitting, submitError }: AuditFo
 
       <form onSubmit={handleSubmit} className={styles.auditForm}>
         {step === 0 && (
-          <section className={styles.wizardPanel} aria-labelledby="audit-source-title">
-            <div className={styles.wizardIconCard} aria-hidden="true">
+          <section className={mobile.wizardPanel} aria-labelledby="audit-source-title">
+            <div className={mobile.wizardIconCard} aria-hidden="true">
               <ShieldCheck size={22} />
             </div>
             <div>
               <h3 id="audit-source-title">Choose source</h3>
-              <p>
-                Fire Crow currently accepts authorized repository URLs through the existing backend intake contract.
-              </p>
+              <p>Fire Crow currently accepts authorized repository URLs through the existing backend intake contract.</p>
             </div>
-            <div className={styles.optionCardActive}>
+            <div className={mobile.optionCardActive}>
               <strong>Git repository</strong>
               <span>Use a repository you own or have explicit permission to test.</span>
             </div>
-            <div className={styles.safetyNote}>
-              Only audit systems you own or are authorized to test. Fire Crow keeps guidance remediation-focused.
-            </div>
+            <div className={mobile.safetyNote}>Only audit systems you own or are authorized to test. Fire Crow keeps guidance remediation-focused.</div>
           </section>
         )}
 
         {step === 1 && (
-          <section className={styles.wizardPanel} aria-labelledby="repo-details-title">
+          <section className={mobile.wizardPanel} aria-labelledby="repo-details-title">
             <div>
               <h3 id="repo-details-title">Repository details</h3>
               <p>Enter the repository URL and branch or ref that the backend should audit.</p>
             </div>
-            <Input
-              label="Repository URL"
-              placeholder="https://github.com/org/repository"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              disabled={submitting}
-            />
-            <Input
-              label="Branch or ref"
-              placeholder="main"
-              value={repoBranch}
-              onChange={(e) => setRepoBranch(e.target.value)}
-              disabled={submitting}
-            />
+            <Input label="Repository URL" placeholder="https://github.com/org/repository" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} disabled={submitting} />
+            <Input label="Branch or ref" placeholder="main" value={repoBranch} onChange={(e) => setRepoBranch(e.target.value)} disabled={submitting} />
           </section>
         )}
 
         {step === 2 && (
-          <section className={styles.wizardPanel} aria-labelledby="audit-scope-title">
+          <section className={mobile.wizardPanel} aria-labelledby="audit-scope-title">
             <div>
               <h3 id="audit-scope-title">Audit scope</h3>
-              <p>
-                Select defensive review areas for the pre-flight checklist. The current backend preserves its existing
-                repository-and-ref API contract.
-              </p>
+              <p>Select defensive review areas for the pre-flight checklist. The current backend preserves its existing repository-and-ref API contract.</p>
             </div>
-            <div className={styles.scopeGrid}>
+            <div className={mobile.scopeGrid}>
               {DEFENSIVE_SCOPES.map((scope) => {
                 const checked = selectedScopes.includes(scope);
                 return (
-                  <button
-                    key={scope}
-                    type="button"
-                    className={checked ? styles.scopeChipActive : styles.scopeChip}
-                    aria-pressed={checked}
-                    onClick={() => toggleScope(scope)}
-                  >
+                  <button key={scope} type="button" className={checked ? mobile.scopeChipActive : mobile.scopeChip} aria-pressed={checked} onClick={() => toggleScope(scope)}>
                     <span>{checked ? "Included" : "Optional"}</span>
                     <strong>{scope}</strong>
                   </button>
@@ -177,81 +142,42 @@ export default function AuditForm({ onSubmit, submitting, submitError }: AuditFo
         )}
 
         {step === 3 && (
-          <section className={styles.wizardPanel} aria-labelledby="sandbox-options-title">
+          <section className={mobile.wizardPanel} aria-labelledby="sandbox-options-title">
             <div>
               <h3 id="sandbox-options-title">Sandbox and safety</h3>
               <p>The backend decides the active sandbox mode from its configured runtime and system status.</p>
             </div>
-            <div className={styles.reviewGrid}>
-              <div className={styles.reviewCard}>
-                <span>Runtime mode</span>
-                <strong>Backend configured</strong>
-              </div>
-              <div className={styles.reviewCard}>
-                <span>Validation boundary</span>
-                <strong>Authorization-only</strong>
-              </div>
-              <div className={styles.reviewCard}>
-                <span>Output style</span>
-                <strong>Evidence + remediation</strong>
-              </div>
+            <div className={mobile.reviewGrid}>
+              <div className={mobile.reviewCard}><span>Runtime mode</span><strong>Backend configured</strong></div>
+              <div className={mobile.reviewCard}><span>Validation boundary</span><strong>Authorization-only</strong></div>
+              <div className={mobile.reviewCard}><span>Output style</span><strong>Evidence + remediation</strong></div>
             </div>
-            <div className={styles.safetyNote}>
-              The mobile client does not add offensive payload controls or bypass backend authorization checks.
-            </div>
+            <div className={mobile.safetyNote}>The mobile client does not add offensive payload controls or bypass backend authorization checks.</div>
           </section>
         )}
 
         {step === 4 && (
-          <section className={styles.wizardPanel} aria-labelledby="review-start-title">
+          <section className={mobile.wizardPanel} aria-labelledby="review-start-title">
             <div>
               <h3 id="review-start-title">Review and start</h3>
               <p>Confirm the authorized target before submitting the audit to the existing backend.</p>
             </div>
-            <div className={styles.reviewGrid}>
-              <div className={styles.reviewCard}>
-                <span>Repository</span>
-                <strong>{repoUrl.trim() || "Not provided"}</strong>
-              </div>
-              <div className={styles.reviewCard}>
-                <span>Branch/ref</span>
-                <strong>{repoBranch.trim() || "main"}</strong>
-              </div>
-              <div className={styles.reviewCard}>
-                <span>Defensive scope</span>
-                <strong>{selectedScopes.length} areas selected</strong>
-              </div>
+            <div className={mobile.reviewGrid}>
+              <div className={mobile.reviewCard}><span>Repository</span><strong>{repoUrl.trim() || "Not provided"}</strong></div>
+              <div className={mobile.reviewCard}><span>Branch/ref</span><strong>{repoBranch.trim() || "main"}</strong></div>
+              <div className={mobile.reviewCard}><span>Defensive scope</span><strong>{selectedScopes.length} areas selected</strong></div>
             </div>
           </section>
         )}
 
-        {(localError || submitError) && (
-          <div className={styles.noticeError} role="alert">
-            {localError || submitError}
-          </div>
-        )}
+        {(localError || submitError) && <div className={styles.noticeError} role="alert">{localError || submitError}</div>}
 
-        <div className={styles.stickyBottomActions}>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={previousStep}
-            disabled={step === 0 || submitting}
-          >
-            <ArrowLeft size={14} />
-            Back
-          </Button>
-
+        <div className={mobile.stickyBottomActions}>
+          <Button type="button" variant="ghost" onClick={previousStep} disabled={step === 0 || submitting}><ArrowLeft size={14} />Back</Button>
           {step < WIZARD_STEPS.length - 1 ? (
-            <Button type="button" variant="primary" onClick={nextStep} disabled={submitting}>
-              Next
-              <ArrowRight size={14} />
-            </Button>
+            <Button type="button" variant="primary" onClick={nextStep} disabled={submitting}>Next<ArrowRight size={14} /></Button>
           ) : (
-            <Button type="submit" variant="primary" loading={submitting} className={styles.submitButton}>
-              {!submitting && <Play size={14} />}
-              {submitting ? "Launching" : "Start audit"}
-            </Button>
+            <Button type="submit" variant="primary" loading={submitting} className={styles.submitButton}>{!submitting && <Play size={14} />}{submitting ? "Launching" : "Start audit"}</Button>
           )}
         </div>
       </form>
