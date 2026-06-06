@@ -145,7 +145,17 @@ export default function LandingPage() {
   const [activePhase, setActivePhase] = useState(-1);
   const [terminalLines, setTerminalLines] = useState(INITIAL_LINES);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("fc_token");
+    const username = localStorage.getItem("fc_username");
+    const userId = localStorage.getItem("fc_user_id");
+    if (token && username && userId) {
+      queueMicrotask(() => setIsLoggedIn(true));
+    }
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -233,7 +243,9 @@ export default function LandingPage() {
               Privacy
             </PolicyLink>
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-              <Link href="/signin" className={styles.navCta}>Open Console</Link>
+              <Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.navCta}>
+                {isLoggedIn ? "Dashboard" : "Open Console"}
+              </Link>
             </motion.div>
           </div>
         </motion.nav>
@@ -260,8 +272,8 @@ export default function LandingPage() {
 
             <motion.div variants={fadeInUp} className={styles.heroActions}>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Link href="/signin" className={cx(styles.primaryButton, "hero-primary-btn")}>
-                  Start an audit <ArrowRight size={16} className="hero-cta-arrow" />
+                <Link href={isLoggedIn ? "/dashboard" : "/signin"} className={cx(styles.primaryButton, "hero-primary-btn")}>
+                  {isLoggedIn ? "Go to Dashboard" : "Start an audit"} <ArrowRight size={16} className="hero-cta-arrow" />
                 </Link>
               </motion.div>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
@@ -343,7 +355,9 @@ export default function LandingPage() {
                 <p className={styles.boardFooterValue}>Trace logs, finding evidence, CVSS ranking, and a remediation handoff package.</p>
               </div>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Link href="/signin" className={styles.boardFooterLink}>Launch workspace</Link>
+                <Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.boardFooterLink}>
+                  {isLoggedIn ? "Go to Dashboard" : "Launch workspace"}
+                </Link>
               </motion.div>
             </div>
           </motion.aside>
@@ -598,7 +612,9 @@ export default function LandingPage() {
             </p>
             <div className={styles.heroActions} style={{ marginTop: 24 }}>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Link href="/signin" className={styles.primaryButton}>Go to sign in</Link>
+                <Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.primaryButton}>
+                  {isLoggedIn ? "Go to Dashboard" : "Go to sign in"}
+                </Link>
               </motion.div>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                 <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>
@@ -627,7 +643,7 @@ export default function LandingPage() {
             <a href="#capabilities">Platform</a>
             <a href="#live-demo">Live demo</a>
             <a href="#agents">Agents</a>
-            <Link href="/signin">Sign in</Link>
+            <Link href={isLoggedIn ? "/dashboard" : "/signin"}>{isLoggedIn ? "Dashboard" : "Sign in"}</Link>
             <PolicyLink href="/terms" policy="terms" source="landing_footer">Terms</PolicyLink>
             <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_footer">
               Privacy

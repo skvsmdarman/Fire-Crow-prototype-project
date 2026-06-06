@@ -182,6 +182,13 @@ export default function Dashboard() {
   const latestReport = jobs.find((job) => job.report_pdf_url)?.report_pdf_url || null;
   const reportJobs = jobs.filter((job) => TERMINAL_STATUSES.includes(job.status));
 
+  const handleUnauthorized = useCallback(() => {
+    localStorage.removeItem("fc_token");
+    localStorage.removeItem("fc_username");
+    localStorage.removeItem("fc_user_id");
+    router.replace("/signin");
+  }, [router]);
+
   const fetchSystemStatus = useCallback(async () => {
     if (!token) return;
     setLoadingSystem(true);
@@ -190,6 +197,10 @@ export default function Dashboard() {
       const response = await fetch(`${API_BASE_URL}/system/status`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 401 || response.status === 403) {
+        handleUnauthorized();
+        return;
+      }
       if (!response.ok) {
         throw new Error("System status endpoint is unavailable.");
       }
@@ -199,7 +210,7 @@ export default function Dashboard() {
     } finally {
       setLoadingSystem(false);
     }
-  }, [token]);
+  }, [token, handleUnauthorized]);
 
   const openReport = useCallback(
     async (jobId: string) => {
@@ -209,6 +220,10 @@ export default function Dashboard() {
         const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}/report`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
         if (!response.ok) {
           const errorBody = await response.json().catch(() => null);
           throw new Error(errorBody?.detail || "Unable to open this report.");
@@ -222,7 +237,7 @@ export default function Dashboard() {
         setReportError(getErrorMessage(error, "Unable to open this report."));
       }
     },
-    [token],
+    [token, handleUnauthorized],
   );
 
   const fetchJobs = useCallback(async () => {
@@ -232,6 +247,10 @@ export default function Dashboard() {
       const response = await fetch(`${API_BASE_URL}/audit/jobs`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 401 || response.status === 403) {
+        handleUnauthorized();
+        return;
+      }
       if (response.ok) {
         const data = (await response.json()) as Job[];
         setJobs(data);
@@ -240,7 +259,7 @@ export default function Dashboard() {
     } finally {
       setLoadingJobs(false);
     }
-  }, [token]);
+  }, [token, handleUnauthorized]);
 
   const fetchJobDetail = useCallback(
     async (jobId: string) => {
@@ -250,6 +269,10 @@ export default function Dashboard() {
         const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
         if (response.ok) {
           setSelectedJobDetail((await response.json()) as JobDetail);
         }
@@ -257,7 +280,7 @@ export default function Dashboard() {
         setLoadingDetail(false);
       }
     },
-    [token],
+    [token, handleUnauthorized],
   );
 
   const stopLogStream = useCallback(() => {
@@ -360,6 +383,11 @@ export default function Dashboard() {
         body: JSON.stringify({ repo_url: repoUrl.trim(), repo_branch: repoBranch.trim() || "main" }),
       });
 
+      if (response.status === 401 || response.status === 403) {
+        handleUnauthorized();
+        return;
+      }
+
       if (!response.ok) {
         const errorBody = await response.json();
         throw new Error(errorBody.detail || "Unable to launch audit.");
@@ -383,6 +411,10 @@ export default function Dashboard() {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (response.status === 401 || response.status === 403) {
+      handleUnauthorized();
+      return;
+    }
     if (response.ok) {
       fetchJobs();
       fetchJobDetail(jobId);
@@ -394,15 +426,41 @@ export default function Dashboard() {
     const savedUsername = localStorage.getItem("fc_username");
     const savedUserId = localStorage.getItem("fc_user_id");
 
-    if (savedToken && savedUsername && savedUserId) {
-      setToken(savedToken);
-      setUsername(savedUsername);
-      setUserId(savedUserId);
-      setAuthReady(true);
+    if (!savedToken || !savedUsername || !savedUserId) {
+      localStorage.removeItem("fc_token");
+      localStorage.removeItem("fc_username");
+      localStorage.removeItem("fc_user_id");
+      router.replace("/signin");
       return;
     }
-    router.replace("/signin");
-  }, [router]);
+
+    const validateToken = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${savedToken}` },
+        });
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem("fc_token");
+          localStorage.removeItem("fc_username");
+          localStorage.removeItem("fc_user_id");
+          router.replace("/signin");
+          return;
+        }
+        setToken(savedToken);
+        setUsername(savedUsername);
+        setUserId(savedUserId);
+        setAuthReady(true);
+      } catch (error) {
+        // Fallback for network error / offline development
+        setToken(savedToken);
+        setUsername(savedUsername);
+        setUserId(savedUserId);
+        setAuthReady(true);
+      }
+    };
+
+    void validateToken();
+  }, [router, handleUnauthorized]);
 
   const signOut = () => {
     if (token) {
