@@ -5,15 +5,8 @@ services:
     dockerfilePath: Dockerfile
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: firecrow-db
-          property: connectionString
+        sync: false
       - key: DEBUG
         value: "false"
       - key: SECRET_KEY
         generateValue: true
-
-databases:
-  - name: firecrow-db
-    databaseName: firecrow
-    user: firecrow_user
