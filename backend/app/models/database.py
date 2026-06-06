@@ -17,7 +17,12 @@ if "postgresql" in db_url:
             connect_args["sslmode"] = "require"
             
         # Create a test engine with 2 seconds timeout to verify connection
-        test_engine = create_engine(db_url, connect_args=connect_args)
+        test_engine = create_engine(
+            db_url, 
+            connect_args=connect_args,
+            pool_pre_ping=True,
+            pool_recycle=300,
+        )
         with test_engine.connect() as conn:
             conn.execute(select(1))
         engine = test_engine

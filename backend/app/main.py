@@ -28,9 +28,8 @@ from backend.app.api import auth_router, audit_router, sse_router, system_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Setup step: Create database tables in debug mode
-    if settings.DEBUG:
-        Base.metadata.create_all(bind=engine)
+    # Setup step: Create database tables
+    Base.metadata.create_all(bind=engine)
     yield
     # Teardown step can go here (e.g., closing background pools)
 
