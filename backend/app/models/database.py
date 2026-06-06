@@ -12,11 +12,11 @@ engine: Any = None
 
 if "postgresql" in db_url:
     try:
-        connect_args: dict[str, Any] = {"connect_timeout": 2}
+        connect_args: dict[str, Any] = {"connect_timeout": 5}
         if not settings.DEBUG:
             connect_args["sslmode"] = "require"
             
-        # Create a test engine with 2 seconds timeout to verify connection
+        # Create a test engine to verify connection
         test_engine = create_engine(
             db_url, 
             connect_args=connect_args,
@@ -28,16 +28,26 @@ if "postgresql" in db_url:
         engine = test_engine
         logger.info("Successfully connected to PostgreSQL database.")
     except Exception as e:
+        if not settings.DEBUG:
+            # In production, PostgreSQL MUST be available — do not fall back to SQLite
+            logger.critical(
+                "FATAL: Cannot connect to PostgreSQL in production: %s. "
+                "Set DATABASE_URL to a valid PostgreSQL connection string.",
+                str(e),
+            )
+            raise RuntimeError(f"PostgreSQL connection required in production: {e}") from e
+
         logger.warning(
-            f"Failed to connect to PostgreSQL database: {str(e)}. "
-            "Falling back to local SQLite database 'firecrow.db'."
+            "Failed to connect to PostgreSQL database: %s. "
+            "Falling back to local SQLite database 'firecrow.db'.",
+            str(e),
         )
         db_url = "sqlite:///firecrow.db"
 
 if engine is None:
     # Initialize engine for SQLite or other URL
     engine = create_engine(db_url)
-    logger.info(f"Initialized database engine using URL: {db_url}")
+    logger.info("Initialized database engine using URL: %s", db_url)
 
 
 def _ensure_audit_job_compatibility() -> None:

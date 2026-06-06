@@ -136,8 +136,8 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
 @router.post("/submit", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def submit_audit(
-    http_request: Request,
-    request: SubmitJobRequest,
+    request: Request,
+    payload: SubmitJobRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
@@ -151,8 +151,8 @@ async def submit_audit(
 
     job = AuditJob(
         user_id=user_id,
-        repo_url=request.repo_url,
-        repo_branch=request.repo_branch,
+        repo_url=payload.repo_url,
+        repo_branch=payload.repo_branch,
         status=JobStatus.QUEUED
     )
     db.add(job)
@@ -163,8 +163,8 @@ async def submit_audit(
         background_tasks,
         job_id=job.id,
         user_id=user_id,
-        repo_url=request.repo_url,
-        repo_branch=request.repo_branch or "main",
+        repo_url=payload.repo_url,
+        repo_branch=payload.repo_branch or "main",
     )
 
     return build_job_response(job)

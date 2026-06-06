@@ -39,6 +39,12 @@ app.add_middleware(SlowAPIMiddleware)  # type: ignore
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Let FastAPI's default handler process HTTPException (400, 401, 404, etc.)
+    from fastapi.exceptions import HTTPException as FastAPIHTTPException
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException)):
+        raise exc
+
     import traceback
     traceback.print_exc()
     return JSONResponse(
@@ -91,8 +97,9 @@ os.makedirs(reports_dir, exist_ok=True)
 async def health_check(db: Session = Depends(get_db)):
     db_error = ""
     try:
-        # Verify database connection
-        db.execute(Base.metadata.tables["audit_jobs"].select().limit(1))
+        # Verify database connection with a simple query
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
         db_ok = True
     except Exception as e:
         db_ok = False
