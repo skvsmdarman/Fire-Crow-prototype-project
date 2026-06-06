@@ -1,9 +1,10 @@
 services:
   - type: web
     name: firecrow-backend
-    env: python
-    buildCommand: "pip install -r backend/requirements.txt"
-    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    runtime: python
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
@@ -18,9 +19,10 @@ services:
 
   - type: web
     name: firecrow-frontend
-    env: node
-    buildCommand: "cd frontend && npm install && npm run build"
-    startCommand: "cd frontend && npm run start"
+    runtime: node
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm run start"
     envVars:
       - key: NODE_VERSION
         value: 20
