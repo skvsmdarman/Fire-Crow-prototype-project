@@ -6,20 +6,10 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 
-# Try to import slowapi for rate limiting
-try:
-    from slowapi import Limiter, _rate_limit_exceeded_handler  # type: ignore
-    from slowapi.util import get_remote_address  # type: ignore
-    from slowapi.errors import RateLimitExceeded  # type: ignore
-    from slowapi.middleware import SlowAPIMiddleware  # type: ignore
-    limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
-    SLOWAPI_AVAILABLE = True
-except ImportError:
-    SLOWAPI_AVAILABLE = False
-    limiter = None
-    _rate_limit_exceeded_handler = None
-    RateLimitExceeded = None
-    SlowAPIMiddleware = None
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from backend.app.services.limiter import limiter
 
 from backend.app.config import settings, WORKSPACE_DIR
 from backend.app.models.database import Base, engine, get_db
@@ -41,10 +31,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-if SLOWAPI_AVAILABLE:
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
-    app.add_middleware(SlowAPIMiddleware)  # type: ignore
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+app.add_middleware(SlowAPIMiddleware)  # type: ignore
 
 # CORS configurations
 app.add_middleware(

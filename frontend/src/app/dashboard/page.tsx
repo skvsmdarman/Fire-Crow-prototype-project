@@ -2,8 +2,21 @@
 
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Shield, Play, Square, RefreshCw, FileText, AlertTriangle, Terminal, Settings, LayoutGrid, Cpu, TrendingUp, LogOut, CheckCircle2, CheckCircle, Clock, XCircle, Search, HelpCircle, HardDrive, Database, Globe, Network, Fingerprint, Bug, User, ChevronRight, Download
+} from "lucide-react";
 
 import FireCrowLoader from "../../components/FireCrowLoader";
+import {
+  fadeIn,
+  fadeInUp,
+  fadeInRight,
+  fadeInLeft,
+  staggerContainer,
+  scaleUp,
+  tabTransition
+} from "../../lib/animations";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
 type Severity = "critical" | "high" | "medium" | "low" | "info";
@@ -406,20 +419,22 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    if (!token) return;
     fetchJobs();
-  }, [fetchJobs]);
+  }, [fetchJobs, token]);
 
   useEffect(() => {
+    if (!token) return;
     fetchSystemStatus();
-  }, [fetchSystemStatus]);
+  }, [fetchSystemStatus, token]);
 
   useEffect(() => {
-    if (!selectedJobId) return;
+    if (!selectedJobId || !token) return;
     fetchJobDetail(selectedJobId);
-  }, [fetchJobDetail, selectedJobId]);
+  }, [fetchJobDetail, selectedJobId, token]);
 
   useEffect(() => {
-    if (!selectedJob) return;
+    if (!selectedJob || !token) return;
     if (selectedJob.status === "queued" || selectedJob.status === "running") {
       const interval = window.setInterval(() => {
         fetchJobs();
@@ -427,13 +442,22 @@ export default function Dashboard() {
       }, 3500);
       return () => window.clearInterval(interval);
     }
-  }, [fetchJobDetail, fetchJobs, selectedJob]);
+  }, [fetchJobDetail, fetchJobs, selectedJob, token]);
 
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
   const activeStep = selectedJob ? pipelineIndex(selectedJob.status, logs) : 0;
+
+  const sectionIcon = (section: Section) => {
+    switch (section) {
+      case "operations": return <LayoutGrid className="nav-icon" size={16} />;
+      case "reports": return <FileText className="nav-icon" size={16} />;
+      case "agents": return <Cpu className="nav-icon" size={16} />;
+      case "settings": return <Settings className="nav-icon" size={16} />;
+    }
+  };
 
   if (!authReady) {
     return (
@@ -450,7 +474,16 @@ export default function Dashboard() {
 
   return (
     <main className="shell">
-      <aside className="sidebar">
+      {/* Glow Orbs */}
+      <div className="auth-glow-orb auth-glow-orb-1" style={{ opacity: 0.15 }} />
+      <div className="auth-glow-orb auth-glow-orb-2" style={{ opacity: 0.15 }} />
+
+      <motion.aside
+        variants={fadeInLeft}
+        initial="hidden"
+        animate="visible"
+        className="sidebar"
+      >
         <div className="brand-block">
           <div className="brand-mark">FC</div>
           <div>
@@ -461,358 +494,437 @@ export default function Dashboard() {
 
         <nav className="nav-stack" aria-label="Primary navigation">
           {(["operations", "reports", "agents", "settings"] as Section[]).map((section) => (
-            <button
+            <motion.button
+              whileHover={{ x: 4, background: "rgba(255, 114, 0, 0.08)" }}
+              whileTap={{ scale: 0.98 }}
               key={section}
               className={`nav-item ${activeSection === section ? "nav-item-active" : ""}`}
               type="button"
               aria-current={activeSection === section ? "page" : undefined}
               onClick={() => setActiveSection(section)}
             >
-              {section}
-            </button>
+              {sectionIcon(section)}
+              <span style={{ textTransform: "capitalize" }}>{section}</span>
+            </motion.button>
           ))}
         </nav>
 
-        <div className="workspace-card">
+        <div className="workspace-card" style={{ position: "relative", overflow: "hidden" }}>
+          <div className="auth-card-accent" />
           <div className="section-kicker">Workspace</div>
           <div className="workspace-name">{username || "Not connected"}</div>
-          <div className="workspace-id">{userId || "Connect to access audit history"}</div>
+          <div className="workspace-id" style={{ opacity: 0.5, fontSize: "10px" }}>{userId || "Connect to access audit history"}</div>
         </div>
-      </aside>
+      </motion.aside>
 
-      <section className="main-surface">
+      <motion.section
+        variants={fadeIn}
+        initial="hidden"
+        animate="visible"
+        className="main-surface"
+      >
         <header className="topbar">
           <div>
             <div className="section-kicker">Command Center</div>
-            <h1>Security audit operations</h1>
+            <h1 style={{ textTransform: "capitalize" }}>{activeSection}</h1>
           </div>
           <div className="workspace-session">
+            <User size={13} style={{ color: "var(--fire)", marginRight: 2 }} />
             <span>{username}</span>
-            <button className="ghost-action" type="button" onClick={signOut}>
+            <button className="ghost-action" type="button" onClick={signOut} style={{ height: "28px", minHeight: "28px", fontSize: "11px", padding: "0 8px" }}>
+              <LogOut size={12} style={{ marginRight: 4 }} />
               Sign out
             </button>
           </div>
         </header>
 
-        {activeSection === "operations" && (
-          <>
-        <section className="metrics-grid" aria-label="Audit metrics">
-          <Metric label="Active audits" value={activeJobs.toString()} />
-          <Metric label="Jobs in workspace" value={jobs.length.toString()} />
-          <Metric label="Critical findings" value={criticalFindings.toString()} tone={criticalFindings > 0 ? "danger" : "neutral"} />
-          <Metric label="Latest report" value={latestReport ? "Ready" : "None"} />
-        </section>
+        <AnimatePresence mode="wait">
+          {activeSection === "operations" && (
+            <motion.div
+              key="operations"
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              variants={staggerContainer}
+            >
+              <motion.section variants={fadeInUp} className="metrics-grid" aria-label="Audit metrics">
+                <Metric label="Active audits" value={activeJobs.toString()} icon={<ActivityIcon />} />
+                <Metric label="Jobs in workspace" value={jobs.length.toString()} icon={<Terminal size={18} />} />
+                <Metric label="Critical findings" value={criticalFindings.toString()} tone={criticalFindings > 0 ? "danger" : "neutral"} icon={<AlertTriangle size={18} />} />
+                <Metric label="Latest report" value={latestReport ? "Ready" : "None"} icon={<FileText size={18} />} />
+              </motion.section>
 
-        <section className="work-grid">
-          <div className="panel launch-panel">
-            <div className="panel-header">
-              <div>
-                <div className="section-kicker">New Audit</div>
-                <h2>Repository intake</h2>
-              </div>
-            </div>
-
-            <form onSubmit={submitScan} className="audit-form">
-              <label>
-                Repository URL
-                <input
-                  value={repoUrl}
-                  onChange={(event) => setRepoUrl(event.target.value)}
-                  placeholder="https://github.com/org/repository"
-                />
-              </label>
-              <label>
-                Branch or ref
-                <input value={repoBranch} onChange={(event) => setRepoBranch(event.target.value)} placeholder="main" />
-              </label>
-              {submitError && <div className="notice notice-error">{submitError}</div>}
-              <button className="primary-action" type="submit" disabled={submitting}>
-                {submitting ? "Launching" : "Launch audit"}
-              </button>
-            </form>
-          </div>
-
-          <div className="panel queue-panel">
-            <div className="panel-header">
-              <div>
-                <div className="section-kicker">Queue</div>
-                <h2>Audit history</h2>
-              </div>
-              <button className="ghost-action" type="button" onClick={fetchJobs} disabled={!token || loadingJobs}>
-                Refresh
-              </button>
-            </div>
-
-            <div className="job-list">
-              {jobs.length === 0 ? (
-                <div className="empty-state">No audits in this workspace.</div>
-              ) : (
-                jobs.map((job) => (
-                  <button
-                    key={job.id}
-                    className={`job-row ${job.id === selectedJobId ? "job-row-active" : ""}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedJobId(job.id);
-                      fetchJobDetail(job.id);
-                      startLogStream(job.id);
-                    }}
-                  >
-                    <span>
-                      <strong>{shortRepoName(job.repo_url)}</strong>
-                      <small>{job.repo_branch} / {formatDateTime(job.created_at)}</small>
-                    </span>
-                    <span className={`status-pill status-${statusLabel(job)}`}>{statusLabel(job)}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="detail-grid">
-          <div className="panel pipeline-panel">
-            <div className="panel-header">
-              <div>
-                <div className="section-kicker">Maestro</div>
-                <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
-              </div>
-              <div className="header-actions">
-                {selectedJob?.report_pdf_url && (
-                  <button className="ghost-action" type="button" onClick={() => openReport(selectedJob.id)}>
-                    Report
-                  </button>
-                )}
-                {selectedJob && (selectedJob.status === "queued" || selectedJob.status === "running") && !selectedJob.cancel_requested && (
-                  <button className="danger-action" type="button" onClick={() => cancelScan(selectedJob.id)}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="pipeline">
-              {PIPELINE.map((phase, index) => (
-                <div
-                  key={phase}
-                  className={`pipeline-step ${activeStep > index ? "pipeline-done" : ""} ${activeStep === index ? "pipeline-current" : ""}`}
-                >
-                  <span>{String(index).padStart(2, "0")}</span>
-                  <strong>{phase}</strong>
-                </div>
-              ))}
-            </div>
-
-            {selectedJob && TERMINAL_STATUSES.includes(selectedJob.status) && selectedJob.error_message && (
-              <div className="notice notice-error">{selectedJob.error_message}</div>
-            )}
-            {reportError && <div className="notice notice-error">{reportError}</div>}
-          </div>
-
-          <div className="panel findings-panel">
-            <div className="panel-header">
-              <div>
-                <div className="section-kicker">Findings</div>
-                <h2>{loadingDetail ? "Loading" : `${findings.length} total`}</h2>
-              </div>
-            </div>
-
-            <div className="finding-list">
-              {findings.length === 0 ? (
-                <div className="empty-state">No findings released for this audit.</div>
-              ) : (
-                findings.map((finding) => (
-                  <article className="finding-row" key={finding.id}>
+              <div className="work-grid">
+                <motion.div variants={scaleUp} className="panel launch-panel" style={{ position: "relative", overflow: "hidden" }}>
+                  <div className="auth-card-accent" />
+                  <div className="panel-header">
                     <div>
-                      <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
-                      <h3>{finding.title}</h3>
-                      <p>{finding.description}</p>
+                      <div className="section-kicker">New Audit</div>
+                      <h2>Repository intake</h2>
                     </div>
-                    <div className="finding-meta">
-                      <span>{finding.agent_source}</span>
-                      <strong>{finding.cvss_score ? finding.cvss_score.toFixed(1) : "CVSS -"}</strong>
+                  </div>
+
+                  <form onSubmit={submitScan} className="audit-form">
+                    <label>
+                      Repository URL
+                      <input
+                        value={repoUrl}
+                        onChange={(event) => setRepoUrl(event.target.value)}
+                        placeholder="https://github.com/org/repository"
+                      />
+                    </label>
+                    <label>
+                      Branch or ref
+                      <input value={repoBranch} onChange={(event) => setRepoBranch(event.target.value)} placeholder="main" />
+                    </label>
+                    {submitError && <div className="notice notice-error">{submitError}</div>}
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="primary-action"
+                      type="submit"
+                      disabled={submitting}
+                    >
+                      {submitting ? <RefreshCw className="animate-spin" size={16} /> : <Play size={14} style={{ marginRight: 6 }} />}
+                      {submitting ? "Launching" : "Launch audit"}
+                    </motion.button>
+                  </form>
+                </motion.div>
+
+                <motion.div variants={scaleUp} className="panel queue-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="section-kicker">Queue</div>
+                      <h2>Audit history</h2>
                     </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
+                    <button className="ghost-action" type="button" onClick={fetchJobs} disabled={!token || loadingJobs} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
+                      <RefreshCw className={loadingJobs ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                      Refresh
+                    </button>
+                  </div>
 
-        <section className="panel log-panel">
-          <div className="panel-header">
-            <div>
-              <div className="section-kicker">Live Trace</div>
-              <h2>Agent stream</h2>
-            </div>
-            <span className={`stream-state ${streamActive ? "stream-live" : ""}`}>{streamActive ? "live" : "idle"}</span>
-          </div>
-
-          <div className="log-list">
-            {logs.length === 0 ? (
-              <div className="empty-state">Select a running audit to stream logs.</div>
-            ) : (
-              logs.map((log) => (
-                <div className="log-row" key={`${log.id}-${log.timestamp}`}>
-                  <span>{formatDateTime(log.timestamp)}</span>
-                  <strong>{log.agent_name}</strong>
-                  <p>{log.message}</p>
-                </div>
-              ))
-            )}
-            <div ref={terminalEndRef} />
-          </div>
-        </section>
-          </>
-        )}
-
-        {activeSection === "reports" && (
-          <section className="section-body">
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <div className="section-kicker">Reports</div>
-                  <h2>Released audit artifacts</h2>
-                </div>
-                <button className="ghost-action" type="button" onClick={fetchJobs} disabled={!token || loadingJobs}>
-                  Refresh
-                </button>
+                  <div className="job-list">
+                    {jobs.length === 0 ? (
+                      <div className="empty-state">No audits in this workspace.</div>
+                    ) : (
+                      jobs.map((job) => (
+                        <motion.button
+                          whileHover={{ scale: 1.01, x: 2 }}
+                          whileTap={{ scale: 0.99 }}
+                          key={job.id}
+                          className={`job-row ${job.id === selectedJobId ? "job-row-active" : ""}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedJobId(job.id);
+                            fetchJobDetail(job.id);
+                            startLogStream(job.id);
+                          }}
+                        >
+                          <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <Terminal size={14} style={{ color: "var(--fire)" }} />
+                            <span style={{ textAlign: "left" }}>
+                              <strong>{shortRepoName(job.repo_url)}</strong>
+                              <small>{job.repo_branch} / {formatDateTime(job.created_at)}</small>
+                            </span>
+                          </span>
+                          <span className={`status-pill status-${statusLabel(job)}`}>{statusLabel(job)}</span>
+                        </motion.button>
+                      ))
+                    )}
+                  </div>
+                </motion.div>
               </div>
 
-              <div className="report-list">
-                {reportError && <div className="notice notice-error">{reportError}</div>}
-                {!token ? (
-                  <div className="empty-state">Connect a workspace to view reports.</div>
-                ) : reportJobs.length === 0 ? (
-                  <div className="empty-state">No terminal audit reports exist in this workspace yet.</div>
-                ) : (
-                  reportJobs.map((job) => (
-                    <article className="report-row" key={job.id}>
-                      <div>
-                        <span className={`status-pill status-${statusLabel(job)}`}>{statusLabel(job)}</span>
-                        <h3>{shortRepoName(job.repo_url)}</h3>
-                        <p>
-                          Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}
-                        </p>
-                      </div>
-                      {job.report_pdf_url ? (
-                        <button className="ghost-action" type="button" onClick={() => openReport(job.id)}>
-                          Open report
+              <div className="detail-grid">
+                <motion.div variants={scaleUp} className="panel pipeline-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="section-kicker">Maestro</div>
+                      <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
+                    </div>
+                    <div className="header-actions">
+                      {selectedJob?.report_pdf_url && (
+                        <button className="ghost-action" type="button" onClick={() => openReport(selectedJob.id)}>
+                          <Download size={14} style={{ marginRight: 4 }} />
+                          Report
                         </button>
-                      ) : (
-                        <span className="report-missing">No PDF artifact</span>
                       )}
-                    </article>
-                  ))
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeSection === "agents" && (
-          <section className="section-body">
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <div className="section-kicker">Agents</div>
-                  <h2>Runtime readiness</h2>
-                </div>
-                <button className="ghost-action" type="button" onClick={fetchSystemStatus} disabled={loadingSystem}>
-                  Check status
-                </button>
-              </div>
-
-              {systemError && <div className="notice notice-error">{systemError}</div>}
-
-              <div className="agent-grid">
-                {(systemStatus?.agents || []).map((agent) => (
-                  <article className="agent-card" key={agent.name}>
-                    <span className="stream-state stream-live">{agent.status}</span>
-                    <h3>{agent.name}</h3>
-                    <p>{agent.role}</p>
-                  </article>
-                ))}
-                {!systemStatus && !systemError && (
-                  <div className="empty-state">Checking backend agent readiness.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <div className="section-kicker">Maestro Topology</div>
-                  <h2>Execution graph</h2>
-                </div>
-              </div>
-              <div className="pipeline">
-                {PIPELINE.map((phase, index) => (
-                  <div key={phase} className="pipeline-step pipeline-current">
-                    <span>{String(index).padStart(2, "0")}</span>
-                    <strong>{phase}</strong>
+                      {selectedJob && (selectedJob.status === "queued" || selectedJob.status === "running") && !selectedJob.cancel_requested && (
+                        <button className="danger-action" type="button" onClick={() => cancelScan(selectedJob.id)}>
+                          <Square size={12} style={{ marginRight: 4 }} />
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
 
-        {activeSection === "settings" && (
-          <section className="section-body">
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <div className="section-kicker">Settings</div>
-                  <h2>Backend and workspace status</h2>
-                </div>
-                <button className="ghost-action" type="button" onClick={fetchSystemStatus} disabled={loadingSystem}>
-                  Refresh
-                </button>
-              </div>
-
-              {systemError && <div className="notice notice-error">{systemError}</div>}
-
-              <div className="settings-grid">
-                <StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} />
-                <StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} />
-                <StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Sandbox simulation"} tone="warn" />
-                <StatusCard label="Workspace" value={username || "Not connected"} tone={username ? "good" : "warn"} />
-              </div>
-
-              <div className="integration-list">
-                {Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => (
-                  <div className="integration-row" key={name}>
-                    <span>{name.replaceAll("_", " ")}</span>
-                    <strong className={enabled ? "integration-on" : "integration-off"}>{enabled ? "configured" : "not configured"}</strong>
+                  <div className="pipeline">
+                    {PIPELINE.map((phase, index) => (
+                      <div
+                        key={phase}
+                        className={`pipeline-step ${activeStep > index ? "pipeline-done" : ""} ${activeStep === index ? "pipeline-current" : ""}`}
+                      >
+                        <span>{String(index).padStart(2, "0")}</span>
+                        <strong>{phase}</strong>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {!systemStatus && !systemError && (
-                  <div className="empty-state">System status has not loaded yet.</div>
-                )}
+
+                  {selectedJob && TERMINAL_STATUSES.includes(selectedJob.status) && selectedJob.error_message && (
+                    <div className="notice notice-error">{selectedJob.error_message}</div>
+                  )}
+                  {reportError && <div className="notice notice-error">{reportError}</div>}
+                </motion.div>
+
+                <motion.div variants={scaleUp} className="panel findings-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="section-kicker">Findings</div>
+                      <h2>{loadingDetail ? "Loading" : `${findings.length} total`}</h2>
+                    </div>
+                  </div>
+
+                  <div className="finding-list">
+                    {findings.length === 0 ? (
+                      <div className="empty-state">No findings released for this audit.</div>
+                    ) : (
+                      findings.map((finding) => (
+                        <motion.article whileHover={{ scale: 1.01 }} className="finding-row" key={finding.id}>
+                          <div>
+                            <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
+                            <h3>{finding.title}</h3>
+                            <p>{finding.description}</p>
+                          </div>
+                          <div className="finding-meta">
+                            <span>{finding.agent_source}</span>
+                            <strong>{finding.cvss_score ? finding.cvss_score.toFixed(1) : "CVSS -"}</strong>
+                          </div>
+                        </motion.article>
+                      ))
+                    )}
+                  </div>
+                </motion.div>
               </div>
-            </div>
-          </section>
-        )}
-      </section>
+
+              <motion.section variants={scaleUp} className="panel log-panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="section-kicker">Live Trace</div>
+                    <h2>Agent stream</h2>
+                  </div>
+                  <span className={`stream-state ${streamActive ? "stream-live" : ""}`}>{streamActive ? "live" : "idle"}</span>
+                </div>
+
+                <div className="log-list">
+                  {logs.length === 0 ? (
+                    <div className="empty-state">Select a running audit to stream logs.</div>
+                  ) : (
+                    logs.map((log) => (
+                      <div className="log-row" key={`${log.id}-${log.timestamp}`}>
+                        <span>{formatDateTime(log.timestamp)}</span>
+                        <strong>{log.agent_name}</strong>
+                        <p>{log.message}</p>
+                      </div>
+                    ))
+                  )}
+                  <div ref={terminalEndRef} />
+                </div>
+              </motion.section>
+            </motion.div>
+          )}
+
+          {activeSection === "reports" && (
+            <motion.div
+              key="reports"
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              variants={tabTransition}
+              className="section-body"
+            >
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="section-kicker">Reports</div>
+                    <h2>Released audit artifacts</h2>
+                  </div>
+                  <button className="ghost-action" type="button" onClick={fetchJobs} disabled={!token || loadingJobs} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
+                    <RefreshCw className={loadingJobs ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                    Refresh
+                  </button>
+                </div>
+
+                <div className="report-list">
+                  {reportError && <div className="notice notice-error">{reportError}</div>}
+                  {!token ? (
+                    <div className="empty-state">Connect a workspace to view reports.</div>
+                  ) : reportJobs.length === 0 ? (
+                    <div className="empty-state">No terminal audit reports exist in this workspace yet.</div>
+                  ) : (
+                    reportJobs.map((job) => (
+                      <motion.article whileHover={{ scale: 1.01 }} className="report-row" key={job.id}>
+                        <div>
+                          <span className={`status-pill status-${statusLabel(job)}`}>{statusLabel(job)}</span>
+                          <h3>{shortRepoName(job.repo_url)}</h3>
+                          <p>
+                            Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}
+                          </p>
+                        </div>
+                        {job.report_pdf_url ? (
+                          <button className="ghost-action" type="button" onClick={() => openReport(job.id)}>
+                            <FileText size={14} style={{ marginRight: 4 }} />
+                            Open report
+                          </button>
+                        ) : (
+                          <span className="report-missing">No PDF artifact</span>
+                        )}
+                      </motion.article>
+                    ))
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeSection === "agents" && (
+            <motion.div
+              key="agents"
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              variants={tabTransition}
+              className="section-body"
+            >
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="section-kicker">Agents</div>
+                    <h2>Runtime readiness</h2>
+                  </div>
+                  <button className="ghost-action" type="button" onClick={fetchSystemStatus} disabled={loadingSystem} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
+                    <RefreshCw className={loadingSystem ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                    Check status
+                  </button>
+                </div>
+
+                {systemError && <div className="notice notice-error">{systemError}</div>}
+
+                <div className="agent-grid">
+                  {(systemStatus?.agents || []).map((agent) => (
+                    <motion.article whileHover={{ scale: 1.02, y: -2 }} className="agent-card" key={agent.name} style={{ position: "relative", overflow: "hidden" }}>
+                      <div className="auth-card-accent" />
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <span className="stream-state stream-live" style={{ background: "rgba(0,230,118,0.1)", color: "var(--green)" }}>{agent.status}</span>
+                        <Cpu size={16} style={{ color: "var(--fire)" }} />
+                      </div>
+                      <h3>{agent.name}</h3>
+                      <p style={{ fontSize: "12px", color: "var(--dim)", marginTop: "4px" }}>{agent.role}</p>
+                    </motion.article>
+                  ))}
+                  {!systemStatus && !systemError && (
+                    <div className="empty-state">Checking backend agent readiness.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="section-kicker">Maestro Topology</div>
+                    <h2>Execution graph</h2>
+                  </div>
+                </div>
+                <div className="pipeline">
+                  {PIPELINE.map((phase, index) => (
+                    <div key={phase} className="pipeline-step pipeline-current">
+                      <span>{String(index).padStart(2, "0")}</span>
+                      <strong>{phase}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeSection === "settings" && (
+            <motion.div
+              key="settings"
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              variants={tabTransition}
+              className="section-body"
+            >
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="section-kicker">Settings</div>
+                    <h2>Backend and workspace status</h2>
+                  </div>
+                  <button className="ghost-action" type="button" onClick={fetchSystemStatus} disabled={loadingSystem} style={{ height: "30px", minHeight: "30px", fontSize: "11px" }}>
+                    <RefreshCw className={loadingSystem ? "animate-spin" : ""} size={12} style={{ marginRight: 4 }} />
+                    Refresh
+                  </button>
+                </div>
+
+                {systemError && <div className="notice notice-error">{systemError}</div>}
+
+                <div className="settings-grid">
+                  <StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} icon={<Globe size={14} />} />
+                  <StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} icon={<Database size={14} />} />
+                  <StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Sandbox simulation"} tone="warn" icon={<HardDrive size={14} />} />
+                  <StatusCard label="Workspace" value={username || "Not connected"} tone={username ? "good" : "warn"} icon={<Fingerprint size={14} />} />
+                </div>
+
+                <div className="integration-list" style={{ marginTop: "20px" }}>
+                  {Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => (
+                    <motion.div whileHover={{ x: 2 }} className="integration-row" key={name} style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
+                      <span style={{ textTransform: "capitalize" }}>{name.replaceAll("_", " ")}</span>
+                      <strong className={enabled ? "integration-on" : "integration-off"}>{enabled ? "configured" : "not configured"}</strong>
+                    </motion.div>
+                  ))}
+                  {!systemStatus && !systemError && (
+                    <div className="empty-state">System status has not loaded yet.</div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.section>
     </main>
   );
 }
 
-function Metric({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "neutral" | "danger" }) {
+function ActivityIcon() {
   return (
-    <div className={`metric metric-${tone}`}>
-      <span>{label}</span>
+    <span style={{ display: "inline-flex", width: "10px", height: "10px", borderRadius: "50%", background: "var(--green)", position: "relative" }}>
+      <span className="animate-ping" style={{ position: "absolute", display: "inline-flex", height: "100%", width: "100%", borderRadius: "50%", background: "var(--green)", opacity: 0.75 }} />
+    </span>
+  );
+}
+
+function Metric({ label, value, tone = "neutral", icon }: { label: string; value: string; tone?: "neutral" | "danger"; icon?: React.ReactNode }) {
+  return (
+    <div className={`metric metric-${tone}`} style={{ position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div className="auth-card-accent" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <span>{label}</span>
+        {icon}
+      </div>
       <strong>{value}</strong>
     </div>
   );
 }
 
-function StatusCard({ label, value, tone }: { label: string; value: string; tone: "good" | "warn" }) {
+function StatusCard({ label, value, tone, icon }: { label: string; value: string; tone: "good" | "warn"; icon?: React.ReactNode }) {
   return (
-    <div className={`status-card status-card-${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className={`status-card status-card-${tone}`} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>{label}</span>
+        {icon}
+      </div>
+      <strong style={{ fontSize: "18px", marginTop: "12px", display: "block" }}>{value}</strong>
     </div>
   );
 }

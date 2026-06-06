@@ -77,11 +77,22 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, clone_path)
 
+            # ReDoS protection: Skip files larger than 2MB
+            try:
+                if os.path.getsize(file_path) > 2 * 1024 * 1024:
+                    logger.warning(f"Skipping large file {rel_path} (> 2MB) to prevent ReDoS.")
+                    continue
+            except Exception as e:
+                logger.warning(f"Failed to check size for {file_path}: {str(e)}")
+                continue
+
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     for line_num, line in enumerate(f, start=1):
+                        # ReDoS protection: truncate lines longer than 2048 chars
+                        line_to_check = line[:2048] if len(line) > 2048 else line
                         for name, regex in SECRET_SIGNATURES.items():
-                            match = re.search(regex, line)
+                            match = re.search(regex, line_to_check)
                             if match:
                                 # Redact matched secret in the description / evidence
                                 matched_str = match.group(0)
@@ -94,7 +105,7 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                                     description=f"A hardcoded secret matching signature for {name} was found in `{rel_path}` at line {line_num}.",
                                     severity=Severity.CRITICAL,
                                     cwe_id="CWE-798",
-                                    evidence=f"File: {rel_path} (L{line_num}): {line.strip()[:100]} [Redacted: {redacted_str}]",
+                                    evidence=f"File: {rel_path} (L{line_num}): {line_to_check.strip()[:100]} [Redacted: {redacted_str}]",
                                     remediation="Remove hardcoded secrets immediately, revoke leaked key, and store keys securely in environment variables or vault."
                                 ))
                                 finding_id_counter += 1
@@ -119,11 +130,22 @@ def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, clone_path)
 
+            # ReDoS protection: Skip files larger than 2MB
+            try:
+                if os.path.getsize(file_path) > 2 * 1024 * 1024:
+                    logger.warning(f"Skipping large file {rel_path} (> 2MB) to prevent ReDoS.")
+                    continue
+            except Exception as e:
+                logger.warning(f"Failed to check size for {file_path}: {str(e)}")
+                continue
+
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     for line_num, line in enumerate(f, start=1):
+                        # ReDoS protection: truncate lines longer than 2048 chars
+                        line_to_check = line[:2048] if len(line) > 2048 else line
                         for spec in UNSAFE_CODE_PATTERNS:
-                            if re.search(spec["pattern"], line):
+                            if re.search(spec["pattern"], line_to_check):
                                 findings.append(Finding(
                                     id=f"sast-code-{finding_id_counter}",
                                     agent_source="SAST_CODE_ANALYSIS",
@@ -131,7 +153,7 @@ def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
                                     description=f"{spec['description']} Found in `{rel_path}` at line {line_num}.",
                                     severity=spec["severity"],
                                     cwe_id=spec["cwe_id"],
-                                    evidence=f"File: {rel_path} (L{line_num}): {line.strip()[:150]}",
+                                    evidence=f"File: {rel_path} (L{line_num}): {line_to_check.strip()[:150]}",
                                     remediation="Rewrite source code to avoid dynamic query/expression evaluation or command execution."
                                 ))
                                 finding_id_counter += 1

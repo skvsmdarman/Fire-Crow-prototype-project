@@ -76,6 +76,23 @@ class Settings(BaseSettings):
                 raise ValueError("Insecure default SECRET_KEY cannot be used in production.")
         if not os.getenv("FRONTEND_URL") and os.getenv("RENDER_EXTERNAL_URL"):
             object.__setattr__(self, "FRONTEND_URL", os.environ["RENDER_EXTERNAL_URL"])
+
+        # Inject REDIS_PASSWORD into REDIS_URL if provided
+        if self.REDIS_PASSWORD:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(self.REDIS_URL)
+            if parsed.scheme in ("redis", "rediss") and not parsed.password:
+                netloc = parsed.netloc
+                if "@" in netloc:
+                    user_host = netloc.split("@", 1)
+                    user = user_host[0]
+                    host = user_host[1]
+                    if ":" not in user:
+                        netloc = f"{user}:{self.REDIS_PASSWORD}@{host}"
+                else:
+                    netloc = f":{self.REDIS_PASSWORD}@{netloc}"
+                new_url = urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+                object.__setattr__(self, "REDIS_URL", new_url)
         return self
 
 

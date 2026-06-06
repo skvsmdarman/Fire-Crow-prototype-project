@@ -2,8 +2,9 @@ import logging
 import socket
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from fastapi.responses import FileResponse, RedirectResponse
+from backend.app.services.limiter import limiter
 from sqlalchemy.orm import Session
 from typing import List
 from urllib.parse import unquote, urlparse
@@ -133,7 +134,9 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
 
 
 @router.post("/submit", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def submit_audit(
+    http_request: Request,
     request: SubmitJobRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),

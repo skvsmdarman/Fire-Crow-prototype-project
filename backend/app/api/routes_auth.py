@@ -21,6 +21,7 @@ from backend.app.services.auth import (
     verify_password,
 )
 from backend.app.services.security_log import record_security_event
+from backend.app.services.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -100,7 +101,13 @@ def _ensure_unique_username(db: Session, username: str) -> str:
 
 
 def _oauth_redirect_url(request: Request, route_name: str) -> str:
-    return str(request.url_for(route_name))
+    url = request.url_for(route_name)
+    proto = request.headers.get("x-forwarded-proto")
+    if proto:
+        url = url.replace(scheme=proto)
+    elif not settings.DEBUG or settings.FRONTEND_URL.startswith("https://"):
+        url = url.replace(scheme="https")
+    return str(url)
 
 
 @router.get("/policy-context")
@@ -117,6 +124,7 @@ async def policy_context():
 
 
 @router.post("/policy-events", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("60/minute")
 async def create_policy_event(
     payload: PolicyEventRequest,
     request: Request,
@@ -145,6 +153,7 @@ async def create_policy_event(
 
 
 @router.post("/register", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)):
     username = _normalize_username(payload.username)
     if not username:
@@ -197,6 +206,7 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("20/minute")
 async def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
     username = _normalize_username(payload.username)
     if not username:
@@ -282,6 +292,7 @@ async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends
 
 
 @router.get("/github")
+@limiter.limit("20/minute")
 async def github_login(
     request: Request,
     privacy_policy_accepted: bool,
@@ -418,6 +429,7 @@ async def github_callback(
 
 
 @router.get("/google")
+@limiter.limit("20/minute")
 async def google_login(
     request: Request,
     privacy_policy_accepted: bool,

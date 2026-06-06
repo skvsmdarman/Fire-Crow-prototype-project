@@ -2,15 +2,25 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Terminal, Shield, Cpu, RefreshCw, Layers, ArrowRight, Activity } from "lucide-react";
 
 import PolicyLink from "../components/PolicyLink";
 import styles from "./page.module.css";
+import {
+  fadeIn,
+  fadeInUp,
+  fadeInRight,
+  fadeInLeft,
+  staggerContainer,
+  scaleUp
+} from "../lib/animations";
 
 const HERO_METRICS = [
-  { value: "9", label: "Specialist agents" },
-  { value: "<5 min", label: "Audit loop" },
-  { value: "CVSS 3.1", label: "Risk scoring" },
-  { value: "PR-ready", label: "Fix output" },
+  { value: "9", label: "Specialist agents", icon: Cpu },
+  { value: "<5 min", label: "Audit loop", icon: RefreshCw },
+  { value: "CVSS 3.1", label: "Risk scoring", icon: Shield },
+  { value: "PR-ready", label: "Fix output", icon: Layers },
 ];
 
 const CONTROL_BOARD = [
@@ -134,22 +144,18 @@ export default function LandingPage() {
   const [scanning, setScanning] = useState(false);
   const [activePhase, setActivePhase] = useState(-1);
   const [terminalLines, setTerminalLines] = useState(INITIAL_LINES);
+  const [scrollProgress, setScrollProgress] = useState(0);
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add(styles.revealed);
-          }
-        });
-      },
-      { threshold: 0.18 },
-    );
-
-    document.querySelectorAll<HTMLElement>("[data-reveal]").forEach((node) => observer.observe(node));
-    return () => observer.disconnect();
+    const handleScroll = () => {
+      const totalScroll = document.documentElement.scrollHeight - window.innerHeight;
+      if (totalScroll > 0) {
+        setScrollProgress(window.scrollY / totalScroll);
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -181,11 +187,36 @@ export default function LandingPage() {
 
   return (
     <main className={styles.page}>
+      {/* Scroll Progress Indicator */}
+      <motion.div
+        className="scroll-progress-bar"
+        style={{
+          scaleX: scrollProgress,
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          background: "linear-gradient(90deg, #ff4d08, #ffbf47, #00e676)",
+          transformOrigin: "0%",
+          zIndex: 1000,
+        }}
+      />
+
       <div className={styles.backdrop} aria-hidden="true" />
       <div className={styles.noise} aria-hidden="true" />
 
+      {/* Decorative Blob */}
+      <div className="glowing-bg-blob-3" />
+
       <div className={styles.container}>
-        <nav className={styles.nav} aria-label="Primary navigation">
+        <motion.nav
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+          className={styles.nav}
+          aria-label="Primary navigation"
+        >
           <Link href="/" className={styles.brand}>
             <span className={styles.brandMark}>FC</span>
             <span className={styles.brandText}>
@@ -201,53 +232,85 @@ export default function LandingPage() {
             <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_nav" className={styles.navLink}>
               Privacy
             </PolicyLink>
-            <Link href="/signin" className={styles.navCta}>Open Console</Link>
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+              <Link href="/signin" className={styles.navCta}>Open Console</Link>
+            </motion.div>
           </div>
-        </nav>
+        </motion.nav>
 
         <section className={styles.hero}>
-          <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>For the moment before “can someone sanity-check this?”</p>
-            <h1 className={styles.heroTitle}>
-              Catch the risky path,
-              <span className={styles.heroAccent}>keep the proof,</span>
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            className={styles.heroCopy}
+          >
+            <motion.p variants={fadeInUp} className={styles.eyebrow}>
+              For the moment before “can someone sanity-check this?”
+            </motion.p>
+            <motion.h1 variants={fadeInUp} className={styles.heroTitle}>
+              Catch the risky path,{" "}
+              <span className="hero-gradient-text">keep the proof,</span>{" "}
               hand your team something useful.
-            </h1>
-            <p className={styles.heroBody}>
+            </motion.h1>
+            <motion.p variants={fadeInUp} className={styles.heroBody}>
               FireCrow helps teams run a serious first pass on a repo without turning the process
               into screenshots, shell scripts, and a week of back-and-forth.
-            </p>
+            </motion.p>
 
-            <div className={styles.heroActions}>
-              <Link href="/signin" className={styles.primaryButton}>Start an audit</Link>
-              <a href="#live-demo" className={styles.secondaryButton}>See the live run</a>
-            </div>
+            <motion.div variants={fadeInUp} className={styles.heroActions}>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Link href="/signin" className={cx(styles.primaryButton, "hero-primary-btn")}>
+                  Start an audit <ArrowRight size={16} className="hero-cta-arrow" />
+                </Link>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <a href="#live-demo" className={styles.secondaryButton}>See the live run</a>
+              </motion.div>
+            </motion.div>
 
-            <aside className={styles.heroNote}>
+            <motion.aside variants={fadeInUp} className={styles.heroNote}>
               <span className={styles.heroNoteLabel}>Good first run</span>
               <p>
                 Start with a service your team already talks about by name. Familiar context makes the
                 first audit feel a lot more trustworthy.
               </p>
-            </aside>
+            </motion.aside>
 
-            <div className={styles.heroFootnotes}>
+            <motion.div variants={fadeInUp} className={styles.heroFootnotes}>
               <span className={styles.heroFootnote}>Start with staging or a hotfix branch</span>
               <span className={styles.heroFootnote}>GitHub and workspace auth</span>
               <span className={styles.heroFootnote}>Reports people can actually read</span>
-            </div>
+            </motion.div>
 
-            <div className={styles.heroMetrics}>
-              {HERO_METRICS.map((metric) => (
-                <article key={metric.label} className={styles.metricCard}>
-                  <strong className={styles.metricValue}>{metric.value}</strong>
-                  <span className={styles.metricLabel}>{metric.label}</span>
-                </article>
-              ))}
-            </div>
-          </div>
+            <motion.div variants={staggerContainer} className={styles.heroMetrics}>
+              {HERO_METRICS.map((metric, i) => {
+                const IconComponent = metric.icon;
+                return (
+                  <motion.article
+                    key={metric.label}
+                    variants={scaleUp}
+                    whileHover={{ scale: 1.02, borderColor: "rgba(255, 114, 0, 0.2)" }}
+                    className={styles.metricCard}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                      <strong className={styles.metricValue}>{metric.value}</strong>
+                      <IconComponent size={18} className="infoTone" style={{ opacity: 0.8 }} />
+                    </div>
+                    <span className={styles.metricLabel}>{metric.label}</span>
+                  </motion.article>
+                );
+              })}
+            </motion.div>
+          </motion.div>
 
-          <aside className={styles.heroBoard} aria-label="Operational preview">
+          <motion.aside
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+            className={styles.heroBoard}
+            aria-label="Operational preview"
+          >
             <div className={styles.boardHeader}>
               <div>
                 <p className={styles.boardLabel}>Control room preview</p>
@@ -256,31 +319,46 @@ export default function LandingPage() {
               <span className={styles.boardBadge}>All systems ready</span>
             </div>
 
-            <div className={styles.boardList}>
+            <motion.div variants={staggerContainer} className={styles.boardList}>
               {CONTROL_BOARD.map((row, index) => (
-                <article className={styles.boardItem} key={row.label}>
+                <motion.article
+                  key={row.label}
+                  variants={fadeInUp}
+                  whileHover={{ x: 4, background: "rgba(255, 255, 255, 0.05)" }}
+                  className={styles.boardItem}
+                >
                   <span className={styles.boardIndex}>{String(index + 1).padStart(2, "0")}</span>
                   <div className={styles.boardBody}>
                     <strong>{row.label}</strong>
                     <span>{row.hint}</span>
                   </div>
                   <span className={styles.boardState}>{row.state}</span>
-                </article>
+                </motion.article>
               ))}
-            </div>
+            </motion.div>
 
             <div className={styles.boardFooter}>
               <div>
                 <span className={styles.boardFooterLabel}>Default output</span>
                 <p className={styles.boardFooterValue}>Trace logs, finding evidence, CVSS ranking, and a remediation handoff package.</p>
               </div>
-              <Link href="/signin" className={styles.boardFooterLink}>Launch workspace</Link>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Link href="/signin" className={styles.boardFooterLink}>Launch workspace</Link>
+              </motion.div>
             </div>
-          </aside>
+          </motion.aside>
         </section>
 
-        <section id="capabilities" className={cx(styles.section, styles.reveal)} data-reveal>
-          <div className={styles.sectionHeader}>
+        {/* Capabilities Section */}
+        <motion.section
+          id="capabilities"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={staggerContainer}
+          className={styles.section}
+        >
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Why it feels tighter</p>
               <h2 className={styles.sectionTitle}>Less dashboard theater. More useful context.</h2>
@@ -288,23 +366,35 @@ export default function LandingPage() {
             <p className={styles.sectionIntro}>
               The UI should explain itself in plain language, especially when someone from engineering opens it for the first time.
             </p>
-          </div>
+          </motion.div>
 
           <div className={styles.capabilityGrid}>
             {CAPABILITIES.map((item) => (
-              <article key={item.title} className={styles.capabilityCard}>
+              <motion.article
+                key={item.title}
+                variants={fadeInUp}
+                whileHover={{ y: -4, borderColor: "rgba(255,114,0,0.2)", background: "rgba(255,255,255,0.03)" }}
+                className={styles.capabilityCard}
+              >
                 <div className={styles.capabilityMeta}>
                   <span>{item.stat}</span>
                 </div>
                 <h3>{item.title}</h3>
                 <p>{item.body}</p>
-              </article>
+              </motion.article>
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        <section className={cx(styles.section, styles.hintsSection, styles.reveal)} data-reveal>
-          <div className={styles.sectionHeader}>
+        {/* Hints Section */}
+        <motion.section
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={staggerContainer}
+          className={cx(styles.section, styles.hintsSection)}
+        >
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Helpful hints</p>
               <h2 className={styles.sectionTitle}>A few cues that make the first run land better.</h2>
@@ -312,21 +402,34 @@ export default function LandingPage() {
             <p className={styles.sectionIntro}>
               These are the little things a real teammate would tell you before asking you to trust a new security tool.
             </p>
-          </div>
+          </motion.div>
 
           <div className={styles.hintGrid}>
             {FIRST_RUN_HINTS.map((hint) => (
-              <article key={hint.title} className={styles.hintCard}>
+              <motion.article
+                key={hint.title}
+                variants={fadeInUp}
+                whileHover={{ y: -4, borderColor: "rgba(255,184,0,0.25)", background: "rgba(255,255,255,0.03)" }}
+                className={styles.hintCard}
+              >
                 <span className={styles.hintMarker}>Note</span>
                 <h3>{hint.title}</h3>
                 <p>{hint.body}</p>
-              </article>
+              </motion.article>
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        <section id="live-demo" className={cx(styles.section, styles.demoSection, styles.reveal)} data-reveal>
-          <div className={styles.sectionHeader}>
+        {/* Live Demo Section */}
+        <motion.section
+          id="live-demo"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={staggerContainer}
+          className={cx(styles.section, styles.demoSection)}
+        >
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Live walkthrough</p>
               <h2 className={styles.sectionTitle}>Preview the audit flow before you ever open the dashboard.</h2>
@@ -334,30 +437,42 @@ export default function LandingPage() {
             <p className={styles.sectionIntro}>
               A tighter marketing page should still prove the interaction model. This sample run shows how the pipeline moves from repo intake to report delivery.
             </p>
-          </div>
+          </motion.div>
 
           <div className={styles.demoSplit}>
             <div className={styles.pipelinePanel}>
               {PIPELINE.map((step, index) => (
-                <article
+                <motion.article
                   key={step.id}
+                  variants={fadeInLeft}
                   className={cx(
                     styles.pipelineCard,
                     activePhase === index && styles.pipelineCardActive,
                     activePhase > index && styles.pipelineCardDone,
+                    "hero-pipeline-step",
+                    activePhase === index && "hero-step-active",
+                    activePhase > index && "hero-step-done"
                   )}
+                  layout
                 >
                   <div className={styles.pipelineHeader}>
                     <span>{step.id}</span>
-                    <strong>{step.output}</strong>
+                    <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {activePhase === index && (
+                        <span className="pipeline-indicator">
+                          <span className="pipeline-pulse" />
+                        </span>
+                      )}
+                      {step.output}
+                    </strong>
                   </div>
                   <h3>{step.title}</h3>
                   <p>{step.body}</p>
-                </article>
+                </motion.article>
               ))}
             </div>
 
-            <div className={styles.simulator}>
+            <motion.div variants={fadeInRight} className={styles.simulator}>
               <div className={styles.simulatorHeader}>
                 <div className={styles.simulatorDots} aria-hidden="true">
                   <span className={styles.simulatorDotRed} />
@@ -368,22 +483,30 @@ export default function LandingPage() {
               </div>
 
               <div className={styles.simulatorBody}>
-                {terminalLines.map((line, index) => (
-                  <div className={styles.terminalLine} key={`${line.text}-${index}`}>
-                    <span className={styles.terminalPrompt}>&gt;</span>
-                    <span
-                      className={cx(
-                        styles.terminalText,
-                        line.tone === "info" && styles.infoTone,
-                        line.tone === "success" && styles.successTone,
-                        line.tone === "warning" && styles.warningTone,
-                        line.tone === "error" && styles.errorTone,
-                      )}
+                <AnimatePresence mode="popLayout">
+                  {terminalLines.map((line, index) => (
+                    <motion.div
+                      className={styles.terminalLine}
+                      key={`${line.text}-${index}`}
+                      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
                     >
-                      {line.text}
-                    </span>
-                  </div>
-                ))}
+                      <span className={styles.terminalPrompt}>&gt;</span>
+                      <span
+                        className={cx(
+                          styles.terminalText,
+                          line.tone === "info" && styles.infoTone,
+                          line.tone === "success" && styles.successTone,
+                          line.tone === "warning" && styles.warningTone,
+                          line.tone === "error" && styles.errorTone,
+                        )}
+                      >
+                        {line.text}
+                      </span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
                 <div ref={terminalEndRef} />
               </div>
 
@@ -396,16 +519,38 @@ export default function LandingPage() {
                   placeholder="github.com/team/repository"
                   disabled={scanning}
                 />
-                <button type="button" onClick={runSimulation} className={styles.launchButton} disabled={scanning}>
-                  {scanning ? "Running preview..." : "Run preview"}
-                </button>
+                <motion.button
+                  whileHover={{ scale: scanning ? 1 : 1.02 }}
+                  whileTap={{ scale: scanning ? 1 : 0.98 }}
+                  type="button"
+                  onClick={runSimulation}
+                  className={styles.launchButton}
+                  disabled={scanning}
+                >
+                  {scanning ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Activity size={16} className="auth-btn-spinner" />
+                      Running preview...
+                    </span>
+                  ) : (
+                    "Run preview"
+                  )}
+                </motion.button>
               </div>
-            </div>
+            </motion.div>
           </div>
-        </section>
+        </motion.section>
 
-        <section id="agents" className={cx(styles.section, styles.reveal)} data-reveal>
-          <div className={styles.sectionHeader}>
+        {/* Agents Showcase Grid */}
+        <motion.section
+          id="agents"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={staggerContainer}
+          className={styles.section}
+        >
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Agent network</p>
               <h2 className={styles.sectionTitle}>Each agent has one clear job.</h2>
@@ -413,37 +558,56 @@ export default function LandingPage() {
             <p className={styles.sectionIntro}>
               No mystery roles, no sci-fi flavor text. Just a readable pipeline with responsibilities your team can follow.
             </p>
-          </div>
+          </motion.div>
 
-          <div className={styles.agentGrid}>
+          <div className="agents-showcase-grid">
             {AGENTS.map((agent, index) => (
-              <article className={styles.agentCard} key={agent.id}>
-                <div className={styles.agentHeader}>
-                  <span className={styles.agentIndex}>{String(index + 1).padStart(2, "0")}</span>
-                  <span className={styles.agentTag}>Online</span>
+              <motion.article
+                key={agent.id}
+                variants={fadeInUp}
+                className="agent-showcase-card"
+              >
+                <div className="agent-showcase-header">
+                  <span className="agent-idx">{String(index + 1).padStart(2, "0")}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span className="agent-status-dot" />
+                    <span className="agent-idx">Online</span>
+                  </div>
                 </div>
                 <h3>{agent.id}</h3>
+                <span className="agent-role">{agent.role.split(",")[0]}</span>
                 <p>{agent.role}</p>
-              </article>
+              </motion.article>
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        <section className={cx(styles.cta, styles.reveal)} data-reveal>
-          <div className={styles.ctaContent}>
+        {/* CTA section */}
+        <motion.section
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={fadeInUp}
+          className="cta-band"
+        >
+          <div className="cta-band-content">
             <p className={styles.eyebrow}>Next step</p>
-            <h2 className={styles.ctaTitle}>Run it on a repo your team already knows.</h2>
-            <p className={styles.ctaCopy}>
+            <h2>Run it on a repo your team already knows.</h2>
+            <p>
               That first pass is where trust gets built. Keep the scope familiar, keep the language human, and the review moves faster.
             </p>
-            <div className={styles.heroActions}>
-              <Link href="/signin" className={styles.primaryButton}>Go to sign in</Link>
-              <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>
-                Review privacy policy
-              </PolicyLink>
+            <div className={styles.heroActions} style={{ marginTop: 24 }}>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Link href="/signin" className={styles.primaryButton}>Go to sign in</Link>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>
+                  Review privacy policy
+                </PolicyLink>
+              </motion.div>
             </div>
           </div>
-        </section>
+        </motion.section>
 
         <footer className={styles.footer}>
           <div className={styles.footerBrand}>
@@ -474,3 +638,4 @@ export default function LandingPage() {
     </main>
   );
 }
+
