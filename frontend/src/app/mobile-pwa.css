@@ -1,0 +1,403 @@
+/* Fire Crow mobile PWA shell: app-like mobile polish without backend/API contract changes. */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  min-width: 320px;
+  overscroll-behavior-y: none;
+}
+
+.fc-install-prompt {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 18px));
+  z-index: 10000;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 114, 0, 0.45);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(255, 69, 0, 0.98), rgba(255, 114, 0, 0.96) 62%, rgba(255, 184, 0, 0.92)),
+    #ff7200;
+  color: #160800;
+  box-shadow: 0 18px 50px rgba(255, 69, 0, 0.28);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fc-offline-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(22px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 69, 0, 0.18), transparent 34rem),
+    radial-gradient(circle at 82% 0%, rgba(92, 200, 255, 0.12), transparent 28rem),
+    #050609;
+}
+
+.fc-offline-card {
+  width: min(100%, 520px);
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(11, 13, 24, 0.92);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+}
+
+.fc-offline-mark {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--fire), var(--orange) 60%, var(--amber));
+  color: #160800;
+  font-family: var(--font-display), sans-serif;
+  font-size: 23px;
+  font-weight: 800;
+  box-shadow: 0 18px 46px rgba(255, 69, 0, 0.24);
+}
+
+.fc-offline-kicker {
+  margin: 22px 0 8px;
+  color: var(--orange);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.fc-offline-card h1 {
+  font-size: clamp(42px, 12vw, 70px);
+  line-height: 0.88;
+}
+
+.fc-offline-card p:not(.fc-offline-kicker) {
+  color: var(--dim);
+  line-height: 1.65;
+}
+
+.fc-offline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  margin-top: 18px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--fire), var(--orange) 62%, var(--amber));
+  color: #160800;
+  font-weight: 900;
+}
+
+.fc-dashboard-mobile-label {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  body {
+    background:
+      radial-gradient(circle at 18% -8%, rgba(255, 69, 0, 0.2), transparent 24rem),
+      radial-gradient(circle at 105% 0%, rgba(92, 200, 255, 0.11), transparent 22rem),
+      #050609;
+  }
+
+  .fc-install-prompt {
+    right: 16px;
+    bottom: calc(env(safe-area-inset-bottom) + 92px);
+  }
+
+  [class*="shell"]:has(.fc-dashboard-sidebar) {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: calc(86px + env(safe-area-inset-bottom));
+    background:
+      radial-gradient(circle at 16% -10%, rgba(255, 69, 0, 0.18), transparent 24rem),
+      radial-gradient(circle at 100% 4%, rgba(92, 200, 255, 0.1), transparent 20rem),
+      #050609;
+  }
+
+  .fc-dashboard-sidebar {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    top: auto !important;
+    z-index: 9000 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 8px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 26px !important;
+    background:
+      linear-gradient(180deg, rgba(17, 20, 35, 0.92), rgba(8, 10, 18, 0.94)),
+      rgba(8, 10, 18, 0.94) !important;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    backdrop-filter: blur(20px) saturate(1.3);
+  }
+
+  .fc-dashboard-brand,
+  .fc-dashboard-workspace-card {
+    display: none !important;
+  }
+
+  .fc-dashboard-bottom-nav {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px !important;
+  }
+
+  .fc-dashboard-tab {
+    min-height: 58px !important;
+    padding: 8px 4px !important;
+    border-radius: 20px !important;
+    text-align: center !important;
+  }
+
+  .fc-dashboard-tab [class*="activeIndicator"] {
+    border-left: 0 !important;
+    border-radius: 20px !important;
+    background:
+      linear-gradient(180deg, rgba(255, 114, 0, 0.2), rgba(255, 69, 0, 0.08)),
+      rgba(255, 255, 255, 0.03) !important;
+  }
+
+  .fc-dashboard-tab [class*="navItemContent"] {
+    display: grid !important;
+    place-items: center !important;
+    gap: 4px !important;
+  }
+
+  .fc-dashboard-tab-icon {
+    width: 19px !important;
+    height: 19px !important;
+  }
+
+  .fc-dashboard-tab-label {
+    font-family: var(--font-mono), monospace !important;
+    font-size: 9px !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+  }
+
+  .fc-dashboard-desktop-label {
+    display: none;
+  }
+
+  .fc-dashboard-mobile-label {
+    display: inline;
+  }
+
+  [class*="mainSurface"] {
+    max-width: none !important;
+    width: 100% !important;
+    min-height: 100dvh;
+    padding: max(18px, env(safe-area-inset-top)) 14px calc(116px + env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+  }
+
+  [class*="topbar"] {
+    display: grid !important;
+    gap: 14px !important;
+    margin-bottom: 16px !important;
+  }
+
+  [class*="topbar"] h1 {
+    font-size: clamp(38px, 15vw, 58px) !important;
+    line-height: 0.86 !important;
+    text-transform: capitalize;
+  }
+
+  [class*="workspaceSession"] {
+    width: 100% !important;
+    justify-content: space-between !important;
+    min-height: 48px !important;
+    border-radius: 18px !important;
+    background: rgba(11, 13, 24, 0.72) !important;
+    backdrop-filter: blur(16px);
+  }
+
+  [class*="workspaceSession"] span {
+    max-width: 56vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [class*="metricsGrid"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  [class*="metricCard"] {
+    min-height: 118px !important;
+    padding: 15px !important;
+    border-radius: 22px !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+      rgba(11, 13, 24, 0.82) !important;
+  }
+
+  [class*="metricValue"] {
+    font-size: 34px !important;
+  }
+
+  [class*="workGrid"],
+  [class*="detailGrid"],
+  [class*="sectionBody"],
+  [class*="agentGrid"],
+  [class*="settingsGrid"] {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  [class*="panel"],
+  [class*="agentCard"],
+  [class*="statusCard"],
+  [class*="jobRow"],
+  [class*="reportRow"],
+  [class*="findingRowContainer"] {
+    border-radius: 22px !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+      rgba(11, 13, 24, 0.82) !important;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  }
+
+  [class*="panel"] {
+    padding: 16px !important;
+  }
+
+  [class*="panelHeader"] {
+    display: grid !important;
+    gap: 12px !important;
+  }
+
+  [class*="panel"] h2 {
+    font-size: 30px !important;
+    line-height: 0.95 !important;
+  }
+
+  [class*="auditForm"] label {
+    display: grid;
+    gap: 8px;
+  }
+
+  [class*="auditForm"] input,
+  input {
+    min-height: 48px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+
+  button,
+  a {
+    min-height: 44px;
+  }
+
+  [class*="jobList"],
+  [class*="findingList"] {
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
+  [class*="jobRow"],
+  [class*="findingRowHeader"],
+  [class*="reportRow"] {
+    min-height: 72px !important;
+  }
+
+  [class*="jobRow"],
+  [class*="reportRow"] {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  [class*="findingRowHeader"] {
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  [class*="findingRowMain"],
+  [class*="findingRowMeta"] {
+    align-items: flex-start !important;
+  }
+
+  [class*="findingRowMeta"] {
+    display: grid !important;
+    gap: 6px !important;
+    justify-items: end !important;
+  }
+
+  [class*="pipeline"] {
+    display: grid !important;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(132px, 42vw);
+    grid-template-columns: none !important;
+    gap: 10px !important;
+    overflow-x: auto !important;
+    padding: 2px 0 12px !important;
+    scroll-snap-type: x mandatory;
+  }
+
+  [class*="pipelineStep"] {
+    scroll-snap-align: start;
+    border-radius: 18px !important;
+  }
+
+  [class*="logList"] {
+    height: auto !important;
+    max-height: 360px !important;
+    border-radius: 22px !important;
+  }
+
+  [class*="logRow"] {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 3px !important;
+  }
+
+  [class*="logDivider"] {
+    display: none !important;
+  }
+
+  [class*="emptyState"],
+  [class*="noticeError"] {
+    border-radius: 20px !important;
+    padding: 18px !important;
+    text-align: left !important;
+  }
+}
+
+@media (max-width: 390px) {
+  [class*="metricsGrid"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .fc-dashboard-tab-label {
+    font-size: 8px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
