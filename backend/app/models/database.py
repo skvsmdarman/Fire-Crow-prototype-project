@@ -52,9 +52,9 @@ def _ensure_audit_job_compatibility() -> None:
     columns = {column["name"] for column in inspector.get_columns("audit_jobs")}
     with engine.begin() as conn:
         if "cancel_requested" not in columns:
-            conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested BOOLEAN NOT NULL DEFAULT 0")
+            conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested BOOLEAN NOT NULL DEFAULT false")
         if "cancel_requested_at" not in columns:
-            conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested_at DATETIME")
+            conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested_at TIMESTAMP")
 
 
 def _ensure_user_compatibility() -> None:
@@ -75,7 +75,7 @@ def _ensure_user_compatibility() -> None:
         if "privacy_policy_version" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(64)")
         if "privacy_policy_accepted_at" not in columns:
-            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_accepted_at DATETIME")
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_accepted_at TIMESTAMP")
 
 
 _ensure_audit_job_compatibility()
