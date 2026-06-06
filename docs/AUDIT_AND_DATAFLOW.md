@@ -26,7 +26,7 @@ Fire Crow/
 │   │   ├── models/           # SQLAlchemy 2.0 ORM models
 │   │   │   ├── database.py       → Engine init, PostgreSQL→SQLite fallback
 │   │   │   ├── audit_job.py      → AuditJob, FindingModel, AgentLog tables
-│   │   │   └── user.py           → User table (PBKDF2 password hashes)
+│   │   │   └── user.py           → User table (Argon2id password hashes, legacy PBKDF2 compatibility)
 │   │   ├── orchestrator/     # LangGraph state machine
 │   │   │   ├── maestro.py        → Graph definition, 10 phase nodes, routing
 │   │   │   ├── runtime.py        → Job execution loop + terminal state persistence
@@ -35,7 +35,7 @@ Fire Crow/
 │   │   │   ├── audit_state.py    → AuditState (LangGraph state), Finding, enums
 │   │   │   └── audit_api.py      → API request/response schemas
 │   │   ├── services/         # Business logic services
-│   │   │   ├── auth.py           → JWT encode/decode, PBKDF2 hash/verify
+│   │   │   ├── auth.py           → JWT encode/decode, Argon2id hash/verify, token revocation
 │   │   │   ├── reporter.py       → HTML→PDF (WeasyPrint), R2 upload, Resend email
 │   │   │   └── sandbox.py        → Docker bridge network + Kali container manager
 │   │   ├── workers/
@@ -69,10 +69,10 @@ Fire Crow/
 | **Task Queue** | Celery 5.3 + Redis | Background job dispatch (fallback: FastAPI BackgroundTasks) |
 | **Database** | PostgreSQL (prod) / SQLite (dev) | Job, finding, log, user persistence |
 | **ORM** | SQLAlchemy 2.0 (mapped_column) | Declarative models with type-safe columns |
-| **Auth** | PyJWT + PBKDF2-SHA256 | Bearer token auth, salted password hashing |
-| **Sandbox** | Docker SDK (Python) | Private bridge networks, Kali + target containers |
+| **Auth** | PyJWT + Argon2id | Bearer/cookie auth, salted password hashing, token revocation |
+| **Sandbox** | Docker SDK (Python) | Private bridge networks, controlled scanner + target containers |
 | **PDF Reports** | WeasyPrint | HTML→PDF compilation |
-| **Report Storage** | Cloudflare R2 (S3-compatible) | Pre-signed URL report hosting |
+| **Report Storage** | Cloudflare R2 (S3-compatible) | Presigned report storage with authenticated download route |
 | **Email** | Resend API | Transactional audit completion emails |
 | **GitHub Integration** | GitMCP (gitmcp.io SSE) + REST API | Auto-raise security issues on scanned repos |
 | **Frontend** | Next.js 14, React 18, TypeScript | App Router SSR + client dashboard |
@@ -226,9 +226,9 @@ graph LR
 ```mermaid
 erDiagram
     USERS {
-        string id PK "usr_{username}"
+        string id PK "UUID v4"
         string username UK "unique index"
-        string password_hash "PBKDF2:SHA256"
+        string password_hash "Argon2id or legacy PBKDF2"
         string email "nullable"
         datetime created_at
     }
@@ -279,9 +279,9 @@ erDiagram
 ### 4.2 Database Initialization
 
 - **Production**: PostgreSQL via `DATABASE_URL` env var
-- **Development**: Auto-fallback to SQLite (`firecrow.db`) if PostgreSQL connection fails within 2s
-- **Schema creation**: `Base.metadata.create_all()` runs on startup when `DEBUG=true`
-- **Migration compat**: `_ensure_audit_job_compatibility()` adds `cancel_requested` columns to existing tables via ALTER TABLE
+- **Development**: Auto-fallback to SQLite (`firecrow.db`) only when `DEBUG=true`
+- **Schema creation**: `Base.metadata.create_all()` remains a compatibility check; production deployments should run Alembic migrations before startup
+- **Migration compat**: compatibility hooks add missing audit/user columns and attempt a non-destructive lower(email) unique index
 
 ---
 
@@ -307,10 +307,11 @@ erDiagram
 ### 5.2 Authentication
 
 - **Scheme**: HTTP Bearer (`Authorization: Bearer <jwt>`)
-- **Token payload**: `{sub: user_id, username: string, exp: datetime}`
+- **Browser OAuth session**: HTTP-only `fc_access_token` cookie with `SameSite=Lax`
+- **Token payload**: `{sub, username, exp, iat, nbf, jti, iss, aud}`
 - **Algorithm**: HS256 with `SECRET_KEY` from env
 - **Expiry**: 24 hours
-- **Password storage**: PBKDF2-HMAC-SHA256, 100,000 iterations, 16-byte random salt, stored as `salt_hex:hash_hex`
+- **Password storage**: Argon2id. Legacy PBKDF2-HMAC-SHA256 hashes still verify and are rehashed after successful login.
 
 ### 5.3 Tenant Isolation
 
@@ -334,11 +335,13 @@ Pydantic Settings reads from (in priority order):
 | Variable | Default | Purpose |
 |:---------|:--------|:--------|
 | `PORT` | `8000` | Uvicorn listen port |
-| `DEBUG` | `true` | Enables auto-create users, dev DB, mock sandbox |
-| `SECRET_KEY` | `dev_secret_key...` | JWT signing key (**must change in prod**) |
-| `DATABASE_URL` | `postgresql://...` | Primary database (falls back to SQLite) |
+| `DEBUG` | `false` | Enables local-only dev conveniences when explicitly set true |
+| `SECRET_KEY` | `""` | JWT signing key (**required in prod, minimum 32 chars**) |
+| `DATABASE_URL` | `postgresql://...` | Primary database (SQLite only allowed with DEBUG=true) |
 | `REDIS_URL` | `redis://localhost:6379/0` | Celery broker + result backend |
-| `FIRE_CROW_MOCK_SANDBOX` | `True` | Use simulated Docker containers |
+| `FIRE_CROW_MOCK_SANDBOX` | `false` | Use simulated Docker containers in DEBUG only |
+| `FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD` | `false` | Explicit opt-in for user Dockerfile builds |
+| `FIRE_CROW_SCANNER_IMAGE` | pinned image tag | Controlled scanner runtime image; `:latest` is rejected in prod |
 | `GITHUB_CLIENT_ID` | `""` | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | `""` | GitHub OAuth client secret |
 | `GITHUB_TOKEN` | `""` | PAT for GitMCP issue/PR creation |
@@ -352,7 +355,7 @@ Pydantic Settings reads from (in priority order):
 
 ### 6.3 Production Validator
 
-A `@model_validator` on `Settings` raises `ValueError` at startup if `DEBUG=false` and `SECRET_KEY` is still the default insecure value.
+A `@model_validator` on `Settings` raises `ValueError` at startup if production configuration is missing a strong `SECRET_KEY`, uses SQLite, or configures a `:latest` scanner image.
 
 ---
 
@@ -375,8 +378,9 @@ A `@model_validator` on `Settings` raises `ValueError` at startup if `DEBUG=fals
 
 ### 7.3 SANDBOX (`services/sandbox.py`)
 
-- **Mock mode**: Returns simulated container IDs and IPs when Docker unavailable
-- **Live mode**: Creates Docker bridge network (`fc-net-{job_id}`), starts target container (builds from Dockerfile or uses `python:3.12-alpine`), starts `kalilinux/kali-rolling` with `sleep infinity`
+- **Mock mode**: Returns simulated container IDs and IPs only when `DEBUG=true`
+- **Live mode**: Creates Docker bridge network (`fc-net-{job_id}`), starts target container using a controlled runtime by default, and starts the pinned `FIRE_CROW_SCANNER_IMAGE`
+- **Dockerfile builds**: User-provided Dockerfiles are disabled by default and require `FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD=true`
 - **Cleanup**: Stops/removes both containers and the bridge network
 
 ### 7.4 NETWORK (`agents/network.py`)
@@ -403,9 +407,9 @@ A `@model_validator` on `Settings` raises `ValueError` at startup if `DEBUG=fals
 ### 7.8 REPORTER (`services/reporter.py`)
 
 - **HTML**: Generates premium styled executive audit report with severity badges, evidence blocks, and summary table
-- **PDF**: Compiles via WeasyPrint (falls back to simulated PDF if unavailable)
-- **Upload**: Cloudflare R2 with 7-day pre-signed URL (falls back to authenticated local report download through `/api/v1/audit/job/{id}/report`)
-- **Email**: Sends via Resend API with HTML template containing download link
+- **PDF**: Compiles via WeasyPrint. Simulated PDF fallback is DEBUG-only.
+- **Upload**: Cloudflare R2 with 7-day pre-signed URL. Presigned URLs are treated as bearer secrets and are not logged.
+- **Email**: Sends via configured providers. Local HTML fallback is DEBUG-only.
 
 ### 7.9 GITHUB_MCP (`agents/github_mcp.py`)
 
@@ -512,18 +516,18 @@ A job is marked `PARTIAL` instead of `FAILED` if any of these exist:
 
 | Control | Status | Implementation |
 |:--------|:------:|:---------------|
-| Password hashing | ✅ | PBKDF2-SHA256, 100K iterations, random 16-byte salt |
-| JWT authentication | ✅ | HS256, 24h expiry, enforced on all audit/SSE endpoints |
-| Production key validation | ✅ | Startup error if default SECRET_KEY used with DEBUG=false |
+| Password hashing | ✅ | Argon2id with legacy PBKDF2 verification and rehash |
+| JWT authentication | ✅ | HS256, 24h expiry, issuer/audience/jti claims, logout revocation |
+| Production key validation | ✅ | Startup error if SECRET_KEY/DB/scanner image config is unsafe for DEBUG=false |
 | Tenant isolation | ✅ | All queries filter by user_id from JWT |
 | Git argument injection | ✅ | Prefix check + `--` separator in subprocess |
 | Celery termination | ✅ | `terminate=True, signal="SIGTERM"` on cancel |
 | Sandbox network isolation | ✅ | Private Docker bridge, no host network access |
-| CORS | ⚠️ | `allow_origins=["*"]` — restrict in production |
-| Rate limiting | ❌ | Not implemented (documented as future work) |
+| CORS | ✅ | Explicit configured origins with credentials |
+| Rate limiting | ✅ | SlowAPI route limits plus per-IP/username login failure throttling |
 | Budget enforcement | ❌ | `budget_remaining_usd` field exists but not checked |
 | Scan duration limits | ❌ | `max_scan_duration_sec` field exists but not enforced |
-| Regex ReDoS protection | ❌ | No file size limits on SAST scan targets |
+| Regex ReDoS protection | ✅ | File size and line length bounds on regex SAST scan targets |
 
 ---
 

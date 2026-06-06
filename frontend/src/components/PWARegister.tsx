@@ -9,14 +9,15 @@ type BeforeInstallPromptEvent = Event & {
 
 export default function PWARegister() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      ("standalone" in window.navigator && Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone))
+    );
+  });
 
   useEffect(() => {
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      ("standalone" in window.navigator && Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone));
-    setIsStandalone(standalone);
-
     const registerServiceWorker = () => {
       if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);

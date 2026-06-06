@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
 from backend.app.schemas import Finding, Severity
 from backend.app.config import settings
+from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.google_agent")
 
@@ -31,7 +32,16 @@ def run_google_agent(
     pr_risk_analysis = {}
     
     if not api_key:
-        logs.append("GEMINI_API_KEY not configured. Generating simulated PR risk report.")
+        if not settings.DEBUG:
+            logs.append("GEMINI_API_KEY not configured. Google Agent risk assessment unavailable.")
+            return {
+                "google_agent_delivered": False,
+                "google_agent_pr_risks_analyzed": False,
+                "google_agent_risk_report": {},
+                "google_agent_logs": logs,
+            }
+
+        logs.append("GEMINI_API_KEY not configured. Generating DEBUG simulated PR risk report.")
         # Simulated PR risks if no Gemini API Key is configured
         has_critical = any(f.severity == Severity.CRITICAL for f in findings)
         has_high = any(f.severity == Severity.HIGH for f in findings)
@@ -144,11 +154,19 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
                 break
 
         if not success:
-            logs.append("All Gemini models failed. Using fallback simulation.")
+            logs.append("All Gemini models failed.")
+            if not settings.DEBUG:
+                return {
+                    "google_agent_delivered": False,
+                    "google_agent_pr_risks_analyzed": False,
+                    "google_agent_risk_report": {},
+                    "google_agent_logs": logs,
+                }
+            logs.append("DEBUG mode enabled. Using fallback simulation.")
             pr_risk_analysis = {
                 "overall_pr_risk": "HIGH" if findings else "LOW",
-                "risk_description": "Failed to run LLM assessment. Fallback analysis flags high risk due to presence of unresolved findings.",
-                "key_risk_factors": ["AI analysis connection timeout", "Unresolved findings in pipeline"],
+                "risk_description": "Failed to run LLM assessment. Fallback analysis flags review risk due to unresolved findings.",
+                "key_risk_factors": ["AI analysis unavailable", "Unresolved findings in pipeline"],
                 "merge_recommendation": "REVIEW" if findings else "APPROVE"
             }
 
@@ -235,7 +253,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             delivered = True
             logs.append(f"PR risk assessment email alert successfully sent via Google SMTP to {recipient_email}.")
         except Exception as e:
-            logs.append(f"Google SMTP email delivery failed: {e}. Attempting Resend fallback...")
+            logs.append(f"Google SMTP email delivery failed: {redact_text(str(e))}. Attempting Resend fallback...")
             
     # 2. Resend fallback
     if not delivered and settings.RESEND_API_KEY:
@@ -252,9 +270,17 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             delivered = True
             logs.append(f"PR risk assessment email alert successfully sent via Resend to {recipient_email}.")
         except Exception as e:
-            logs.append(f"Resend email delivery failed: {e}.")
+            logs.append(f"Resend email delivery failed: {redact_text(str(e))}.")
 
     if not delivered:
+        if not settings.DEBUG:
+            logs.append("No active mail gateway transmitted the PR risk email. Local fallback is disabled outside DEBUG mode.")
+            return {
+                "google_agent_delivered": False,
+                "google_agent_pr_risks_analyzed": True,
+                "google_agent_risk_report": pr_risk_analysis,
+                "google_agent_logs": logs,
+            }
         try:
             import os
             import re
@@ -270,7 +296,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             delivered = True
             logs.append(f"Saved fallback local Google Security Agent PR risk assessment HTML email report to: {filepath}")
         except Exception as le:
-            logs.append(f"Failed to write local fallback email: {le}")
+            logs.append(f"Failed to write local fallback email: {redact_text(str(le))}")
             logs.append("No active mail gateway was able to transmit the PR risk email. Logged output to console.")
         
     return {

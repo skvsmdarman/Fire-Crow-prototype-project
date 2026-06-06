@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 from backend.app.config import settings
 from backend.app.schemas import Finding, Severity
+from backend.app.services.redaction import redact_text
 
 # Ensure WeasyPrint can find GTK/Pango libraries on Windows
 if os.name == "nt" and "WEASYPRINT_DLL_DIRECTORIES" not in os.environ:
@@ -67,7 +68,14 @@ class ReportGenerator:
         # Mock logic
         return f"Compliance Report ({standard}) for Job {job_id} generated successfully."
 
-    def generate_html_report(self, job_id: str, repo_url: str, branch: str, findings: List[Finding]) -> str:
+    def generate_html_report(
+        self,
+        job_id: str,
+        repo_url: str,
+        branch: str,
+        findings: List[Finding],
+        scanner_execution: Dict[str, Any] | None = None,
+    ) -> str:
         """Generates a premium executive vulnerability audit HTML string."""
         safe_job_id = html.escape(job_id)
         safe_repo_url = html.escape(repo_url)
@@ -116,7 +124,7 @@ class ReportGenerator:
             safe_agent = html.escape(f.agent_source)
             safe_cwe = html.escape(f.cwe_id) if f.cwe_id else ""
             safe_desc = html.escape(f.description)
-            safe_evidence = html.escape(f.evidence) if f.evidence else ""
+            safe_evidence = html.escape(redact_text(f.evidence)) if f.evidence else ""
             safe_cvss_vector = html.escape(f.cvss_vector) if f.cvss_vector else "N/A"
             safe_cvss_score = html.escape(str(f.cvss_score)) if f.cvss_score is not None else "N/A"
             remediation_val = getattr(f, "remediation", None)
@@ -169,6 +177,35 @@ class ReportGenerator:
             </div>
             """
 
+        scanner_execution = scanner_execution or {}
+        scanner_rows = ""
+        scanner_labels = {
+            "recon": "Recon",
+            "regex_sast": "Regex SAST",
+            "semgrep": "Semgrep",
+            "dependency": "Dependency scan",
+            "dynamic": "Dynamic validation",
+            "sandbox": "Sandbox mode",
+        }
+        for key, label in scanner_labels.items():
+            value = scanner_execution.get(key, {})
+            if isinstance(value, dict):
+                status = str(value.get("status", "not recorded"))
+                mode = str(value.get("mode", "not recorded"))
+                tool = str(value.get("tool", ""))
+            else:
+                status = str(value)
+                mode = "not recorded"
+                tool = ""
+            scanner_rows += f"""
+            <tr>
+                <td>{html.escape(label)}</td>
+                <td>{html.escape(status)}</td>
+                <td>{html.escape(mode)}</td>
+                <td>{html.escape(tool) if tool else "N/A"}</td>
+            </tr>
+            """
+
         html_template = f"""
         <!DOCTYPE html>
         <html>
@@ -176,27 +213,25 @@ class ReportGenerator:
             <meta charset="utf-8">
             <title>Fire Crow Vulnerability Audit Report</title>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-                
                 @page {{
                     size: A4;
                     margin: 20mm;
                     @bottom-right {{
                         content: counter(page);
-                        font-family: 'Inter', sans-serif;
+                        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                         font-size: 9pt;
                         color: #94a3b8;
                     }}
                     @bottom-left {{
                         content: "Fire Crow Security Audit • Job {safe_job_id}";
-                        font-family: 'Inter', sans-serif;
+                        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                         font-size: 9pt;
                         color: #94a3b8;
                     }}
                 }}
 
                 body {{
-                    font-family: 'Inter', sans-serif;
+                    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                     color: #1e293b;
                     line-height: 1.5;
                     font-size: 10.5pt;
@@ -496,7 +531,7 @@ class ReportGenerator:
             
             <div class="risk-banner">
                 <div class="risk-title">OVERALL POSTURE: {risk_label}</div>
-                <p class="risk-desc">The Fire Crow autonomous security orchestration engine scanned the targeted application codebase structure and ran dynamic sandboxed exploits. Below is the summary of security issues mapped.</p>
+                <p class="risk-desc">Fire Crow completed an authorization-only defensive security review of the submitted repository and recorded evidence-backed findings from the configured scanners.</p>
             </div>
 
             <div class="card-grid">
@@ -535,6 +570,22 @@ class ReportGenerator:
                 </tbody>
             </table>
 
+            <!-- Scanner Execution Evidence -->
+            <div class="section-header">Scanner Execution Evidence</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Scanner</th>
+                        <th>Status</th>
+                        <th>Mode</th>
+                        <th>Tool</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {scanner_rows}
+                </tbody>
+            </table>
+
             <!-- Detailed Findings -->
             <div class="section-header">Detailed Findings & Proofs</div>
             {detailed_findings or "<p style='color: #64748b;'>No vulnerabilities were found during static signature auditing or sandbox execution runs.</p>"}
@@ -546,7 +597,11 @@ class ReportGenerator:
     def compile_pdf(self, html_content: str, output_path: str) -> bool:
         """Compiles HTML template into PDF file on disk."""
         if not WEASYPRINT_AVAILABLE:
-            logger.warning("Simulating PDF compiling (WeasyPrint missing). Writing raw HTML layout.")
+            if not settings.DEBUG:
+                logger.error("WeasyPrint unavailable for job report compilation. Refusing simulated PDF in production.")
+                return False
+
+            logger.warning("Simulating PDF compiling in DEBUG mode (WeasyPrint missing). Writing raw HTML layout.")
             try:
                 # Write HTML content as output file as fallback
                 fallback_path = output_path.replace(".pdf", ".html")
@@ -581,7 +636,7 @@ class ReportGenerator:
             import boto3  # type: ignore
             from botocore.client import Config  # type: ignore
 
-            logger.info(f"Uploading {pdf_path} to R2 bucket '{self.r2_bucket}'")
+            logger.info("Uploading report for job %s to R2 object storage.", job_id)
             s3 = boto3.client(
                 "s3",
                 endpoint_url=self.r2_endpoint,
@@ -600,10 +655,10 @@ class ReportGenerator:
                 Params={"Bucket": self.r2_bucket, "Key": key},
                 ExpiresIn=604800
             )
-            logger.info(f"Report uploaded successfully to R2. Pre-signed URL: {url}")
+            logger.info("Report uploaded successfully to R2 for job %s with object key %s.", job_id, key)
             return url
         except Exception as e:
-            logger.error(f"R2 upload failed: {str(e)}. Falling back to local HTTP URL.")
+            logger.error("R2 upload failed for job %s: %s. Falling back to local report endpoint.", job_id, redact_text(str(e)))
             return f"/reports/{job_id}.pdf"
 
     def send_email_report(self, to_email: str, report_url: str, job_id: str, counts: Dict[Severity, int]) -> bool:
@@ -614,7 +669,7 @@ class ReportGenerator:
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
             <h2 style="color: #0f172a; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-top: 0;">🔥 Fire Crow Security Audit Complete</h2>
             <p style="font-size: 16px; line-height: 1.6; color: #334155;">Hello,</p>
-            <p style="font-size: 16px; line-height: 1.6; color: #334155;">Your autonomous security audit job <strong>{safe_job_id}</strong> is complete. The system scanned code files, constructed a dynamic network sandbox, and validated potential exploit vectors.</p>
+            <p style="font-size: 16px; line-height: 1.6; color: #334155;">Your authorization-only security audit job <strong>{safe_job_id}</strong> is complete. The system scanned code files, used controlled sandbox validation when available, and prepared evidence-backed remediation guidance.</p>
             
             <h4 style="color: #475569; text-transform: uppercase; margin-bottom: 10px;">Audit Summary</h4>
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -647,7 +702,7 @@ class ReportGenerator:
                 from email.mime.text import MIMEText
                 from email.mime.multipart import MIMEMultipart
 
-                logger.info(f"Sending transactional email report to {to_email} via Google/SMTP")
+                logger.info("Sending transactional email report for job %s via Google/SMTP.", job_id)
                 
                 msg = MIMEMultipart("alternative")
                 msg["Subject"] = f"Fire Crow Security Audit Report - Job {job_id}"
@@ -665,11 +720,15 @@ class ReportGenerator:
                 logger.info("Transactional email successfully sent via Google/SMTP.")
                 return True
             except Exception as e:
-                logger.error(f"Failed to send email via Google/SMTP: {str(e)}. Falling back...")
+                logger.error("Failed to send email via Google/SMTP for job %s: %s.", job_id, redact_text(str(e)))
 
         # 2. Fallback to Resend
         if not (RESEND_AVAILABLE and self.resend_api_key):
-            logger.warning("Resend API key not configured or package missing. Saving notification email locally.")
+            if not settings.DEBUG:
+                logger.warning("No email provider configured for job %s. Local email fallback is disabled outside DEBUG mode.", job_id)
+                return False
+
+            logger.warning("Resend API key not configured or package missing. Saving DEBUG notification email locally.")
             try:
                 import re
                 from datetime import datetime
@@ -681,14 +740,14 @@ class ReportGenerator:
                 filepath = os.path.join(sent_emails_dir, filename)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(html_body)
-                logger.info(f"Local email report saved to: {filepath}")
+                logger.info("Local DEBUG email report saved for job %s.", job_id)
                 return True
             except Exception as le:
-                logger.error(f"Failed to save local fallback email: {le}")
+                logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
                 return False
 
         try:
-            logger.info(f"Sending transactional email report to {to_email} via Resend")
+            logger.info("Sending transactional email report for job %s via Resend.", job_id)
             
             params: Any = {
                 "from": f"Fire Crow Audit <{self.sender_email}>",
@@ -701,7 +760,10 @@ class ReportGenerator:
             logger.info("Transactional email successfully sent via Resend.")
             return True
         except Exception as e:
-            logger.error(f"Failed to send email via Resend: {str(e)}. Saving notification email locally.")
+            logger.error("Failed to send email via Resend for job %s: %s.", job_id, redact_text(str(e)))
+            if not settings.DEBUG:
+                logger.warning("Local email fallback is disabled outside DEBUG mode for job %s.", job_id)
+                return False
             try:
                 import re
                 from datetime import datetime
@@ -713,8 +775,8 @@ class ReportGenerator:
                 filepath = os.path.join(sent_emails_dir, filename)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(html_body)
-                logger.info(f"Local email report saved to: {filepath}")
+                logger.info("Local DEBUG email report saved for job %s.", job_id)
                 return True
             except Exception as le:
-                logger.error(f"Failed to save local fallback email: {le}")
+                logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
                 return False

@@ -2,6 +2,7 @@ import logging
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from backend.app.config import settings
+from backend.app.services.redaction import redact_text
 
 from typing import Any, Generator
 
@@ -33,14 +34,14 @@ if "postgresql" in db_url:
             logger.critical(
                 "FATAL: Cannot connect to PostgreSQL in production: %s. "
                 "Set DATABASE_URL to a valid PostgreSQL connection string.",
-                str(e),
+                redact_text(str(e)),
             )
-            raise RuntimeError(f"PostgreSQL connection required in production: {e}") from e
+            raise RuntimeError("PostgreSQL connection required in production.") from e
 
         logger.warning(
             "Failed to connect to PostgreSQL database: %s. "
             "Falling back to local SQLite database 'firecrow.db'.",
-            str(e),
+            redact_text(str(e)),
         )
         db_url = "sqlite:///firecrow.db"
 
@@ -86,10 +87,65 @@ def _ensure_user_compatibility() -> None:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(64)")
         if "privacy_policy_accepted_at" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_accepted_at TIMESTAMP")
+        try:
+            if engine.dialect.name == "postgresql":
+                conn.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email_lower_unique "
+                    "ON users (lower(email)) WHERE email IS NOT NULL"
+                )
+            elif engine.dialect.name == "sqlite":
+                conn.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email_lower_unique "
+                    "ON users (lower(email)) WHERE email IS NOT NULL"
+                )
+        except Exception:
+            logger.warning(
+                "Could not create unique normalized users.email index. Existing duplicate emails may need manual review.",
+                exc_info=True,
+            )
 
 
-_ensure_audit_job_compatibility()
-_ensure_user_compatibility()
+def ensure_database_compatibility() -> None:
+    _ensure_audit_job_compatibility()
+    _ensure_user_compatibility()
+
+
+def check_pending_migrations() -> bool:
+    """Returns True if there are pending migrations, False otherwise.
+    Safely handles cases where Alembic or the database is not configured.
+    """
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from alembic.runtime.migration import MigrationContext
+        import os
+
+        # Root of backend
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        alembic_cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+        script = ScriptDirectory.from_config(alembic_cfg)
+        
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            current_rev = context.get_current_revision()
+            
+        heads = script.get_heads()
+        if not heads:
+            return False
+            
+        # If current_rev is None, check if any tables exist. If no tables exist, we can't check pending.
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        if not tables:
+            return False
+            
+        head_rev = heads[0]
+        if current_rev != head_rev:
+            return True
+        return False
+    except Exception as e:
+        logger.warning("Failed to check pending migrations: %s", str(e))
+        return False
 
 # Create sessionmaker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

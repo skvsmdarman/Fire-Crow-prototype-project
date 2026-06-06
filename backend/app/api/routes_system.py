@@ -5,11 +5,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
-from backend.app.models import AuditJob, FindingModel, get_db
+from backend.app.models import AuditJob, FindingModel, User, get_db
 from backend.app.services.auth import get_current_user
 
 
 router = APIRouter(prefix="/system", tags=["System"])
+
+
+def _is_admin(user: User | None) -> bool:
+    role = (user.role_id or "").lower() if user else ""
+    return role in {"admin", "owner", "security_admin", "platform_admin"}
 
 
 @router.get("/status")
@@ -21,9 +26,10 @@ async def system_status(
     try:
         db.execute(text("SELECT 1"))
         database = "connected"
-    except Exception as exc:
-        database = f"error: {exc}"
+    except Exception:
+        database = "unavailable"
 
+    user = db.query(User).filter(User.id == user_id).first()
     total_jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).count()
     total_findings = (
         db.query(FindingModel)
@@ -32,16 +38,37 @@ async def system_status(
         .count()
     )
 
-    return {
+    payload = {
         "api": "online",
         "database": database,
-        "debug": settings.DEBUG,
-        "sandbox_mode": "simulation" if settings.FIRE_CROW_MOCK_SANDBOX else "docker",
+        "readiness": "degraded" if database != "connected" else "ready",
         "stats": {
             "jobs": total_jobs,
             "findings": total_findings,
         },
-        "integrations": {
+        "legal": {
+            "privacy_policy_version": "2026-06-06",
+            "terms_version": "2026-06-06",
+        },
+        "agents": [
+            {"name": "MAESTRO", "role": "Orchestration", "status": "ready"},
+            {"name": "RECON", "role": "Repository clone and stack detection", "status": "ready"},
+            {"name": "SAST", "role": "Secrets and unsafe code analysis", "status": "ready"},
+            {"name": "SANDBOX", "role": "Controlled sandbox validation", "status": "ready"},
+            {"name": "NETWORK", "role": "Port and service discovery", "status": "ready"},
+            {"name": "DYNAMIC_VALIDATION", "role": "Authorization-only runtime checks", "status": "ready"},
+            {"name": "EVIDENCE", "role": "Evidence-backed finding validation", "status": "ready"},
+            {"name": "SCORING", "role": "CVSS prioritization", "status": "ready"},
+            {"name": "REPORTER", "role": "Report generation", "status": "ready"},
+            {"name": "GITHUB_MCP", "role": "GitMCP issue and PR generation", "status": "ready"},
+            {"name": "GOOGLE_AGENT", "role": "PR risk assessment and email alerts", "status": "ready"},
+        ],
+    }
+
+    if _is_admin(user):
+        payload["debug"] = settings.DEBUG
+        payload["sandbox_mode"] = "simulation" if settings.FIRE_CROW_MOCK_SANDBOX else "docker"
+        payload["integrations"] = {
             "github_oauth": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
             "google_oauth": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
             "redis": bool(settings.REDIS_URL),
@@ -53,22 +80,6 @@ async def system_status(
             ),
             "email": bool(settings.RESEND_API_KEY),
             "ai_models": bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY),
-        },
-        "legal": {
-            "privacy_policy_version": "2026-06-06",
-            "terms_version": "2026-06-06",
-        },
-        "agents": [
-            {"name": "MAESTRO", "role": "Orchestration", "status": "ready"},
-            {"name": "RECON", "role": "Repository clone and stack detection", "status": "ready"},
-            {"name": "SAST", "role": "Secrets and unsafe code analysis", "status": "ready"},
-            {"name": "SANDBOX", "role": "Kali runtime provisioning", "status": "ready"},
-            {"name": "NETWORK", "role": "Port and service discovery", "status": "ready"},
-            {"name": "ATTACK", "role": "Automated active scanning", "status": "ready"},
-            {"name": "EXPLOIT", "role": "Proof generation", "status": "ready"},
-            {"name": "SCORING", "role": "CVSS prioritization", "status": "ready"},
-            {"name": "REPORTER", "role": "Report generation", "status": "ready"},
-            {"name": "GITHUB_MCP", "role": "GitMCP issue and PR generation", "status": "ready"},
-            {"name": "GOOGLE_AGENT", "role": "PR risk assessment and email alerts", "status": "ready"},
-        ],
-    }
+        }
+
+    return payload

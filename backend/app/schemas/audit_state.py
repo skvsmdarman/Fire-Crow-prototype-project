@@ -118,6 +118,7 @@ class AuditState(BaseModel):
     # --- Error Tracking ---
     errors: Annotated[list[dict], operator.add] = []
     retry_counts: dict[str, int] = {}
+    scanner_execution: dict[str, Any] = {}
 
     # --- Resource Budget ---
     max_scan_duration_sec: int = 2700

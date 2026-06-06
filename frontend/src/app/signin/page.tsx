@@ -118,6 +118,28 @@ export default function SignInPage() {
     const urlToken = urlParams.get("token");
     const urlUsername = urlParams.get("username");
     const urlUserId = urlParams.get("user_id");
+    const urlCode = urlParams.get("code");
+
+    if (urlCode) {
+      fetch(`${API_BASE_URL}/auth/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: urlCode }),
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("One-time code exchange failed.");
+          }
+          const session = (await response.json()) as AuthSession;
+          persistSession(session);
+          router.replace("/dashboard");
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Exchange failed.");
+          setCheckingSession(false);
+        });
+      return;
+    }
 
     if (urlToken && urlUsername && urlUserId) {
       persistSession({

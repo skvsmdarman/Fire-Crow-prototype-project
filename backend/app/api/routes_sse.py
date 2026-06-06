@@ -10,6 +10,7 @@ from backend.app.api.audit_queries import get_owned_job_or_404
 from backend.app.models import get_db, AuditJob, AgentLog
 from backend.app.schemas import JobStatus
 from backend.app.services.auth import get_current_user
+from backend.app.services.redaction import redact_text
 
 router = APIRouter(prefix="/audit", tags=["Security Auditing Stream"])
 logger = logging.getLogger("firecrow.sse")
@@ -25,7 +26,7 @@ async def stream_audit_logs(
     Establish a Server-Sent Events (SSE) stream for live agent log updates.
     Ensures tenant isolation by checking job ownership before streaming.
     """
-    job = get_owned_job_or_404(db, job_id, user_id)
+    get_owned_job_or_404(db, job_id, user_id)
 
     async def log_generator() -> AsyncGenerator[str, None]:
         last_seen_log_id = 0
@@ -41,9 +42,13 @@ async def stream_audit_logs(
             loop_db = SessionLocal()
             try:
                 # Refresh job status
-                current_job = loop_db.query(AuditJob).filter(AuditJob.id == job_id).first()
+                current_job = (
+                    loop_db.query(AuditJob)
+                    .filter(AuditJob.id == job_id, AuditJob.user_id == user_id)
+                    .first()
+                )
                 if not current_job:
-                    yield f"event: error\ndata: {json.dumps({'error': 'Job deleted during execution'})}\n\n"
+                    yield f"event: error\ndata: {json.dumps({'error': 'Job is unavailable or access is no longer authorized'})}\n\n"
                     break
 
                 # Fetch new logs
@@ -73,15 +78,17 @@ async def stream_audit_logs(
                         "cancel_requested": current_job.cancel_requested,
                         "cancel_requested_at": current_job.cancel_requested_at.isoformat() if current_job.cancel_requested_at else None,
                         "report_pdf_url": current_job.report_pdf_url,
-                        "error_message": current_job.error_message
+                        "error_message": "Audit did not complete successfully. Review job logs for operational context."
+                        if current_job.error_message
+                        else None,
                     }
                     yield f"event: complete\ndata: {json.dumps(terminal_payload)}\n\n"
                     connection_active = False
                     break
 
             except Exception as e:
-                logger.error(f"Error in SSE stream for job {job_id}: {str(e)}")
-                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                logger.exception("Error in SSE stream for job %s: %s", job_id, redact_text(str(e)))
+                yield f"event: error\ndata: {json.dumps({'error': 'Stream interrupted. Please reconnect.'})}\n\n"
                 break
             finally:
                 loop_db.close()

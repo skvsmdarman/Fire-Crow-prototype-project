@@ -33,6 +33,7 @@ from backend.app.orchestrator.runtime_context import (
 from backend.app.schemas import AuditState, Finding, JobStatus, Severity
 from backend.app.services.reporter import ReportGenerator
 from backend.app.services.sandbox import SandboxManager
+from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.maestro")
 
@@ -59,13 +60,14 @@ def build_phase_history_entry(phase: str, started_at: datetime, outcome: str) ->
 
 
 def log_agent_message(db: Session, job_id: str, agent_name: str, message: str, level: str = "INFO") -> None:
-    logger.info("[%s] %s", agent_name, message)
+    safe_message = redact_text(message, max_length=2048)
+    logger.info("[%s] %s", agent_name, safe_message)
     db.add(
         AgentLog(
             job_id=job_id,
             agent_name=agent_name,
             log_level=level,
-            message=message,
+            message=safe_message,
         )
     )
     db.commit()
@@ -218,11 +220,11 @@ def execute_phase(
         )
         raise
     except Exception as exc:
-        log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase failed: {str(exc)}", "ERROR")
+        log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase failed.", "ERROR")
         apply_runtime_updates(
             {
                 "current_phase": phase_name,
-                "errors": [{"phase": phase_name, "message": str(exc), "timestamp": utc_now_iso()}],
+                "errors": [{"phase": phase_name, "message": "Phase failed during execution.", "timestamp": utc_now_iso()}],
                 "phase_history": [build_phase_history_entry(phase_name, started_at, "failed")],
             }
         )
@@ -241,6 +243,9 @@ def recon_body(db: Session, state: AuditState) -> Dict[str, Any]:
         "tech_stack": recon_result["tech_stack"],
         "entry_points": recon_result["entry_points"],
         "dependency_manifests": recon_result["dependency_manifests"],
+        "scanner_execution": {
+            "recon": {"status": "executed", "mode": "real" if "example/" not in state.repo_url else "simulated", "tool": "git"}
+        },
     }
     apply_runtime_updates(updates)
     log_agent_message(
@@ -269,7 +274,10 @@ def sast_body(db: Session, state: AuditState) -> Dict[str, Any]:
     findings = run_sast(state.clone_path, state.repo_url)
     persist_findings(db, state.job_id, findings)
     log_agent_message(db, state.job_id, "SAST", f"Static analysis complete. Found {len(findings)} issues.")
-    return {"static_findings": findings}
+    return {
+        "static_findings": findings,
+        "scanner_execution": {"regex_sast": {"status": "executed", "mode": "regex", "tool": "built-in regex"}},
+    }
 
 
 def sast_node(state: AuditState) -> Dict[str, Any]:
@@ -296,6 +304,9 @@ def sandbox_body(db: Session, state: AuditState) -> Dict[str, Any]:
         "sandbox_container_id": kali_container_id,
         "sandbox_target_ip": target_ip,
         "sandbox_ready": True,
+        "scanner_execution": {
+            "sandbox": {"status": "executed", "mode": "simulation" if manager.mock_mode else "docker", "tool": "docker"}
+        },
     }
     apply_runtime_updates(updates)
     log_agent_message(db, state.job_id, "SANDBOX", f"Sandbox ready. Target host: {target_ip}, Kali Container: {kali_container_id}")
@@ -323,7 +334,13 @@ def network_body(db: Session, state: AuditState) -> Dict[str, Any]:
     else:
         api_endpoints = ["/"]
 
-    return {"open_ports": open_ports, "api_endpoints": api_endpoints}
+    return {
+        "open_ports": open_ports,
+        "api_endpoints": api_endpoints,
+        "scanner_execution": {
+            "network": {"status": "executed", "mode": "simulated" if "fc-kali-" in state.sandbox_container_id else "real", "tool": "nmap"}
+        },
+    }
 
 
 def network_node(state: AuditState) -> Dict[str, Any]:
@@ -350,7 +367,12 @@ def attack_body(db: Session, state: AuditState) -> Dict[str, Any]:
     else:
         log_agent_message(db, state.job_id, "ATTACK", "Completed active tests. No dynamic vulnerabilities detected.")
 
-    return {"dynamic_findings": findings}
+    return {
+        "dynamic_findings": findings,
+        "scanner_execution": {
+            "dynamic": {"status": "executed" if state.open_ports else "skipped", "mode": "simulated" if "fc-kali-" in state.sandbox_container_id else "real", "tool": "sqlmap/nuclei"}
+        },
+    }
 
 
 def attack_node(state: AuditState) -> Dict[str, Any]:
@@ -373,7 +395,7 @@ def exploit_body(db: Session, state: AuditState) -> Dict[str, Any]:
     persist_findings(db, state.job_id, proofs)
 
     if proofs:
-        log_agent_message(db, state.job_id, "EXPLOIT", f"SUCCESS: Exploitation verified for {len(proofs)} issues.", "WARNING")
+        log_agent_message(db, state.job_id, "EXPLOIT", f"Controlled validation evidence collected for {len(proofs)} issues.", "WARNING")
     else:
         log_agent_message(db, state.job_id, "EXPLOIT", "No exploits could be verified.")
 
@@ -454,6 +476,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         repo_url=state.repo_url,
         branch=state.repo_branch,
         findings=all_findings,
+        scanner_execution=state.scanner_execution,
     )
 
     success = generator.compile_pdf(html_content, pdf_path)
@@ -477,7 +500,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         Severity.INFO: len([finding for finding in all_findings if finding.severity == Severity.INFO]),
     }
     generator.send_email_report(user_email, pdf_url, state.job_id, counts)
-    log_agent_message(db, state.job_id, "REPORTER", f"Audit report successfully generated: {pdf_url}")
+    log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated.")
 
     return {
         "report_pdf_url": pdf_url,
@@ -556,7 +579,17 @@ def dependency_body(db: Session, state: AuditState) -> Dict[str, Any]:
     findings = run_dependency_scan(state.clone_path, state.dependency_manifests)
     persist_findings(db, state.job_id, findings)
     log_agent_message(db, state.job_id, "DEPENDENCY", f"Dependency scan complete. Found {len(findings)} issues.")
-    return {"dependency_vulns": findings}
+    simulated = any("scanner_mode=simulated" in (finding.evidence or "") for finding in findings)
+    return {
+        "dependency_vulns": findings,
+        "scanner_execution": {
+            "dependency": {
+                "status": "executed" if findings else "unavailable or no findings",
+                "mode": "simulated" if simulated else "real" if findings else "unavailable",
+                "tool": "osv-scanner/trivy",
+            }
+        },
+    }
 
 def dependency_node(state: AuditState) -> Dict[str, Any]:
     return execute_phase(state, phase_name="dependency_scan", agent_name="DEPENDENCY", start_message="Scanning dependencies...", body=dependency_body)
@@ -574,7 +607,17 @@ def semgrep_body(db: Session, state: AuditState) -> Dict[str, Any]:
     findings = run_semgrep_scan(state.clone_path, state.tech_stack)
     persist_findings(db, state.job_id, findings)
     log_agent_message(db, state.job_id, "SEMGREP", f"Semgrep scan complete. Found {len(findings)} issues.")
-    return {"semgrep_findings": findings}
+    simulated = any("scanner_mode=simulated" in (finding.evidence or "") for finding in findings)
+    return {
+        "semgrep_findings": findings,
+        "scanner_execution": {
+            "semgrep": {
+                "status": "executed" if findings else "unavailable or no findings",
+                "mode": "simulated" if simulated else "real" if findings else "unavailable",
+                "tool": "semgrep",
+            }
+        },
+    }
 
 def semgrep_node(state: AuditState) -> Dict[str, Any]:
     return execute_phase(state, phase_name="semgrep_scan", agent_name="SEMGREP", start_message="Running Semgrep...", body=semgrep_body)

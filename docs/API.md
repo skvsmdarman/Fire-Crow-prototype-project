@@ -6,7 +6,7 @@ This document contains the strict contract definitions for all Fire Crow backend
 
 ## 1. Global Headers & Security
 
-Except for public authentication endpoints, all requests must contain the following HTTP headers:
+Except for public authentication endpoints, API clients should send a Bearer token. Browser OAuth sessions may instead use the secure HTTP-only `fc_access_token` cookie set by the callback handler.
 
 ```http
 Authorization: Bearer <token>
@@ -41,7 +41,7 @@ Create a new database-backed user/workspace.
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "token_type": "bearer",
     "username": "my-secure-workspace",
-    "user_id": "usr_my-secure-workspace"
+    "user_id": "8df52466-6b50-48c2-8de3-b37cb31ad1a5"
   }
   ```
 * **Error Response (400 Bad Request)**:
@@ -73,7 +73,7 @@ Authenticate workspace credentials and receive a JWT token.
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "token_type": "bearer",
     "username": "my-secure-workspace",
-    "user_id": "usr_my-secure-workspace"
+    "user_id": "8df52466-6b50-48c2-8de3-b37cb31ad1a5"
   }
   ```
 * **Error Response (401 Unauthorized)**:
@@ -87,11 +87,11 @@ Authenticate workspace credentials and receive a JWT token.
 Retrieve current session tenant details. Used to validate token expiration on load.
 
 * **Route**: `GET /api/v1/auth/me`
-* **Headers**: `Authorization: Bearer <token>`
+* **Headers**: `Authorization: Bearer <token>` or `fc_access_token` cookie
 * **Success Response (200 OK)**:
   ```json
   {
-    "user_id": "usr_my-secure-workspace",
+    "user_id": "8df52466-6b50-48c2-8de3-b37cb31ad1a5",
     "username": "my-secure-workspace",
     "email": "security@mycompany.com",
     "role": "security_engineer"
@@ -125,9 +125,15 @@ Receives GitHub authorization code and returns user profile session redirect.
   * `mock_email` (optional string, sandbox mode only)
   * `mock_id` (optional string, sandbox mode only)
 * **Success Response (302 Redirect)**:
-  Redirects to: `{FRONTEND_URL}/signin?token={JWT_TOKEN}&username={username}&user_id={user_id}`
+  Redirects to: `{FRONTEND_URL}/signin` and sets `fc_access_token` as an HTTP-only cookie. JWTs are never placed in redirect URLs.
 
-### 2.6 Google OAuth Initiation
+### 2.6 Session Lookup
+Return the authenticated browser/API session profile.
+
+* **Route**: `GET /api/v1/auth/session`
+* **Headers**: `Authorization: Bearer <token>` or `fc_access_token` cookie
+
+### 2.7 Google OAuth Initiation
 Start Google OpenID flow. If Google OAuth credentials are not configured, the endpoint returns `503 Service Unavailable`.
 
 * **Route**: `GET /api/v1/auth/google?state=some_random_state`
@@ -137,7 +143,7 @@ Start Google OpenID flow. If Google OAuth credentials are not configured, the en
   * `privacy_policy_version` (required string)
 * **Success Response (302 Redirect)**: Redirects browser to `https://accounts.google.com/o/oauth2/v2/auth`
 
-### 2.7 Google Callback Handler
+### 2.8 Google Callback Handler
 Receives Google authorization code and returns user profile session redirect.
 
 * **Route**: `GET /api/v1/auth/google/callback`
@@ -148,7 +154,7 @@ Receives Google authorization code and returns user profile session redirect.
   * `mock_email` (optional string, sandbox mode only)
   * `mock_id` (optional string, sandbox mode only)
 * **Success Response (302 Redirect)**:
-  Redirects to: `{FRONTEND_URL}/signin?token={JWT_TOKEN}&username={username}&user_id={user_id}`
+  Redirects to: `{FRONTEND_URL}/signin` and sets `fc_access_token` as an HTTP-only cookie. JWTs are never placed in redirect URLs.
 
 ---
 
@@ -172,7 +178,7 @@ Triggers an autonomous security audit of a public GitHub repository.
   ```json
   {
     "id": "job_e79c2a38-4e1b-4cd3-89bd-06db8cf622eb",
-    "user_id": "usr_my-secure-workspace",
+    "user_id": "8df52466-6b50-48c2-8de3-b37cb31ad1a5",
     "repo_url": "https://github.com/octocat/hello-world",
     "repo_branch": "main",
     "status": "queued",
@@ -207,7 +213,7 @@ Returns all jobs triggered under the current authenticated session.
   [
     {
       "id": "job_e79c2a38-4e1b-4cd3-89bd-06db8cf622eb",
-      "user_id": "usr_my-secure-workspace",
+      "user_id": "8df52466-6b50-48c2-8de3-b37cb31ad1a5",
       "repo_url": "https://github.com/octocat/hello-world",
       "repo_branch": "main",
       "status": "completed",
@@ -231,7 +237,7 @@ Retrieve full data of a job, including structured code findings.
   {
     "job": {
       "id": "job_e79c2a38-4e1b-4cd3-89bd-06db8cf622eb",
-      "user_id": "usr_my-secure-workspace",
+      "user_id": "8df52466-6b50-48c2-8de3-b37cb31ad1a5",
       "repo_url": "https://github.com/octocat/hello-world",
       "repo_branch": "main",
       "status": "completed",
@@ -251,7 +257,7 @@ Retrieve full data of a job, including structured code findings.
         "severity": "critical",
         "cvss_score": 9.8,
         "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
-        "evidence": "SECRET_KEY = \"dev_secret_key_change_in_production_1234567890\"",
+        "evidence": "scanner_name=regex-sast; scanner_mode=regex; confidence=medium\nfile=backend/app/config.py; line=16; signature=Generic Password / Key Leak; redacted_fingerprint=sha256:3c0f5a7b1e2d",
         "remediation": "Move all sensitive credential settings to env parameters and load dynamically."
       }
     ]

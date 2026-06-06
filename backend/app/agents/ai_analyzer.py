@@ -36,7 +36,12 @@ def run_ai_analyzer(
 
     api_key = settings.GEMINI_API_KEY
     if not api_key:
-        logger.info("GEMINI_API_KEY not configured. Falling back to local/mock analysis.")
+        logger.info("GEMINI_API_KEY not configured.")
+        if not settings.DEBUG:
+            logger.info("AI Analyzer unavailable in production; returning scanner findings without simulated remediations.")
+            return deduplicated, false_positives, attack_chains, remediations
+
+        logger.info("DEBUG mode enabled. Falling back to local simulated analysis.")
         # Local mock remediation for the first finding
         remediations.append({
             "finding_id": all_findings[0].id,
@@ -199,13 +204,14 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
             break
 
     if not success:
-        logger.error("All Gemini models failed. Falling back to local/mock analysis.")
-        # Default mock fallback
-        remediations.append({
-            "finding_id": all_findings[0].id,
-            "file": "example.py",
-            "original_code": "eval(user_input)",
-            "fixed_code": "ast.literal_eval(user_input)"
-        })
+        logger.error("All Gemini models failed.")
+        if settings.DEBUG:
+            logger.info("DEBUG mode enabled. Using local simulated AI remediation.")
+            remediations.append({
+                "finding_id": all_findings[0].id,
+                "file": "example.py",
+                "original_code": "eval(user_input)",
+                "fixed_code": "ast.literal_eval(user_input)"
+            })
 
     return deduplicated, false_positives, attack_chains, remediations

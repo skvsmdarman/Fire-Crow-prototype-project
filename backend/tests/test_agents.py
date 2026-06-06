@@ -1,7 +1,12 @@
 import os
 import shutil
+import logging
 from backend.app.agents.recon import run_recon, detect_tech_stack
 from backend.app.agents.sast import run_sast, scan_for_secrets, scan_for_unsafe_code
+from backend.app.agents.dependency_scan import run_dependency_scan
+from backend.app.agents.sast_semgrep import run_semgrep_scan
+from backend.app.services.sandbox import SandboxManager
+from backend.app.config import settings
 
 
 def test_recon_mock_path():
@@ -47,6 +52,9 @@ def test_sast_secrets_leak_detection(tmp_path):
     
     assert github_finding.severity.value == "critical"
     assert aws_finding.severity.value == "critical"
+    assert "ghp_AbCdEf" not in (github_finding.evidence or "")
+    assert "AKIAIOSFODNN7EXAMPLE" not in (aws_finding.evidence or "")
+    assert "redacted_fingerprint=sha256:" in (github_finding.evidence or "")
 
 
 def test_sast_unsafe_code_detection(tmp_path):
@@ -159,3 +167,48 @@ def test_google_agent_run_mock():
     assert "merge_recommendation" in res["google_agent_risk_report"]
     assert any("Started Google Agent" in log for log in res["google_agent_logs"])
 
+
+def test_mock_scanners_do_not_create_findings_in_production(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr("backend.app.agents.dependency_scan.shutil.which", lambda _name: None)
+    monkeypatch.setattr("backend.app.agents.sast_semgrep.shutil.which", lambda _name: None)
+
+    assert run_dependency_scan(str(tmp_path), ["requirements.txt"]) == []
+    assert run_semgrep_scan(str(tmp_path), ["Python"]) == []
+    assert run_sast(str(tmp_path), "https://github.com/example/standard-repo") == []
+
+
+def test_sandbox_dockerfile_build_disabled_by_default():
+    manager = SandboxManager()
+    assert manager._allow_user_dockerfile_build() is False
+
+
+def test_report_upload_logging_does_not_include_presigned_url(monkeypatch, caplog, tmp_path):
+    import sys
+    import types
+    from backend.app.services.reporter import ReportGenerator
+
+    class FakeS3:
+        def upload_file(self, *_args, **_kwargs):
+            return None
+
+        def generate_presigned_url(self, *_args, **_kwargs):
+            return "https://r2.example/reports/job.pdf?X-Amz-Signature=secret-signature"
+
+    fake_boto3 = types.SimpleNamespace(client=lambda *args, **kwargs: FakeS3())
+    fake_botocore_client = types.SimpleNamespace(Config=lambda **kwargs: object())
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    monkeypatch.setitem(sys.modules, "botocore.client", fake_botocore_client)
+
+    generator = ReportGenerator()
+    generator.r2_endpoint = "https://r2.example"
+    generator.r2_access_key = "access"
+    generator.r2_secret_key = "secret"
+    pdf_path = tmp_path / "job.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    with caplog.at_level(logging.INFO):
+        url = generator.upload_to_r2(str(pdf_path), "job-report-log")
+
+    assert "X-Amz-Signature=secret-signature" in url
+    assert "X-Amz-Signature=secret-signature" not in caplog.text

@@ -124,7 +124,7 @@ def _persist_final_job_state(
     if terminal_status == JobStatus.CANCELLED:
         job.error_message = None
     elif execution_error:
-        job.error_message = str(execution_error)
+        job.error_message = "Audit job failed during orchestration. Review server logs with the job ID for details."
     else:
         job.error_message = None
 

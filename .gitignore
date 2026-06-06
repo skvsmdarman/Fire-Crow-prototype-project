@@ -38,12 +38,8 @@ dist/
 
 # Environment Configurations
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-backend/.env.local
-frontend/.env.local
+.env.*
+!.env.example
 
 # Operating System & IDEs
 .DS_Store
@@ -58,8 +54,10 @@ Thumbs.db
 # App Workspace Run Outputs
 workspace/reports/
 workspace/scans/
+workspace/sent_emails/
 backend/workspace/reports/
 backend/workspace/scans/
+backend/workspace/sent_emails/
 
 # System Logs & Diagnostic Outputs
 *.log

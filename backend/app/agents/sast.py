@@ -1,8 +1,11 @@
 import os
 import re
 import logging
+import hashlib
 from typing import List
+from backend.app.config import settings
 from backend.app.schemas import Finding, Severity
+from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.sast")
 
@@ -33,21 +36,21 @@ UNSAFE_CODE_PATTERNS = [
     {
         "pattern": r"(?i)\b(?:select|insert|update|delete|create|drop|alter)\b.*(?:%.*\{\w+\}|\{\w+\}|%\s*\w+)",
         "title": "SQL Injection vulnerability via string formatting",
-        "description": "Using string interpolation or percent formatting to build SQL queries allows SQL injection.",
+        "description": "Using string interpolation or percent formatting to build SQL queries can permit SQL injection.",
         "severity": Severity.CRITICAL,
         "cwe_id": "CWE-89"
     },
     {
         "pattern": r"(?:execute|query)\s*\(\s*['\"].*%\s*\w+",
         "title": "SQL Injection vulnerability via string formatting in execute call",
-        "description": "Using string interpolation or percent formatting directly inside DB execute calls allows SQL injection.",
+        "description": "Using string interpolation or percent formatting directly inside DB execute calls can permit SQL injection.",
         "severity": Severity.CRITICAL,
         "cwe_id": "CWE-89"
     },
     {
         "pattern": r"(?:execute|query)\s*\(\s*f['\"].*\{\w+\}",
         "title": "SQL Injection vulnerability via f-string execution",
-        "description": "Executing raw queries constructed with f-strings allows SQL injection attacks.",
+        "description": "Executing raw queries constructed with f-strings can permit SQL injection.",
         "severity": Severity.CRITICAL,
         "cwe_id": "CWE-89"
     },
@@ -94,9 +97,8 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                         for name, regex in SECRET_SIGNATURES.items():
                             match = re.search(regex, line_to_check)
                             if match:
-                                # Redact matched secret in the description / evidence
                                 matched_str = match.group(0)
-                                redacted_str = matched_str[:6] + "..." + matched_str[-4:] if len(matched_str) > 10 else "..."
+                                fingerprint = hashlib.sha256(matched_str.encode("utf-8")).hexdigest()[:12]
                                 
                                 findings.append(Finding(
                                     id=f"sast-secret-{finding_id_counter}",
@@ -105,7 +107,10 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                                     description=f"A hardcoded secret matching signature for {name} was found in `{rel_path}` at line {line_num}.",
                                     severity=Severity.CRITICAL,
                                     cwe_id="CWE-798",
-                                    evidence=f"File: {rel_path} (L{line_num}): {line_to_check.strip()[:100]} [Redacted: {redacted_str}]",
+                                    evidence=(
+                                        "scanner_name=regex-sast; scanner_mode=regex; confidence=medium\n"
+                                        f"file={rel_path}; line={line_num}; signature={name}; redacted_fingerprint=sha256:{fingerprint}"
+                                    ),
                                     remediation="Remove hardcoded secrets immediately, revoke leaked key, and store keys securely in environment variables or vault."
                                 ))
                                 finding_id_counter += 1
@@ -146,6 +151,7 @@ def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
                         line_to_check = line[:2048] if len(line) > 2048 else line
                         for spec in UNSAFE_CODE_PATTERNS:
                             if re.search(spec["pattern"], line_to_check):
+                                safe_snippet = redact_text(line_to_check.strip()[:150])
                                 findings.append(Finding(
                                     id=f"sast-code-{finding_id_counter}",
                                     agent_source="SAST_CODE_ANALYSIS",
@@ -153,7 +159,10 @@ def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
                                     description=f"{spec['description']} Found in `{rel_path}` at line {line_num}.",
                                     severity=spec["severity"],
                                     cwe_id=spec["cwe_id"],
-                                    evidence=f"File: {rel_path} (L{line_num}): {line_to_check.strip()[:150]}",
+                                    evidence=(
+                                        "scanner_name=regex-sast; scanner_mode=regex; confidence=medium\n"
+                                        f"file={rel_path}; line={line_num}; snippet={safe_snippet}"
+                                    ),
                                     remediation="Rewrite source code to avoid dynamic query/expression evaluation or command execution."
                                 ))
                                 finding_id_counter += 1
@@ -170,23 +179,31 @@ def run_sast(clone_path: str, repo_url: str) -> List[Finding]:
     """
     logger.info(f"Running SAST scanner on {clone_path}")
 
-    # Mock support for standard unit tests
+    # Debug-only mock support for standard unit tests.
     if "example/standard-repo" in repo_url:
+        if not settings.DEBUG:
+            logger.info("Skipping standard-repo simulated SAST fixture outside DEBUG mode.")
+            return []
         return [Finding(
             id="sast-mock-1",
             agent_source="SAST",
-            title="Outdated dependency package PyYAML",
+            title="[SIMULATED] Outdated dependency package PyYAML",
             description="PyYAML version < 6.0 is vulnerable to arbitrary code execution (CVE-2020-1747)",
             severity=Severity.HIGH,
-            cwe_id="CWE-94"
+            cwe_id="CWE-94",
+            evidence="scanner_name=sast-fixture; scanner_mode=simulated; confidence=low",
         )]
     elif "example/leaky-secrets-repo" in repo_url:
+        if not settings.DEBUG:
+            logger.info("Skipping leaky-secrets-repo simulated SAST fixture outside DEBUG mode.")
+            return []
         return [Finding(
             id="sast-mock-2",
             agent_source="SAST",
-            title="Hardcoded GitHub OAuth Secret Leak",
+            title="[SIMULATED] Hardcoded GitHub OAuth Secret Leak",
             description="A raw GitHub client secret was found hardcoded in main.py",
             severity=Severity.CRITICAL,
+            evidence="scanner_name=sast-fixture; scanner_mode=simulated; confidence=low",
             remediation="Move secrets to environment variables and rotate key immediately."
         )]
 

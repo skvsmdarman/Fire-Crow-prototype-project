@@ -12,9 +12,10 @@ class Settings(BaseSettings):
     # --- Server Settings ---
     PORT: int = Field(default=8000, validation_alias="PORT")
     HOST: str = Field(default="0.0.0.0", validation_alias="HOST")
-    DEBUG: bool = Field(default=True, validation_alias="DEBUG")
-    SECRET_KEY: str = Field(default="dev_secret_key_change_in_production_1234567890", validation_alias="SECRET_KEY")
+    DEBUG: bool = Field(default=False, validation_alias="DEBUG")
+    SECRET_KEY: str = Field(default="", validation_alias="SECRET_KEY")
     FRONTEND_URL: str = Field(default="http://localhost:3000", validation_alias="FRONTEND_URL")
+    CORS_ORIGINS: str = Field(default="", validation_alias="CORS_ORIGINS")
 
     # --- Database & Cache ---
     DATABASE_URL: str = Field(
@@ -27,6 +28,14 @@ class Settings(BaseSettings):
     )
     REDIS_PASSWORD: str = Field(default="", validation_alias="REDIS_PASSWORD")
     FIRE_CROW_MOCK_SANDBOX: bool = Field(default=False, validation_alias="FIRE_CROW_MOCK_SANDBOX")
+    FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD: bool = Field(
+        default=False,
+        validation_alias="FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD",
+    )
+    FIRE_CROW_SCANNER_IMAGE: str = Field(
+        default="ghcr.io/johan-droid/firecrow-scanner:2026-06-06",
+        validation_alias="FIRE_CROW_SCANNER_IMAGE",
+    )
 
     # --- GitHub Integrations ---
     GITHUB_CLIENT_ID: str = Field(default="", validation_alias="GITHUB_CLIENT_ID")
@@ -71,10 +80,32 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_keys(self) -> "Settings":
-        # Check defaults in production context if not debug
+        insecure_dev_values = {
+            "",
+            "dev_secret_key_change_in_production_1234567890",
+            "change_me",
+            "changeme",
+            "secret",
+            "development",
+        }
+
+        if self.DEBUG and not self.SECRET_KEY:
+            object.__setattr__(
+                self,
+                "SECRET_KEY",
+                "dev_only_firecrow_local_secret_key_32_bytes_minimum",
+            )
+
         if not self.DEBUG:
-            if self.SECRET_KEY == "dev_secret_key_change_in_production_1234567890":
-                raise ValueError("Insecure default SECRET_KEY cannot be used in production.")
+            if self.SECRET_KEY.strip() in insecure_dev_values:
+                raise ValueError("SECRET_KEY is required in production and cannot use a known development value.")
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters in production.")
+            if self.DATABASE_URL.startswith("sqlite"):
+                raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
+            if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):
+                raise ValueError("FIRE_CROW_SCANNER_IMAGE must be pinned in production and cannot use :latest.")
+
         if not os.getenv("FRONTEND_URL") and os.getenv("RENDER_EXTERNAL_URL"):
             object.__setattr__(self, "FRONTEND_URL", os.environ["RENDER_EXTERNAL_URL"])
 

@@ -33,7 +33,7 @@ def test_maestro_default_path():
     assert final_state["current_phase"] == "cleanup"
     assert final_state["status"] == JobStatus.COMPLETED
     assert len(final_state["static_findings"]) == 1
-    assert final_state["static_findings"][0].title == "Outdated dependency package PyYAML"
+    assert final_state["static_findings"][0].title == "[SIMULATED] Outdated dependency package PyYAML"
     assert len(final_state["dynamic_findings"]) == 0
     assert len(final_state["exploit_proofs"]) == 0
     assert "job-default.pdf" in final_state["report_pdf_url"]
@@ -68,7 +68,7 @@ def test_maestro_secrets_leak_path():
     assert final_state["current_phase"] == "cleanup"
     assert final_state["status"] == JobStatus.COMPLETED
     assert len(final_state["static_findings"]) == 1
-    assert final_state["static_findings"][0].title == "Hardcoded GitHub OAuth Secret Leak"
+    assert final_state["static_findings"][0].title == "[SIMULATED] Hardcoded GitHub OAuth Secret Leak"
     
     # Verify sandbox did not run (sandbox_ready is default False)
     assert final_state["sandbox_ready"] is False
@@ -103,10 +103,10 @@ def test_maestro_vuln_exploit_path():
     assert final_state["status"] == JobStatus.COMPLETED
     assert len(final_state["dynamic_findings"]) == 2
     titles = [f.title for f in final_state["dynamic_findings"]]
-    assert "SQL Injection in user profile parameters" in titles
-    assert "Outdated Web Component Vulnerability" in titles
+    assert "[SIMULATED] SQL Injection in user profile parameters" in titles
+    assert "[SIMULATED] Outdated Web Component Vulnerability" in titles
     assert len(final_state["exploit_proofs"]) == 1
-    assert final_state["exploit_proofs"][0].title == "Exploitable SQL Injection Proof"
+    assert final_state["exploit_proofs"][0].title == "[SIMULATED] SQL Injection Validation Evidence"
 
 
 def test_reportable_findings_include_all_agent_classes():

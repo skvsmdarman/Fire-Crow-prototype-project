@@ -3,6 +3,7 @@ import os
 from typing import List, Tuple, Optional, Any
 
 from backend.app.config import settings
+from backend.app.services.redaction import redact_text, truncate_text
 
 logger = logging.getLogger("firecrow.services.sandbox")
 
@@ -23,24 +24,62 @@ class SandboxManager:
     """
     client: Any
     mock_mode: bool
+    unavailable_reason: str
 
     def __init__(self):
         self.client = None
-        self.mock_mode = True
+        self.mock_mode = False
+        self.unavailable_reason = ""
         
         if settings.FIRE_CROW_MOCK_SANDBOX:
-            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in simulation mode.")
+            if settings.DEBUG:
+                self.mock_mode = True
+                logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in DEBUG simulation mode.")
+            else:
+                self.unavailable_reason = "Mock sandbox mode is not allowed in production."
+                logger.error(self.unavailable_reason)
         elif DOCKER_AVAILABLE:
             try:
                 self.client = docker.from_env()
                 # Ping daemon to confirm it is actually running and responsive
                 self.client.ping()
-                self.mock_mode = False
                 logger.info("Docker daemon connected. Sandbox manager running in active mode.")
             except Exception as e:
-                logger.warning(f"Could not connect to Docker daemon: {str(e)}. Falling back to simulation mode.")
+                self.unavailable_reason = "Docker daemon is unavailable."
+                if settings.DEBUG:
+                    self.mock_mode = True
+                    logger.warning(
+                        "Could not connect to Docker daemon: %s. Falling back to DEBUG simulation mode.",
+                        redact_text(str(e)),
+                    )
+                else:
+                    logger.error("Docker daemon unavailable in production; refusing sandbox simulation.", exc_info=True)
         else:
-            logger.warning("Docker python SDK not installed. Running in simulation mode.")
+            self.unavailable_reason = "Docker python SDK is not installed."
+            if settings.DEBUG:
+                self.mock_mode = True
+                logger.warning("Docker python SDK not installed. Running in DEBUG simulation mode.")
+            else:
+                logger.error("Docker python SDK missing in production; refusing sandbox simulation.")
+
+    def _allow_user_dockerfile_build(self) -> bool:
+        return settings.FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD
+
+    def _container_security_options(self, job_id: str, role: str) -> dict[str, Any]:
+        return {
+            "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges:true"],
+            "mem_limit": "512m",
+            "nano_cpus": 500000000,
+            "pids_limit": 100,
+            "read_only": True,
+            "tmpfs": {"/tmp": "rw,noexec,nosuid,size=64m"},
+            "privileged": False,
+            "labels": {
+                "firecrow.job_id": job_id,
+                "firecrow.role": role,
+            },
+        }
 
     def provision_sandbox(
         self, 
@@ -64,7 +103,7 @@ class SandboxManager:
             return True, net_name, target_cid, kali_cid, kali_ip
 
         if not self.client:
-            logger.error("Docker client not initialized.")
+            logger.error("Docker client not initialized. %s", self.unavailable_reason)
             return False, "", "", "", ""
 
         client = self.client
@@ -78,11 +117,19 @@ class SandboxManager:
             # or build from the repository's Dockerfile if available.
             has_dockerfile = any("Dockerfile" in ep for ep in entry_points) and os.path.exists(os.path.join(clone_path, "Dockerfile"))
             
-            if has_dockerfile:
-                logger.info(f"Building custom Docker image from repository Dockerfile for job {job_id}")
+            if has_dockerfile and self._allow_user_dockerfile_build():
+                logger.warning(
+                    "Building repository Dockerfile for job %s because FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD is enabled.",
+                    job_id,
+                )
                 image, _ = client.images.build(path=clone_path, tag=f"fc-target-img:{job_id}")
                 image_name = image.tags[0]
             else:
+                if has_dockerfile:
+                    logger.info(
+                        "Repository Dockerfile detected for job %s but user Dockerfile builds are disabled; using controlled runtime image.",
+                        job_id,
+                    )
                 image_name = "python:3.12-alpine"  # lightweight default runtime
 
             # Run target app container
@@ -91,30 +138,22 @@ class SandboxManager:
                 name=target_cid,
                 detach=True,
                 network=net_name,
-                command="python -m http.server 8000" if not has_dockerfile else None,
+                command="python -m http.server 8000" if not (has_dockerfile and self._allow_user_dockerfile_build()) else None,
                 volumes={clone_path: {"bind": "/app", "mode": "ro"}},
                 working_dir="/app",
-                cap_drop=["ALL"],
-                security_opt=["no-new-privileges:true"],
-                mem_limit="512m",
-                nano_cpus=500000000,
-                pids_limit=100
+                **self._container_security_options(job_id, "target"),
             )
 
             # 3. Start Kali pentest container
             # We use a custom slim Kali Linux image equipped with security audit tools (nmap, sqlmap, curl, etc.)
             kali_container = client.containers.run(
-                "kalilinux/kali-rolling:latest",
+                settings.FIRE_CROW_SCANNER_IMAGE,
                 name=kali_cid,
                 detach=True,
                 network=net_name,
                 tty=True,
                 command="sleep infinity",
-                cap_drop=["ALL"],
-                security_opt=["no-new-privileges:true"],
-                mem_limit="512m",
-                nano_cpus=500000000,
-                pids_limit=100
+                **self._container_security_options(job_id, "scanner"),
             )
 
             # Install core testing utilities in Kali if not pre-installed
@@ -130,14 +169,26 @@ class SandboxManager:
             return True, net_name, str(target_container.id or ""), str(kali_container.id or ""), str(ip_address or "")
 
         except Exception as e:
-            logger.exception(f"Failed to provision docker containers: {str(e)}")
+            logger.exception("Failed to provision docker containers: %s", redact_text(str(e)))
             # Try to cleanup partially created resources
             self.cleanup_sandbox(net_name, target_cid, kali_cid)
             return False, "", "", "", ""
 
     def execute_kali_command(self, kali_container_id: str, command: List[str]) -> Tuple[int, str]:
         """Runs a command inside the Kali agent container and returns the status code and stdout/stderr."""
+        allowed_executables = {"nmap", "sqlmap", "nuclei", "curl", "osv-scanner", "trivy", "semgrep"}
+        if not command or not all(isinstance(part, str) for part in command):
+            return 126, "Command rejected: expected a non-empty list of strings."
+
+        executable = os.path.basename(command[0])
+        if executable not in allowed_executables:
+            if not settings.DEBUG:
+                return 126, "Command rejected by scanner allowlist."
+            logger.warning("DEBUG mode allowing non-standard scanner command: %s", executable)
+
         if self.mock_mode:
+            if not settings.DEBUG:
+                return 1, "Sandbox simulation is unavailable in production."
             logger.info(f"[SIMULATOR] Executing Kali command: {' '.join(command)}")
             # Custom mock outputs for testing
             cmd_str = " ".join(command)
@@ -173,10 +224,10 @@ class SandboxManager:
             else:
                 output_str = str(output_bytes)
 
-            return exit_code, output_str
+            return exit_code, truncate_text(redact_text(output_str), max_length=12000)
         except Exception as e:
-            logger.error(f"Failed to execute command in Kali container: {str(e)}")
-            return 1, f"Command execution error: {str(e)}"
+            logger.error("Failed to execute command in scanner container: %s", redact_text(str(e)))
+            return 1, "Command execution error"
 
     def cleanup_sandbox(self, network_name: str, target_container_id: str, kali_container_id: str):
         """Removes the target container, Kali container, and bridge network."""

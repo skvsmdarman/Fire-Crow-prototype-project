@@ -67,6 +67,9 @@ def apply_runtime_updates(updates: dict[str, Any]) -> None:
         if key in ADDITIVE_LIST_FIELDS and isinstance(value, list):
             existing = tracker.state.get(key) or []
             tracker.state[key] = [*existing, *value]
+        elif key == "scanner_execution" and isinstance(value, dict):
+            existing = tracker.state.get(key) or {}
+            tracker.state[key] = {**existing, **value}
         else:
             tracker.state[key] = value
 

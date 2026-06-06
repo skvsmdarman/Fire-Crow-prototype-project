@@ -1,4 +1,6 @@
 import os
+import logging
+import uuid
 from pathlib import Path
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
@@ -13,28 +15,50 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.app.services.limiter import limiter
 
 from backend.app.config import settings, WORKSPACE_DIR
-from backend.app.models.database import Base, engine, get_db
+from backend.app.models.database import Base, engine, ensure_database_compatibility, get_db
 from backend.app.api import auth_router, audit_router, sse_router, system_router
+from backend.app.services.redaction import redact_text
+
+logger = logging.getLogger("firecrow.main")
+
+
+def _cors_origins() -> list[str]:
+    origins: set[str] = set()
+    if settings.FRONTEND_URL:
+        origins.add(settings.FRONTEND_URL.rstrip("/"))
+    if settings.CORS_ORIGINS:
+        origins.update(origin.strip().rstrip("/") for origin in settings.CORS_ORIGINS.split(",") if origin.strip())
+    if settings.DEBUG:
+        origins.update(
+            {
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:3001",
+                "http://127.0.0.1:3001",
+            }
+        )
+    return sorted(origin for origin in origins if origin and origin != "*")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Setup step: Create database tables
+    # Compatibility only. Production deployments should run Alembic migrations before startup.
+    if not settings.DEBUG:
+        logger.warning("Running metadata create_all compatibility check; configure Alembic migrations for production.")
     Base.metadata.create_all(bind=engine)
+    
+    # Startup check for pending migration problems
     try:
-        from backend.app.models.database import SessionLocal
-        from backend.app.models.user import User
-        db = SessionLocal()
-        smoke_user = db.query(User).filter(User.username == "smoke").first()
-        if smoke_user:
-            db.delete(smoke_user)
-            db.commit()
-        db.close()
+        from backend.app.models.database import check_pending_migrations
+        if check_pending_migrations():
+            logger.warning(
+                "SECURITY WARNING: Pending database migrations detected. "
+                "Please run 'alembic upgrade head' to ensure database schema is up-to-date."
+            )
     except Exception as e:
-        import logging
-        logging.getLogger("firecrow").warning(f"Could not clear smoke user on startup: {e}")
+        logger.error("Error running database migration startup check: %s", str(e))
+        
     yield
-    # Teardown step can go here (e.g., closing background pools)
 
 
 app = FastAPI(
@@ -57,24 +81,41 @@ async def global_exception_handler(request: Request, exc: Exception):
     if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException)):
         raise exc
 
-    import traceback
-    traceback.print_exc()
+    error_id = str(uuid.uuid4())
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    logger.exception(
+        "Unhandled request error error_id=%s request_id=%s method=%s path=%s",
+        error_id,
+        request_id,
+        request.method,
+        request.url.path,
+    )
     return JSONResponse(
         status_code=500,
         content={
-            "detail": f"Internal Server Error: {str(exc)}",
-            "type": exc.__class__.__name__,
-        }
+            "detail": "Internal Server Error",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
     )
 
 # CORS configurations
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL] if not settings.DEBUG else ["*"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 
 # Security headers middleware
 @app.middleware("http")
@@ -107,19 +148,18 @@ os.makedirs(reports_dir, exist_ok=True)
 
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
-    db_error = ""
     try:
         # Verify database connection with a simple query
         from sqlalchemy import text
         db.execute(text("SELECT 1"))
         db_ok = True
-    except Exception as e:
+    except Exception:
         db_ok = False
-        db_error = str(e)
+        logger.warning("Health check database probe failed.", exc_info=True)
 
     return {
-        "status": "up",
-        "database": "connected" if db_ok else f"error: {db_error}"
+        "status": "up" if db_ok else "degraded",
+        "database": "connected" if db_ok else "unavailable"
     }
 
 

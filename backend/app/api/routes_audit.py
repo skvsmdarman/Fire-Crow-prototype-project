@@ -22,6 +22,7 @@ from backend.app.schemas import (
 )
 from backend.app.orchestrator.runtime import execute_audit_job
 from backend.app.services.auth import get_current_user
+from backend.app.services.redaction import redact_text
 from backend.app.workers.celery_app import run_audit_job_task, celery_app
 
 logger = logging.getLogger("firecrow.api.audit")
@@ -74,7 +75,7 @@ def _dispatch_audit_job(
     except Exception as exc:
         logger.warning(
             "Celery/Redis broker failed (%s). Falling back to local BackgroundTasks thread for job %s.",
-            str(exc),
+            redact_text(str(exc)),
             job_id,
         )
         background_tasks.add_task(
@@ -216,7 +217,7 @@ async def cancel_job(
     try:
         celery_app.control.revoke(job_id, terminate=True, signal="SIGTERM")
     except Exception as e:
-        logger.warning(f"Failed to notify Celery about cancellation request for task {job_id}: {str(e)}")
+        logger.warning("Failed to notify Celery about cancellation request for task %s: %s", job_id, redact_text(str(e)))
 
     cancel_log = AgentLog(
         job_id=job_id,
@@ -257,5 +258,5 @@ async def download_report(
     if _allowed_external_report_url(job.report_pdf_url):
         return RedirectResponse(job.report_pdf_url)
 
-    logger.warning("Rejected unsafe report URL for job %s: %s", job_id, job.report_pdf_url)
+    logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
     raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")

@@ -1,9 +1,19 @@
+import json
+import uuid
+from typing import Any
+
 from fastapi.testclient import TestClient
 
 from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
 from backend.app.main import app
-from backend.app.models import SecurityLog, SessionLocal
-from backend.app.services.auth import create_access_token, verify_access_token
+from backend.app.models import SecurityLog, SessionLocal, User
+from backend.app.services.auth import (
+    AUTH_COOKIE_NAME,
+    create_access_token,
+    legacy_hash_password_for_tests,
+    verify_access_token,
+)
+from backend.app.config import settings
 
 client = TestClient(app)
 
@@ -18,7 +28,7 @@ def _register_payload(username: str, password: str = "supersecretpassword") -> d
 
 
 def test_jwt_generation_and_verification():
-    user_id = "usr_tester"
+    user_id = str(uuid.uuid4())
     token = create_access_token(user_id=user_id, username="tester")
 
     assert token is not None
@@ -28,6 +38,9 @@ def test_jwt_generation_and_verification():
     assert payload is not None
     assert payload["sub"] == user_id
     assert payload["username"] == "tester"
+    assert payload["iss"] == "firecrow-api"
+    assert payload["aud"] == "firecrow-web"
+    assert payload["jti"]
 
 
 def test_auth_me_unauthorized():
@@ -40,15 +53,73 @@ def test_auth_me_authorized():
     reg_response = client.post("/api/v1/auth/register", json=_register_payload("supertester"))
     assert reg_response.status_code == 200
     token = reg_response.json()["access_token"]
+    user_id = reg_response.json()["user_id"]
 
     response = client.get(
         "/api/v1/auth/me",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
-    assert response.json()["user_id"] == "usr_supertester"
+    assert response.json()["user_id"] == user_id
+    uuid.UUID(user_id)
     assert response.json()["role"] == "security_engineer"
     assert response.json()["privacy_policy_version"] == PRIVACY_POLICY_VERSION
+
+
+def test_auth_session_accepts_cookie():
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("cookietester"))
+    token = reg_response.json()["access_token"]
+
+    response = client.get(
+        "/api/v1/auth/session",
+        cookies={AUTH_COOKIE_NAME: token},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "cookietester"
+
+
+def test_logout_revokes_token():
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("revoketester"))
+    token = reg_response.json()["access_token"]
+
+    logout_response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    assert logout_response.status_code == 200
+
+    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+def test_legacy_pbkdf2_hash_rehashes_on_login():
+    db = SessionLocal()
+    try:
+        user = User(
+            id=str(uuid.uuid4()),
+            username="legacyuser",
+            password_hash=legacy_hash_password_for_tests("supersecretpassword"),
+        )
+        db.add(user)
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            **_register_payload("legacyuser"),
+            "password": "supersecretpassword",
+        },
+    )
+    assert response.status_code == 200
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == "legacyuser").first()
+        assert user is not None
+        assert user.password_hash is not None
+        assert user.password_hash.startswith("$argon2id$")
+    finally:
+        db.close()
 
 
 def test_registration_and_login_flow():
@@ -122,6 +193,112 @@ def test_oauth_redirects_fail_when_provider_not_configured():
     assert "not configured" in google_response.json()["detail"]
 
 
+def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload: Any, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self._payload
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse({"access_token": "github-oauth-token"})
+
+        async def get(self, url, *args, **kwargs):
+            if url.endswith("/user"):
+                return FakeResponse({"id": 123, "login": "octo", "email": "Octo@Example.com"})
+            return FakeResponse([])
+
+    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
+    monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.firecrow.test")
+    monkeypatch.setattr(settings, "DEBUG", False)
+
+    state = client.get(
+        "/api/v1/auth/github",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    ).headers["location"].split("state=", 1)[1].split("&", 1)[0]
+
+    response = client.get(
+        "/api/v1/auth/github/callback",
+        params={"code": "oauth-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert response.headers["location"].startswith("https://app.firecrow.test/signin?code=")
+    assert "token=" not in response.headers["location"]
+    set_cookie = response.headers["set-cookie"]
+    assert f"{AUTH_COOKIE_NAME}=" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "Secure" in set_cookie
+    assert "SameSite=lax" in set_cookie
+
+
+def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload: dict, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self._payload
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse({"access_token": "google-oauth-token"})
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse({"id": "google-123", "email": "GoogleUser@Example.com"})
+
+    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.firecrow.test")
+    monkeypatch.setattr(settings, "DEBUG", False)
+
+    state = client.get(
+        "/api/v1/auth/google",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    ).headers["location"].split("state=", 1)[1].split("&", 1)[0]
+
+    response = client.get(
+        "/api/v1/auth/google/callback",
+        params={"code": "oauth-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert response.headers["location"].startswith("https://app.firecrow.test/signin?code=")
+    assert "token=" not in response.headers["location"]
+    set_cookie = response.headers["set-cookie"]
+    assert f"{AUTH_COOKIE_NAME}=" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "Secure" in set_cookie
+    assert "SameSite=lax" in set_cookie
+
+
 def test_policy_event_logging_records_security_log():
     response = client.post(
         "/api/v1/auth/policy-events",
@@ -147,3 +324,49 @@ def test_policy_event_logging_records_security_log():
       assert '"source":"pytest"' in log.details
     finally:
       db.close()
+
+
+def test_policy_event_logging_redacts_sensitive_details():
+    response = client.post(
+        "/api/v1/auth/policy-events",
+        json={
+            "policy": "privacy_policy",
+            "event_type": "link_click",
+            "policy_version": PRIVACY_POLICY_VERSION,
+            "source": "pytest",
+            "href": "https://app.example/path?token=secret-token-value",
+            "page_path": "/signin",
+            "referrer_path": "https://app.example/start?access_token=secret",
+        },
+    )
+    assert response.status_code == 202
+
+    db = SessionLocal()
+    try:
+        log = db.query(SecurityLog).filter(SecurityLog.action == "policy.privacy_policy.link_click").first()
+        assert log is not None
+        serialized_details = str(log.details or "{}")
+        details = json.loads(serialized_details)
+        assert details["href"] == "https://app.example/path"
+        assert details["referrer_path"] == "https://app.example/start"
+        assert "secret-token-value" not in serialized_details
+    finally:
+        db.close()
+
+
+def test_oauth_code_exchange():
+    from backend.app.services.auth import create_exchange_code
+    token = create_access_token(user_id="usr_test_oauth", username="oauth_tester")
+    code = create_exchange_code(user_id="usr_test_oauth", username="oauth_tester", token=token)
+    
+    # Act: exchange the code
+    response = client.post("/api/v1/auth/exchange", json={"code": code})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["access_token"] == token
+    assert data["username"] == "oauth_tester"
+    assert data["user_id"] == "usr_test_oauth"
+    
+    # Act again (one-time use check): exchange code again should fail
+    response_retry = client.post("/api/v1/auth/exchange", json={"code": code})
+    assert response_retry.status_code == 400
