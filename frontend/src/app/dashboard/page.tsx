@@ -4,7 +4,21 @@ import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  RefreshCw, FileText, Cpu, LogOut, HardDrive, Database, Globe, Fingerprint, User
+  Activity,
+  AlertTriangle,
+  Database,
+  Download,
+  FileText,
+  Fingerprint,
+  Globe,
+  HardDrive,
+  LogOut,
+  Play,
+  PlusCircle,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  User,
 } from "lucide-react";
 
 import FireCrowLoader from "../../components/FireCrowLoader";
@@ -21,13 +35,7 @@ import PipelineViz from "./components/PipelineViz";
 import FindingsList from "./components/FindingsList";
 import LogStream from "./components/LogStream";
 
-import {
-  fadeIn,
-  fadeInUp,
-  staggerContainer,
-  scaleUp,
-  tabTransition
-} from "../../lib/animations";
+import { fadeIn, fadeInUp, scaleUp, staggerContainer, tabTransition } from "../../lib/animations";
 import styles from "./page.module.css";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
@@ -93,14 +101,25 @@ interface SystemStatus {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 const TERMINAL_STATUSES: JobStatus[] = ["completed", "failed", "cancelled", "partial"];
-const TABS: Section[] = ["operations", "reports", "agents", "settings"];
+const TABS: Section[] = ["home", "audits", "findings", "reports", "settings"];
+const SECTION_TITLES: Record<Section, string> = {
+  home: "Home",
+  audits: "Audits",
+  findings: "Findings",
+  reports: "Reports",
+  settings: "Settings",
+};
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function sanitizeRepoUrl(repoUrl: string): string {
+  return repoUrl.replace(/\/\/([^/@\s]+)@/, "//***@");
+}
+
 function shortRepoName(repoUrl: string): string {
-  return repoUrl.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
+  return sanitizeRepoUrl(repoUrl).replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
 }
 
 function formatDateTime(value: string | null): string {
@@ -122,17 +141,17 @@ function statusLabel(job: Job): "queued" | "running" | "completed" | "failed" | 
 
 function pipelineIndex(status: JobStatus, logs: LogLine[]): number {
   if (status === "queued") return 0;
-  if (status === "completed" || status === "partial") return 9; // CLEANUP
+  if (status === "completed" || status === "partial") return 9;
   if (status === "failed" || status === "cancelled") return -1;
 
-  let index = 1; // STATIC SCAN
+  let index = 1;
   for (const log of logs) {
     const message = log.message.toLowerCase();
     if (message.includes("static") || message.includes("sast")) index = Math.max(index, 1);
     if (message.includes("sandbox") || message.includes("kali")) index = Math.max(index, 2);
-    if (message.includes("port") || message.includes("nmap") || message.includes("network")) index = Math.max(index, 3);
-    if (message.includes("attack") || message.includes("sqlmap") || message.includes("nuclei")) index = Math.max(index, 4);
-    if (message.includes("exploit") || message.includes("proof")) index = Math.max(index, 5);
+    if (message.includes("port") || message.includes("network")) index = Math.max(index, 3);
+    if (message.includes("validation") || message.includes("scanner")) index = Math.max(index, 4);
+    if (message.includes("proof") || message.includes("evidence")) index = Math.max(index, 5);
     if (message.includes("cvss") || message.includes("scoring")) index = Math.max(index, 6);
     if (message.includes("report") || message.includes("pdf")) index = Math.max(index, 7);
     if (message.includes("google") || message.includes("gmail") || message.includes("pr risk")) index = Math.max(index, 8);
@@ -141,11 +160,42 @@ function pipelineIndex(status: JobStatus, logs: LogLine[]): number {
   return index;
 }
 
+function calculateRiskScore(findings: Finding[]): number | null {
+  if (findings.length === 0) return null;
+  const weights: Record<Severity, number> = {
+    critical: 28,
+    high: 18,
+    medium: 9,
+    low: 4,
+    info: 0,
+  };
+  return Math.min(100, findings.reduce((score, finding) => score + weights[finding.severity], 0));
+}
+
+function postureLabel(score: number | null, activeJobs: number): string {
+  if (activeJobs > 0) return "Audit running";
+  if (score === null) return "Awaiting first audit";
+  if (score >= 80) return "Critical attention";
+  if (score >= 55) return "High risk";
+  if (score >= 25) return "Needs review";
+  return "Controlled";
+}
+
+function severityBreakdown(findings: Finding[]) {
+  return findings.reduce<Record<Severity, number>>(
+    (acc, finding) => {
+      acc[finding.severity] += 1;
+      return acc;
+    },
+    { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [activeSection, setActiveSection] = useState<Section>("operations");
+  const [activeSection, setActiveSection] = useState<Section>("home");
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [userId, setUserId] = useState("");
@@ -166,10 +216,8 @@ export default function Dashboard() {
   const [systemError, setSystemError] = useState("");
   const [loadingSystem, setLoadingSystem] = useState(false);
   const [reportError, setReportError] = useState("");
-  
-  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Touch Swipe Gesture State
+  const abortControllerRef = useRef<AbortController | null>(null);
   const touchStartXRef = useRef<number | null>(null);
 
   const selectedJob = useMemo(
@@ -180,8 +228,13 @@ export default function Dashboard() {
   const findings = selectedJobDetail?.findings || [];
   const activeJobs = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
   const criticalFindings = findings.filter((finding) => finding.severity === "critical").length;
-  const latestReport = jobs.find((job) => job.report_pdf_url)?.report_pdf_url || null;
+  const highFindings = findings.filter((finding) => finding.severity === "high").length;
+  const latestReportJob = jobs.find((job) => job.report_pdf_url) || null;
+  const latestReport = latestReportJob?.report_pdf_url || null;
   const reportJobs = jobs.filter((job) => TERMINAL_STATUSES.includes(job.status));
+  const riskScore = calculateRiskScore(findings);
+  const posture = postureLabel(riskScore, activeJobs);
+  const severityCounts = severityBreakdown(findings);
 
   const handleUnauthorized = useCallback(() => {
     localStorage.removeItem("fc_token");
@@ -313,6 +366,11 @@ export default function Dashboard() {
           signal: controller.signal,
         });
 
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
+
         if (!response.body) {
           throw new Error("Log stream unavailable.");
         }
@@ -363,7 +421,7 @@ export default function Dashboard() {
         setStreamActive(false);
       }
     },
-    [fetchJobDetail, fetchJobs, stopLogStream, token],
+    [fetchJobDetail, fetchJobs, handleUnauthorized, stopLogStream, token],
   );
 
   const handleLaunchScan = async (repoUrl: string, repoBranch: string) => {
@@ -395,12 +453,13 @@ export default function Dashboard() {
       }
 
       if (!response.ok) {
-        const errorBody = await response.json();
-        throw new Error(errorBody.detail || "Unable to launch audit.");
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.detail || "Unable to launch audit.");
       }
 
       const job = (await response.json()) as Job;
       setSelectedJobId(job.id);
+      setActiveSection("audits");
       await fetchJobs();
       startLogStream(job.id);
       toast("Audit job successfully queued!", "success");
@@ -463,7 +522,6 @@ export default function Dashboard() {
         setUserId(savedUserId);
         setAuthReady(true);
       } catch {
-        // Clear session and redirect to signin if backend is unreachable
         localStorage.removeItem("fc_token");
         localStorage.removeItem("fc_username");
         localStorage.removeItem("fc_user_id");
@@ -517,32 +575,22 @@ export default function Dashboard() {
 
   const activeStep = selectedJob ? pipelineIndex(selectedJob.status, logs) : 0;
 
-  // Swipe Gesture Handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartXRef.current = e.touches[0].clientX;
+  const handleTouchStart = (event: React.TouchEvent) => {
+    touchStartXRef.current = event.touches[0].clientX;
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = (event: React.TouchEvent) => {
     if (touchStartXRef.current === null) return;
-    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndX = event.changedTouches[0].clientX;
     const diffX = touchStartXRef.current - touchEndX;
     const currentTabIndex = TABS.indexOf(activeSection);
 
     if (Math.abs(diffX) > 72) {
-      if (diffX > 0) {
-        // Swiped Left -> Next tab
-        if (currentTabIndex < TABS.length - 1) {
-          const nextTab = TABS[currentTabIndex + 1];
-          setActiveSection(nextTab);
-          toast(`Navigated to ${nextTab}`, "info");
-        }
-      } else {
-        // Swiped Right -> Previous tab
-        if (currentTabIndex > 0) {
-          const prevTab = TABS[currentTabIndex - 1];
-          setActiveSection(prevTab);
-          toast(`Navigated to ${prevTab}`, "info");
-        }
+      if (diffX > 0 && currentTabIndex < TABS.length - 1) {
+        setActiveSection(TABS[currentTabIndex + 1]);
+      }
+      if (diffX < 0 && currentTabIndex > 0) {
+        setActiveSection(TABS[currentTabIndex - 1]);
       }
     }
     touchStartXRef.current = null;
@@ -554,8 +602,8 @@ export default function Dashboard() {
         <section className="auth-card">
           <FireCrowLoader size="lg" />
           <div className="section-kicker">Session</div>
-          <h1>Opening FireCrow console</h1>
-          <p>Checking for an authenticated Nova Devs workspace session.</p>
+          <h1>Opening Fire Crow console</h1>
+          <p>Checking for an authenticated workspace session.</p>
         </section>
       </main>
     );
@@ -563,16 +611,10 @@ export default function Dashboard() {
 
   return (
     <main className={styles.shell}>
-      {/* Glow Orbs */}
       <div className="auth-glow-orb auth-glow-orb-1" style={{ opacity: 0.15 }} />
       <div className="auth-glow-orb auth-glow-orb-2" style={{ opacity: 0.15 }} />
 
-      <Sidebar
-        activeSection={activeSection}
-        setActiveSection={setActiveSection}
-        username={username}
-        userId={userId}
-      />
+      <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} username={username} userId={userId} />
 
       <motion.section
         variants={fadeIn}
@@ -584,18 +626,13 @@ export default function Dashboard() {
       >
         <header className={styles.topbar}>
           <div>
-            <div className={styles.sectionKicker}>Command Center</div>
-            <h1>{activeSection}</h1>
+            <div className={styles.sectionKicker}>Fire Crow mobile command center</div>
+            <h1>{SECTION_TITLES[activeSection]}</h1>
           </div>
           <div className={styles.workspaceSession}>
             <User size={13} style={{ color: "var(--fire)", marginRight: 2 }} />
             <span>{username}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={signOut}
-              style={{ minHeight: "28px", fontSize: "11px", padding: "0 8px" }}
-            >
+            <Button variant="ghost" size="sm" onClick={signOut} style={{ minHeight: "32px", fontSize: "11px", padding: "0 8px" }}>
               <LogOut size={12} />
               Sign out
             </Button>
@@ -603,32 +640,166 @@ export default function Dashboard() {
         </header>
 
         <AnimatePresence mode="wait">
-          {activeSection === "operations" && (
-            <motion.div
-              key="operations"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={staggerContainer}
-            >
+          {activeSection === "home" && (
+            <motion.div key="home" initial="hidden" animate="visible" exit="exit" variants={staggerContainer}>
               <motion.div variants={fadeInUp}>
-                <MetricsRow
-                  activeAudits={activeJobs}
-                  totalJobs={jobs.length}
-                  criticalFindings={criticalFindings}
-                  latestReport={latestReport}
-                />
+                <MetricsRow activeAudits={activeJobs} totalJobs={jobs.length} criticalFindings={criticalFindings} latestReport={latestReport} />
               </motion.div>
 
-              <div className={styles.workGrid}>
+              <div className={styles.homeGrid}>
                 <motion.div variants={scaleUp}>
-                  <AuditForm
-                    onSubmit={handleLaunchScan}
-                    submitting={submitting}
-                    submitError={submitError}
-                  />
+                  <Card variant="surface" className={`${styles.panel} ${styles.postureCard}`}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <div className={styles.sectionKicker}>Overall Security Posture</div>
+                        <h2>{posture}</h2>
+                      </div>
+                      <ShieldCheck size={22} className={styles.metricIcon} />
+                    </div>
+                    <p className={styles.panelCopy}>
+                      {riskScore === null
+                        ? "Start an authorized audit to generate a real posture score from backend findings."
+                        : "Posture is calculated from the selected audit findings currently returned by the backend."}
+                    </p>
+                    <div className={styles.severityStrip} aria-label="Finding severity breakdown">
+                      <span>Critical {severityCounts.critical}</span>
+                      <span>High {severityCounts.high}</span>
+                      <span>Medium {severityCounts.medium}</span>
+                      <span>Low {severityCounts.low}</span>
+                    </div>
+                  </Card>
                 </motion.div>
 
+                <motion.div variants={scaleUp}>
+                  <Card variant="surface" className={`${styles.panel} ${styles.riskScoreCard}`}>
+                    <div className={styles.scoreRing} aria-label={riskScore === null ? "Risk score unavailable" : `Risk score ${riskScore} out of 100`}>
+                      <strong>{riskScore === null ? "—" : riskScore}</strong>
+                      <span>{riskScore === null ? "No score" : "Risk score"}</span>
+                    </div>
+                    <div>
+                      <div className={styles.sectionKicker}>Risk Score</div>
+                      <h2>{riskScore === null ? "No audit selected" : `${riskScore}/100`}</h2>
+                      <p className={styles.panelCopy}>No score is invented when findings are unavailable.</p>
+                    </div>
+                  </Card>
+                </motion.div>
+
+                <motion.div variants={scaleUp}>
+                  <Card variant="surface" className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <div className={styles.sectionKicker}>Last Audit</div>
+                        <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit yet"}</h2>
+                      </div>
+                      {selectedJob && <Badge variant="status" type={statusLabel(selectedJob)}>{statusLabel(selectedJob)}</Badge>}
+                    </div>
+                    <p className={styles.panelCopy}>
+                      {selectedJob
+                        ? `Branch ${selectedJob.repo_branch} / created ${formatDateTime(selectedJob.created_at)}`
+                        : "No audit records are available yet. Start an authorized audit to generate the first run."}
+                    </p>
+                  </Card>
+                </motion.div>
+
+                <motion.div variants={scaleUp}>
+                  <Card variant="surface" className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <div className={styles.sectionKicker}>Quick Actions</div>
+                        <h2>Move the review forward</h2>
+                      </div>
+                    </div>
+                    <div className={styles.quickActionGrid}>
+                      <Button type="button" variant="primary" onClick={() => setActiveSection("audits")}>
+                        <PlusCircle size={14} />
+                        New audit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={!selectedJob || submitting}
+                        onClick={() => selectedJob && handleLaunchScan(selectedJob.repo_url, selectedJob.repo_branch)}
+                      >
+                        <Play size={14} />
+                        Re-run last
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setActiveSection("findings")}>
+                        <Search size={14} />
+                        Critical findings
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={!latestReportJob}
+                        onClick={() => latestReportJob && openReport(latestReportJob.id)}
+                      >
+                        <Download size={14} />
+                        Export report
+                      </Button>
+                    </div>
+                  </Card>
+                </motion.div>
+
+                <motion.div variants={scaleUp}>
+                  <Card variant="surface" className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <div className={styles.sectionKicker}>Activity Timeline</div>
+                        <h2>Recent audit activity</h2>
+                      </div>
+                    </div>
+                    <div className={styles.timelineList}>
+                      {jobs.slice(0, 4).map((job) => (
+                        <button
+                          key={job.id}
+                          type="button"
+                          className={styles.timelineItem}
+                          onClick={() => {
+                            setSelectedJobId(job.id);
+                            setActiveSection("audits");
+                            fetchJobDetail(job.id);
+                          }}
+                        >
+                          <span>{formatDateTime(job.created_at)}</span>
+                          <strong>{shortRepoName(job.repo_url)}</strong>
+                          <Badge variant="status" type={statusLabel(job)}>{statusLabel(job)}</Badge>
+                        </button>
+                      ))}
+                      {jobs.length === 0 && <div className={styles.emptyState}>No audit activity is available yet.</div>}
+                    </div>
+                  </Card>
+                </motion.div>
+
+                <motion.div variants={scaleUp}>
+                  <Card variant="surface" className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <div className={styles.sectionKicker}>Backend/API Status</div>
+                        <h2>{systemStatus?.api || "Checking"}</h2>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={fetchSystemStatus} disabled={loadingSystem}>
+                        <RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />
+                        Refresh
+                      </Button>
+                    </div>
+                    {systemError && <div className={styles.noticeError}>{systemError}</div>}
+                    <div className={styles.statusStrip}>
+                      <span><Globe size={13} /> API {systemStatus?.api || "checking"}</span>
+                      <span><Database size={13} /> DB {systemStatus?.database || "checking"}</span>
+                      <span><HardDrive size={13} /> {systemStatus?.sandbox_mode || "sandbox"}</span>
+                    </div>
+                  </Card>
+                </motion.div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeSection === "audits" && (
+            <motion.div key="audits" initial="hidden" animate="visible" exit="exit" variants={staggerContainer}>
+              <div className={styles.workGrid}>
+                <motion.div variants={scaleUp}>
+                  <AuditForm onSubmit={handleLaunchScan} submitting={submitting} submitError={submitError} />
+                </motion.div>
                 <motion.div variants={scaleUp}>
                   <JobList
                     jobs={jobs}
@@ -646,17 +817,21 @@ export default function Dashboard() {
 
               <div className={styles.detailGrid}>
                 <motion.div variants={scaleUp}>
-                  <PipelineViz
-                    job={selectedJob}
-                    activeStep={activeStep}
-                    onOpenReport={openReport}
-                    onCancel={cancelScan}
-                    reportError={reportError}
-                  />
+                  <PipelineViz job={selectedJob} activeStep={activeStep} onOpenReport={openReport} onCancel={cancelScan} reportError={reportError} />
                 </motion.div>
-
                 <motion.div variants={scaleUp}>
-                  <FindingsList findings={findings} loading={loadingDetail} />
+                  <Card variant="surface" className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <div className={styles.sectionKicker}>Running Screen</div>
+                        <h2>{selectedJob ? statusLabel(selectedJob) : "No active audit"}</h2>
+                      </div>
+                      <Activity size={18} className={streamActive ? styles.spin : styles.metricIcon} />
+                    </div>
+                    <p className={styles.panelCopy}>
+                      Fire Crow maps backend status to pending, running, completed, failed, cancelled, or partial states without inventing precise percentages.
+                    </p>
+                  </Card>
                 </motion.div>
               </div>
 
@@ -666,27 +841,47 @@ export default function Dashboard() {
             </motion.div>
           )}
 
+          {activeSection === "findings" && (
+            <motion.div key="findings" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
+              <div className={styles.findingsHeroGrid}>
+                <Card variant="surface" className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <div>
+                      <div className={styles.sectionKicker}>Selected Audit</div>
+                      <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
+                    </div>
+                    {selectedJob && <Badge variant="status" type={statusLabel(selectedJob)}>{statusLabel(selectedJob)}</Badge>}
+                  </div>
+                  <p className={styles.panelCopy}>
+                    {selectedJob
+                      ? `Showing findings returned for branch ${selectedJob.repo_branch}. Select another audit from the Audits tab to inspect its details.`
+                      : "Start or select an audit to review evidence-backed findings."}
+                  </p>
+                </Card>
+                <Card variant="surface" className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <div>
+                      <div className={styles.sectionKicker}>Critical / High</div>
+                      <h2>{criticalFindings + highFindings}</h2>
+                    </div>
+                    <AlertTriangle size={18} className={styles.metricIcon} />
+                  </div>
+                  <p className={styles.panelCopy}>Severity labels are shown in text and color; color is never the only signal.</p>
+                </Card>
+              </div>
+              <FindingsList findings={findings} loading={loadingDetail} />
+            </motion.div>
+          )}
+
           {activeSection === "reports" && (
-            <motion.div
-              key="reports"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={tabTransition}
-              className={styles.sectionBody}
-            >
+            <motion.div key="reports" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
               <Card variant="surface" className={styles.panel}>
                 <div className={styles.panelHeader}>
                   <div>
                     <div className={styles.sectionKicker}>Reports</div>
                     <h2>Released audit artifacts</h2>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={fetchJobs}
-                    disabled={!token || loadingJobs}
-                  >
+                  <Button variant="ghost" size="sm" onClick={fetchJobs} disabled={!token || loadingJobs}>
                     <RefreshCw className={loadingJobs ? styles.spin : ""} size={12} />
                     Refresh
                   </Button>
@@ -697,24 +892,14 @@ export default function Dashboard() {
                   {!token ? (
                     <div className={styles.emptyState}>Connect a workspace to view reports.</div>
                   ) : reportJobs.length === 0 ? (
-                    <div className={styles.emptyState}>
-                      No terminal audit reports exist in this workspace yet.
-                    </div>
+                    <div className={styles.emptyState}>No audit reports are available yet. Start an authorized audit to generate your first report.</div>
                   ) : (
                     reportJobs.map((job) => (
-                      <motion.article
-                        whileHover={{ scale: 1.01 }}
-                        className={styles.reportRow}
-                        key={job.id}
-                      >
+                      <motion.article whileHover={{ scale: 1.01 }} className={styles.reportRow} key={job.id}>
                         <div>
-                          <Badge variant="status" type={statusLabel(job)}>
-                            {statusLabel(job)}
-                          </Badge>
+                          <Badge variant="status" type={statusLabel(job)}>{statusLabel(job)}</Badge>
                           <h3>{shortRepoName(job.repo_url)}</h3>
-                          <p>
-                            Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}
-                          </p>
+                          <p>Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}</p>
                         </div>
                         {job.report_pdf_url ? (
                           <Button variant="ghost" size="sm" onClick={() => openReport(job.id)}>
@@ -732,90 +917,15 @@ export default function Dashboard() {
             </motion.div>
           )}
 
-          {activeSection === "agents" && (
-            <motion.div
-              key="agents"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={tabTransition}
-              className={styles.sectionBody}
-            >
-              <Card variant="surface" className={styles.panel}>
-                <div className={styles.panelHeader}>
-                  <div>
-                    <div className={styles.sectionKicker}>Agents</div>
-                    <h2>Runtime readiness</h2>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={fetchSystemStatus}
-                    disabled={loadingSystem}
-                  >
-                    <RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />
-                    Check status
-                  </Button>
-                </div>
-
-                {systemError && <div className={styles.noticeError}>{systemError}</div>}
-
-                <div className={styles.agentGrid}>
-                  {(systemStatus?.agents || []).map((agent) => (
-                    <motion.article
-                      whileHover={{ scale: 1.02, y: -2 }}
-                      className={styles.agentCard}
-                      key={agent.name}
-                    >
-                      <div className={styles.authCardAccent} />
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          marginBottom: 12,
-                        }}
-                      >
-                        <Badge variant="simple" type="live" pulse>
-                          {agent.status}
-                        </Badge>
-                        <Cpu size={16} style={{ color: "var(--fire)" }} />
-                      </div>
-                      <h3>{agent.name}</h3>
-                      <p style={{ fontSize: "12px", color: "var(--dim)", marginTop: "4px" }}>
-                        {agent.role}
-                      </p>
-                    </motion.article>
-                  ))}
-                  {!systemStatus && !systemError && (
-                    <div className={styles.emptyState}>Checking backend agent readiness.</div>
-                  )}
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
           {activeSection === "settings" && (
-            <motion.div
-              key="settings"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={tabTransition}
-              className={styles.sectionBody}
-            >
+            <motion.div key="settings" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
               <Card variant="surface" className={styles.panel}>
                 <div className={styles.panelHeader}>
                   <div>
                     <div className={styles.sectionKicker}>Settings</div>
-                    <h2>Backend and workspace status</h2>
+                    <h2>Account, security, and PWA status</h2>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={fetchSystemStatus}
-                    disabled={loadingSystem}
-                  >
+                  <Button variant="ghost" size="sm" onClick={fetchSystemStatus} disabled={loadingSystem}>
                     <RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />
                     Refresh
                   </Button>
@@ -824,48 +934,35 @@ export default function Dashboard() {
                 {systemError && <div className={styles.noticeError}>{systemError}</div>}
 
                 <div className={styles.settingsGrid}>
-                  <StatusCard
-                    label="API"
-                    value={systemStatus?.api || "checking"}
-                    tone={systemStatus?.api === "online" ? "good" : "warn"}
-                    icon={<Globe size={14} />}
-                  />
-                  <StatusCard
-                    label="Database"
-                    value={systemStatus?.database || "checking"}
-                    tone={systemStatus?.database === "connected" ? "good" : "warn"}
-                    icon={<Database size={14} />}
-                  />
-                  <StatusCard
-                    label="Sandbox"
-                    value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Simulation"}
-                    tone="warn"
-                    icon={<HardDrive size={14} />}
-                  />
-                  <StatusCard
-                    label="Workspace"
-                    value={username || "Not connected"}
-                    tone={username ? "good" : "warn"}
-                    icon={<Fingerprint size={14} />}
-                  />
+                  <StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} icon={<Globe size={14} />} />
+                  <StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} icon={<Database size={14} />} />
+                  <StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Simulation"} tone="warn" icon={<HardDrive size={14} />} />
+                  <StatusCard label="Workspace" value={username || "Not connected"} tone={username ? "good" : "warn"} icon={<Fingerprint size={14} />} />
                 </div>
 
                 <div className={styles.integrationList}>
                   {Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => (
-                    <motion.div
-                      whileHover={{ x: 2 }}
-                      className={styles.integrationRow}
-                      key={name}
-                    >
+                    <motion.div whileHover={{ x: 2 }} className={styles.integrationRow} key={name}>
                       <span>{name.replaceAll("_", " ")}</span>
-                      <strong className={enabled ? styles.integrationOn : styles.integrationOff}>
-                        {enabled ? "configured" : "not configured"}
-                      </strong>
+                      <strong className={enabled ? styles.integrationOn : styles.integrationOff}>{enabled ? "configured" : "not configured"}</strong>
                     </motion.div>
                   ))}
-                  {!systemStatus && !systemError && (
-                    <div className={styles.emptyState}>System status has not loaded yet.</div>
-                  )}
+                  <div className={styles.integrationRow}>
+                    <span>PWA offline policy</span>
+                    <strong className={styles.integrationOn}>private API data not cached</strong>
+                  </div>
+                  <div className={styles.integrationRow}>
+                    <span>Install help</span>
+                    <strong className={styles.integrationOn}>use browser install prompt when available</strong>
+                  </div>
+                  {!systemStatus && !systemError && <div className={styles.emptyState}>System status has not loaded yet.</div>}
+                </div>
+
+                <div className={styles.settingsActions}>
+                  <Button type="button" variant="danger" onClick={signOut}>
+                    <LogOut size={14} />
+                    Logout
+                  </Button>
                 </div>
               </Card>
             </motion.div>
@@ -887,10 +984,7 @@ function StatusCard({
   tone: "good" | "warn";
   icon?: React.ReactNode;
 }) {
-  const cardClass = [
-    styles.statusCard,
-    tone === "good" ? styles.statusCardGood : styles.statusCardWarn,
-  ].join(" ");
+  const cardClass = [styles.statusCard, tone === "good" ? styles.statusCardGood : styles.statusCardWarn].join(" ");
 
   return (
     <div className={cardClass}>
