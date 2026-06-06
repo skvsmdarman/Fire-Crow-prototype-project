@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Sans, JetBrains_Mono, Rajdhani } from "next/font/google";
 import "./globals.css";
+import "./mobile-pwa.css";
+import { ToastProvider } from "../components/ui/Toast";
+import PWARegister from "../components/PWARegister";
 
 const dmSans = DM_Sans({
   variable: "--font-body",
@@ -19,12 +22,30 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: "FireCrow FCv1",
+  applicationName: "Fire Crow",
+  title: "Fire Crow FCv1",
   description:
-    "AI-powered security audit operations for GitHub repositories, Kali sandbox testing, CVSS scoring, and executive-ready reports.",
+    "Authorization-only security audit operations for SaaS repositories, controlled sandbox validation, CVSS scoring, and founder-ready remediation reports.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icons/firecrow-icon.svg",
+    shortcut: "/icons/firecrow-icon.svg",
+    apple: "/icons/firecrow-icon.svg",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Fire Crow",
+    statusBarStyle: "black-translucent",
+  },
 };
 
-import { ToastProvider } from "../components/ui/Toast";
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#050609",
+  colorScheme: "dark",
+};
 
 export default function RootLayout({
   children,
@@ -36,6 +57,7 @@ export default function RootLayout({
       <body>
         <ToastProvider>
           {children}
+          <PWARegister />
         </ToastProvider>
       </body>
     </html>
