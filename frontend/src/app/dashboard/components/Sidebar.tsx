@@ -14,11 +14,11 @@ interface SidebarProps {
   userId: string;
 }
 
-const sections: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: "operations", label: "Operations", icon: LayoutGrid },
-  { id: "reports", label: "Reports", icon: FileText },
-  { id: "agents", label: "Agents", icon: Cpu },
-  { id: "settings", label: "Settings", icon: Settings },
+const sections: { id: Section; label: string; mobileLabel: string; icon: LucideIcon }[] = [
+  { id: "operations", label: "Operations", mobileLabel: "Home", icon: LayoutGrid },
+  { id: "reports", label: "Reports", mobileLabel: "Reports", icon: FileText },
+  { id: "agents", label: "Agents", mobileLabel: "Agents", icon: Cpu },
+  { id: "settings", label: "Settings", mobileLabel: "Settings", icon: Settings },
 ];
 
 export default function Sidebar({
@@ -28,8 +28,8 @@ export default function Sidebar({
   userId,
 }: SidebarProps) {
   return (
-    <aside className={styles.sidebar}>
-      <div className={styles.brandBlock}>
+    <aside className={`${styles.sidebar} fc-dashboard-sidebar`}>
+      <div className={`${styles.brandBlock} fc-dashboard-brand`}>
         <div className={styles.brandMark}>FC</div>
         <div>
           <div className={styles.brandName}>FireCrow</div>
@@ -37,7 +37,7 @@ export default function Sidebar({
         </div>
       </div>
 
-      <nav className={styles.navStack} aria-label="Primary navigation">
+      <nav className={`${styles.navStack} fc-dashboard-bottom-nav`} aria-label="Primary navigation">
         {sections.map((section) => {
           const Icon = section.icon;
           const isActive = activeSection === section.id;
@@ -46,7 +46,9 @@ export default function Sidebar({
               key={section.id}
               className={[
                 styles.navItem,
+                "fc-dashboard-tab",
                 isActive ? styles.navItemActive : "",
+                isActive ? "fc-dashboard-tab-active" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -71,19 +73,23 @@ export default function Sidebar({
                   size={16}
                   className={[
                     styles.navIcon,
+                    "fc-dashboard-tab-icon",
                     isActive ? styles.navIconActive : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
                 />
-                <span className={styles.navLabel}>{section.label}</span>
+                <span className={`${styles.navLabel} fc-dashboard-tab-label`}>
+                  <span className="fc-dashboard-desktop-label">{section.label}</span>
+                  <span className="fc-dashboard-mobile-label">{section.mobileLabel}</span>
+                </span>
               </span>
             </button>
           );
         })}
       </nav>
 
-      <div className={styles.workspaceCard}>
+      <div className={`${styles.workspaceCard} fc-dashboard-workspace-card`}>
         <div className={styles.authCardAccent} />
         <div className={styles.sectionKicker}>Workspace</div>
         <div className={styles.workspaceName}>{username || "Not connected"}</div>
