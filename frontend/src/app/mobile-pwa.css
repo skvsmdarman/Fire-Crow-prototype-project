@@ -152,13 +152,13 @@ body {
 
   .fc-dashboard-bottom-nav {
     display: grid !important;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px !important;
   }
 
   .fc-dashboard-tab {
     min-height: 58px !important;
-    padding: 8px 4px !important;
+    padding: 8px 2px !important;
     border-radius: 20px !important;
     text-align: center !important;
   }
@@ -178,15 +178,15 @@ body {
   }
 
   .fc-dashboard-tab-icon {
-    width: 19px !important;
-    height: 19px !important;
+    width: 18px !important;
+    height: 18px !important;
   }
 
   .fc-dashboard-tab-label {
     font-family: var(--font-mono), monospace !important;
-    font-size: 9px !important;
+    font-size: 8px !important;
     font-weight: 900 !important;
-    letter-spacing: 0.06em !important;
+    letter-spacing: 0.04em !important;
     text-transform: uppercase !important;
   }
 
@@ -387,7 +387,8 @@ body {
   }
 
   .fc-dashboard-tab-label {
-    font-size: 8px !important;
+    font-size: 7.5px !important;
+    letter-spacing: 0.02em !important;
   }
 }
 
