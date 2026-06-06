@@ -96,7 +96,14 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             }
         }
         
-        models_to_try = list(dict.fromkeys([settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
+        models_to_try = list(dict.fromkeys([
+            settings.GEMINI_MODEL, 
+            "gemini-3.5-flash", 
+            "gemini-3.0-flash", 
+            "gemini-2.5-flash", 
+            "gemini-2.0-flash", 
+            "gemini-1.5-flash"
+        ]))
         success = False
 
         for model_name in models_to_try:

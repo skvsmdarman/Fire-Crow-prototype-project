@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # --- AI Models API Keys ---
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
+    GEMINI_MODEL: str = Field(default="gemini-3.5-flash", validation_alias="GEMINI_MODEL")
     OPENAI_API_KEY: str = Field(default="", validation_alias="OPENAI_API_KEY")
 
     model_config = SettingsConfigDict(
