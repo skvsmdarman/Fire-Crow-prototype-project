@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Terminal, Shield, Cpu, RefreshCw, Layers, ArrowRight, Activity } from "lucide-react";
+import { Shield, Cpu, RefreshCw, Layers, ArrowRight, Activity } from "lucide-react";
 
 import PolicyLink from "../components/PolicyLink";
 import styles from "./page.module.css";
 import {
-  fadeIn,
   fadeInUp,
   fadeInRight,
   fadeInLeft,
@@ -296,7 +295,7 @@ export default function LandingPage() {
             </motion.div>
 
             <motion.div variants={staggerContainer} className={styles.heroMetrics}>
-              {HERO_METRICS.map((metric, i) => {
+              {HERO_METRICS.map((metric) => {
                 const IconComponent = metric.icon;
                 return (
                   <motion.article

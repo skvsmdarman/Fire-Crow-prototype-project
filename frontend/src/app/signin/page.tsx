@@ -4,9 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Cpu, Key, HelpCircle, Lock, Mail, Eye, EyeOff, CheckCircle } from "lucide-react";
-
-import FireCrowLoader from "../../components/FireCrowLoader";
 import PolicyLink from "../../components/PolicyLink";
 import { API_BASE_URL, PRIVACY_POLICY_VERSION } from "../../lib/policy";
 import styles from "./page.module.css";

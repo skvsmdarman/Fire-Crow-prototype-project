@@ -4,14 +4,13 @@ import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Shield, Play, Square, RefreshCw, FileText, AlertTriangle, Terminal, Settings, LayoutGrid, Cpu, TrendingUp, LogOut, CheckCircle2, CheckCircle, Clock, XCircle, Search, HelpCircle, HardDrive, Database, Globe, Network, Fingerprint, Bug, User, ChevronRight, Download
+  Play, Square, RefreshCw, FileText, AlertTriangle, Terminal, Settings, LayoutGrid, Cpu, LogOut, HardDrive, Database, Globe, Fingerprint, User, Download
 } from "lucide-react";
 
 import FireCrowLoader from "../../components/FireCrowLoader";
 import {
   fadeIn,
   fadeInUp,
-  fadeInRight,
   fadeInLeft,
   staggerContainer,
   scaleUp,
@@ -450,7 +449,7 @@ export default function Dashboard() {
         setUsername(savedUsername);
         setUserId(savedUserId);
         setAuthReady(true);
-      } catch (error) {
+      } catch {
         // Fallback for network error / offline development
         setToken(savedToken);
         setUsername(savedUsername);
