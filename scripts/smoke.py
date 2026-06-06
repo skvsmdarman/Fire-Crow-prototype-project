@@ -71,7 +71,31 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
     health = request_json(urljoin(api_base, "../../health"))
     results.append(SmokeResult("backend health", health.get("status") == "up", json.dumps(health)))
 
-    login = request_json(urljoin(api_base, "auth/login"), method="POST", body={"username": "smoke"})
+    # Try to register the smoke user first. If it already exists, this is fine.
+    try:
+        request_json(
+            urljoin(api_base, "auth/register"),
+            method="POST",
+            body={
+                "username": "smoke",
+                "password": "strongpassword123",
+                "privacy_policy_accepted": True,
+                "privacy_policy_version": "2026-06-06"
+            }
+        )
+    except Exception:
+        pass
+
+    login = request_json(
+        urljoin(api_base, "auth/login"),
+        method="POST",
+        body={
+            "username": "smoke",
+            "password": "strongpassword123",
+            "privacy_policy_accepted": True,
+            "privacy_policy_version": "2026-06-06"
+        }
+    )
     token = login["access_token"]
     results.append(SmokeResult("auth login", bool(token), f"user={login.get('username')}"))
 
