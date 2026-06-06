@@ -17,10 +17,16 @@ export default function PWARegister() {
       ("standalone" in window.navigator && Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone));
     setIsStandalone(standalone);
 
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
+    const registerServiceWorker = () => {
+      if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
-      });
+      }
+    };
+
+    if (document.readyState === "complete") {
+      registerServiceWorker();
+    } else {
+      window.addEventListener("load", registerServiceWorker, { once: true });
     }
 
     const handleInstallPrompt = (event: Event) => {
@@ -37,6 +43,7 @@ export default function PWARegister() {
     window.addEventListener("appinstalled", handleInstalled);
 
     return () => {
+      window.removeEventListener("load", registerServiceWorker);
       window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
       window.removeEventListener("appinstalled", handleInstalled);
     };
