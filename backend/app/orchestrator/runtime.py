@@ -85,6 +85,11 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         tracked_state.status = terminal_status
         result_state = tracked_state
         reset_runtime_tracker(tracker_token)
+        try:
+            from backend.app.services.housekeeping import run_housekeeping
+            run_housekeeping(db)
+        except Exception as hk_err:
+            logger.exception("Failed to run DB housekeeping after job execution: %s", hk_err)
         db.close()
 
     return result_state

@@ -59,6 +59,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Error running database migration startup check: %s", str(e))
         
+    # Run database storage housekeeping
+    try:
+        from backend.app.models.database import SessionLocal
+        from backend.app.services.housekeeping import run_housekeeping
+        db = SessionLocal()
+        try:
+            run_housekeeping(db)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Error running database housekeeping on startup: %s", str(e))
+        
     yield
 
 
