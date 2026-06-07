@@ -115,11 +115,11 @@
 }
 
 .heroTitle {
-  max-width: 12ch;
+  max-width: none;
   margin: 0;
   font-family: var(--font-display), sans-serif;
   font-size: clamp(38px, 11vw, 54px);
-  line-height: 0.96;
+  line-height: 1.1;
   letter-spacing: -0.045em;
 }
 
@@ -426,7 +426,7 @@
   margin: 10px 0 0;
   font-family: var(--font-display), sans-serif;
   font-size: clamp(28px, 7vw, 44px);
-  line-height: 0.98;
+  line-height: 1.1;
   letter-spacing: -0.035em;
 }
 
@@ -902,5 +902,19 @@
   .boardFooter {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+}
+
+@media (max-width: 560px) {
+  .section {
+    gap: 32px;
+  }
+  .capabilityCard,
+  .agentCard {
+    padding: 24px;
+  }
+  .sectionHeader {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
