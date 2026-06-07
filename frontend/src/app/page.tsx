@@ -7,6 +7,7 @@ import { ArrowRight, Cpu, Layers, RefreshCw, Shield } from "lucide-react";
 
 import PolicyLink from "../components/PolicyLink";
 import Footer from "../components/Footer";
+import BrandLogo from "../components/BrandLogo";
 import { fadeInLeft, fadeInRight, fadeInUp, scaleUp, staggerContainer } from "../lib/animations";
 import {
   getServerAuthSessionSnapshot,
@@ -101,7 +102,7 @@ export default function LandingPage() {
 
       <div className={styles.container}>
         <motion.nav variants={fadeInUp} initial="hidden" animate="visible" className={styles.nav} aria-label="Primary navigation">
-          <Link href="/" className={styles.brand}><span className={styles.brandMark}>FC</span><span className={styles.brandText}><strong>Fire Crow</strong><small>FCv1 security audit</small></span></Link>
+          <BrandLogo />
           <div className={styles.navLinks}>
             <a href="#capabilities" className={styles.navLink}>Platform</a>
             <a href="#workflow" className={styles.navLink}>Workflow</a>
