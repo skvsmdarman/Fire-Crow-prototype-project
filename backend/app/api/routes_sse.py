@@ -29,8 +29,11 @@ async def stream_audit_logs(
     get_owned_job_or_404(db, job_id, user_id)
 
     async def log_generator() -> AsyncGenerator[str, None]:
+        from datetime import datetime, timezone
+
         last_seen_log_id = 0
         connection_active = True
+        last_heartbeat_time = datetime.now(timezone.utc).timestamp()
 
         # Send initial connection success event
         yield f"event: connect\ndata: {json.dumps({'status': 'connected', 'job_id': job_id})}\n\n"
@@ -69,6 +72,14 @@ async def stream_audit_logs(
                     }
                     yield f"event: log\ndata: {json.dumps(payload)}\n\n"
                     last_seen_log_id = log.id
+
+                if new_logs:
+                    last_heartbeat_time = datetime.now(timezone.utc).timestamp()
+                else:
+                    current_time = datetime.now(timezone.utc).timestamp()
+                    if current_time - last_heartbeat_time >= 15.0:
+                        yield ": keepalive\n\n"
+                        last_heartbeat_time = current_time
 
                 # If job finished, send terminal event and terminate stream
                 if current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.PARTIAL]:
