@@ -26,6 +26,22 @@ def _first_non_empty(*values: str | None) -> str:
             return value
     return ""
 
+
+def get_clean_repo_name(repo_url: str) -> str:
+    if not repo_url:
+        return "repo"
+    # Remove trailing slashes and .git
+    url = repo_url.strip().rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    # Get the last part of the url path
+    parts = url.split("/")
+    repo_name = parts[-1] if parts else "repo"
+    # Clean the name of characters that aren't letters, numbers, hyphens, or underscores
+    import re
+    repo_name = re.sub(r'[^a-zA-Z0-9_\-]', '', repo_name)
+    return repo_name or "repo"
+
 # Attempt importing weasyprint and resend
 try:
     import weasyprint
@@ -624,25 +640,30 @@ class ReportGenerator:
         Uploads report to Cloudflare R2 bucket.
         Falls back to local file URI if R2 credentials are not set.
         """
+        filename = os.path.basename(pdf_path)
         if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
             logger.info("Cloudflare R2 environment variables not fully configured. Serving locally.")
-            return f"/reports/{job_id}.pdf"
+            return f"/reports/{filename}"
 
         try:
             import boto3  # type: ignore
             from botocore.client import Config  # type: ignore
 
+            endpoint = self.r2_endpoint
+            if endpoint and not (endpoint.startswith("http://") or endpoint.startswith("https://")):
+                endpoint = f"https://{endpoint}"
+
             logger.info("Uploading report for job %s to R2 object storage.", job_id)
             s3 = boto3.client(
                 "s3",
-                endpoint_url=self.r2_endpoint,
+                endpoint_url=endpoint,
                 aws_access_key_id=self.r2_access_key,
                 aws_secret_access_key=self.r2_secret_key,
                 config=Config(signature_version="s3v4"),
                 region_name="auto"
             )
 
-            key = f"reports/{job_id}.pdf"
+            key = f"reports/{filename}"
             s3.upload_file(pdf_path, self.r2_bucket, key, ExtraArgs={"ContentType": "application/pdf"})
             
             # Generate pre-signed URL valid for 7 days
@@ -655,41 +676,247 @@ class ReportGenerator:
             return url
         except Exception as e:
             logger.error("R2 upload failed for job %s: %s. Falling back to local report endpoint.", job_id, redact_text(str(e)))
-            return f"/reports/{job_id}.pdf"
+            return f"/reports/{filename}"
 
     def send_email_report(self, to_email: str, report_url: str, job_id: str, counts: Dict[Severity, int]) -> bool:
         """Sends a beautiful transactional email with the PDF link via Google/SMTP or Resend."""
+        if report_url.startswith("/"):
+            report_link = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+        else:
+            report_link = report_url
+
         safe_job_id = html.escape(job_id)
-        safe_report_url = html.escape(report_url, quote=True)
-        html_body = f"""
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
-            <h2 style="color: #0f172a; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-top: 0;">🔥 Fire Crow Security Audit Complete</h2>
-            <p style="font-size: 16px; line-height: 1.6; color: #334155;">Hello,</p>
-            <p style="font-size: 16px; line-height: 1.6; color: #334155;">Your authorization-only security audit job <strong>{safe_job_id}</strong> is complete. The system scanned code files, used controlled sandbox validation when available, and prepared evidence-backed remediation guidance.</p>
-            
-            <h4 style="color: #475569; text-transform: uppercase; margin-bottom: 10px;">Audit Summary</h4>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <tr style="background-color: #fee2e2; color: #991b1b; font-weight: bold;">
-                    <td style="padding: 10px; border: 1px solid #fca5a5;">Critical Severities</td>
-                    <td style="padding: 10px; border: 1px solid #fca5a5; text-align: right;">{counts.get(Severity.CRITICAL, 0)}</td>
-                </tr>
-                <tr style="background-color: #ffedd5; color: #9a3412; font-weight: bold;">
-                    <td style="padding: 10px; border: 1px solid #fed7aa;">High Severities</td>
-                    <td style="padding: 10px; border: 1px solid #fed7aa; text-align: right;">{counts.get(Severity.HIGH, 0)}</td>
-                </tr>
-                <tr style="background-color: #fef9c3; color: #713f12;">
-                    <td style="padding: 10px; border: 1px solid #fef08a;">Medium/Low Severities</td>
-                    <td style="padding: 10px; border: 1px solid #fef08a; text-align: right;">{counts.get(Severity.MEDIUM, 0) + counts.get(Severity.LOW, 0)}</td>
-                </tr>
-            </table>
+        safe_report_url = html.escape(report_link, quote=True)
+        
+        critical_count = counts.get(Severity.CRITICAL, 0)
+        high_count = counts.get(Severity.HIGH, 0)
+        medium_low_count = counts.get(Severity.MEDIUM, 0) + counts.get(Severity.LOW, 0) + counts.get(Severity.INFO, 0)
 
-            <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                <a href="{safe_report_url}" style="background-color: #7c3aed; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Download PDF Audit Report</a>
-            </div>
-
-            <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 30px;">This email was automatically generated by Fire Crow Security Platform. Keep your dependencies patched and code safe.</p>
+        html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fire Crow Audit Report</title>
+  <style>
+    body {{
+      margin: 0;
+      padding: 0;
+      background-color: #030712;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }}
+    .wrapper {{
+      width: 100%;
+      background-color: #030712;
+      padding: 40px 20px;
+      box-sizing: border-box;
+    }}
+    .container {{
+      max-width: 600px;
+      margin: 0 auto;
+      background: #0b0f19;
+      border: 1px solid #1f2937;
+      border-radius: 16px;
+      overflow: hidden;
+    }}
+    .header {{
+      background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+      padding: 32px 24px;
+      border-bottom: 1px solid #1f2937;
+      text-align: center;
+    }}
+    .logo-container {{
+      display: inline-block;
+      margin-bottom: 12px;
+    }}
+    .logo-mark {{
+      background: linear-gradient(135deg, #fb923c 0%, #ef4444 50%, #7c3aed 100%);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 20px;
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      display: inline-block;
+      line-height: 42px;
+      text-align: center;
+    }}
+    .logo-text {{
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      margin-left: 12px;
+      display: inline-block;
+      vertical-align: middle;
+    }}
+    .header-title {{
+      color: #f3f4f6;
+      font-size: 20px;
+      font-weight: 600;
+      margin: 8px 0 0 0;
+    }}
+    .content {{
+      padding: 32px 24px;
+      background-color: #0b0f19;
+    }}
+    .greeting {{
+      color: #9ca3af;
+      font-size: 15px;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }}
+    .intro-text {{
+      color: #d1d5db;
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }}
+    .stats-card {{
+      background-color: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 28px;
+    }}
+    .stats-title {{
+      color: #9ca3af;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 0;
+      margin-bottom: 16px;
+      letter-spacing: 0.05em;
+    }}
+    .stats-table {{
+      width: 100%;
+      border-collapse: collapse;
+    }}
+    .stats-table td {{
+      padding: 10px 0;
+      font-size: 14px;
+      vertical-align: middle;
+      border-bottom: 1px solid #1f2937;
+    }}
+    .stats-table tr:last-child td {{
+      border-bottom: none;
+    }}
+    .stat-label {{
+      color: #9ca3af;
+    }}
+    .stat-value {{
+      text-align: right;
+      font-weight: 600;
+    }}
+    .badge {{
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }}
+    .badge-critical {{
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }}
+    .badge-high {{
+      background-color: rgba(249, 115, 22, 0.15);
+      color: #fb923c;
+      border: 1px solid rgba(249, 115, 22, 0.3);
+    }}
+    .badge-medium {{
+      background-color: rgba(234, 179, 8, 0.12);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.25);
+    }}
+    .cta-container {{
+      text-align: center;
+      margin: 32px 0;
+    }}
+    .cta-button {{
+      background: linear-gradient(135deg, #ef4444 0%, #7c3aed 100%);
+      color: #ffffff !important;
+      padding: 14px 28px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      display: inline-block;
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+    }}
+    .footer {{
+      background-color: #0b0f19;
+      padding: 24px;
+      border-top: 1px solid #1f2937;
+      text-align: center;
+    }}
+    .footer-text {{
+      color: #4b5563;
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 0;
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="logo-container">
+          <span class="logo-mark">FC</span>
+          <span class="logo-text">FireCrow</span>
         </div>
-        """
+        <h1 class="header-title">Autonomous Security Audit Complete</h1>
+      </div>
+      
+      <div class="content">
+        <p class="greeting">Hello,</p>
+        <p class="intro-text">
+          Your authorization-only security audit job <strong>{safe_job_id}</strong> is complete. The system scanned code files, used controlled sandbox validation when available, and prepared evidence-backed remediation guidance.
+        </p>
+        
+        <div class="stats-card">
+          <h2 class="stats-title">Audit Summary</h2>
+          <table class="stats-table">
+            <tr>
+              <td class="stat-label">Critical Severities</td>
+              <td class="stat-value">
+                <span class="badge badge-critical">{critical_count}</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="stat-label">High Severities</td>
+              <td class="stat-value">
+                <span class="badge badge-high">{high_count}</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="stat-label">Medium/Low/Info Severities</td>
+              <td class="stat-value">
+                <span class="badge badge-medium">{medium_low_count}</span>
+              </td>
+            </tr>
+          </table>
+        </div>
+        
+        <div class="cta-container">
+          <a href="{safe_report_url}" class="cta-button">Download PDF Audit Report</a>
+        </div>
+      </div>
+      
+      <div class="footer">
+        <p class="footer-text">
+          This email was automatically generated by Fire Crow Security Platform.<br>
+          Keep your dependencies patched and code safe.
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+"""
 
         # 1. Try Google SMTP/Gmail if configured
         if settings.SMTP_USER and settings.SMTP_PASSWORD:
@@ -718,61 +945,67 @@ class ReportGenerator:
             except Exception as e:
                 logger.error("Failed to send email via Google/SMTP for job %s: %s.", job_id, redact_text(str(e)))
 
-        # 2. Fallback to Resend
-        if not (RESEND_AVAILABLE and self.resend_api_key):
-            if not settings.DEBUG:
-                logger.warning("No email provider configured for job %s. Local email fallback is disabled outside DEBUG mode.", job_id)
-                return False
-
-            logger.warning("Resend API key not configured or package missing. Saving DEBUG notification email locally.")
+        # 2. Try Resend if configured
+        if RESEND_AVAILABLE and self.resend_api_key:
             try:
-                import re
-                from datetime import datetime
-                sent_emails_dir = os.path.join("workspace", "sent_emails")
-                os.makedirs(sent_emails_dir, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
-                filename = f"{timestamp}_{safe_email}_audit_report.html"
-                filepath = os.path.join(sent_emails_dir, filename)
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write(html_body)
-                logger.info("Local DEBUG email report saved for job %s.", job_id)
+                logger.info("Sending transactional email report for job %s via Resend.", job_id)
+                params: Any = {
+                    "from": f"Fire Crow Audit <{self.sender_email}>",
+                    "to": [to_email],
+                    "subject": f"Fire Crow Security Audit Report - Job {job_id}",
+                    "html": html_body
+                }
+                resend.Emails.send(params)
+                logger.info("Transactional email successfully sent via Resend.")
                 return True
-            except Exception as le:
-                logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
-                return False
+            except Exception as e:
+                logger.error("Failed to send email via Resend for job %s: %s.", job_id, redact_text(str(e)))
 
+        # 3. Try Brevo HTTP API if configured
+        if settings.BREVO_API_KEY:
+            try:
+                import httpx
+                logger.info("Sending transactional email report for job %s via Brevo.", job_id)
+                response = httpx.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "api-key": settings.BREVO_API_KEY,
+                        "content-type": "application/json",
+                        "accept": "application/json"
+                    },
+                    json={
+                        "sender": {"email": self.sender_email, "name": "Fire Crow Audit"},
+                        "to": [{"email": to_email}],
+                        "subject": f"Fire Crow Security Audit Report - Job {job_id}",
+                        "htmlContent": html_body
+                    },
+                    timeout=15.0
+                )
+                response.raise_for_status()
+                logger.info("Transactional email successfully sent via Brevo.")
+                return True
+            except Exception as e:
+                logger.error("Failed to send email via Brevo for job %s: %s.", job_id, redact_text(str(e)))
+
+        # 4. Final Fallback (local saving in DEBUG, or fail in production)
+        if not settings.DEBUG:
+            logger.warning("No email provider succeeded or configured for job %s. Local email fallback is disabled outside DEBUG mode.", job_id)
+            return False
+
+        logger.warning("No email provider configured or succeeded. Saving DEBUG notification email locally.")
         try:
-            logger.info("Sending transactional email report for job %s via Resend.", job_id)
-            
-            params: Any = {
-                "from": f"Fire Crow Audit <{self.sender_email}>",
-                "to": [to_email],
-                "subject": f"Fire Crow Security Audit Report - Job {job_id}",
-                "html": html_body
-            }
-
-            resend.Emails.send(params)
-            logger.info("Transactional email successfully sent via Resend.")
+            import re
+            from datetime import datetime
+            sent_emails_dir = os.path.join("workspace", "sent_emails")
+            os.makedirs(sent_emails_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
+            filename = f"{timestamp}_{safe_email}_audit_report.html"
+            filepath = os.path.join(sent_emails_dir, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(html_body)
+            logger.info("Local DEBUG email report saved for job %s.", job_id)
             return True
-        except Exception as e:
-            logger.error("Failed to send email via Resend for job %s: %s.", job_id, redact_text(str(e)))
-            if not settings.DEBUG:
-                logger.warning("Local email fallback is disabled outside DEBUG mode for job %s.", job_id)
-                return False
-            try:
-                import re
-                from datetime import datetime
-                sent_emails_dir = os.path.join("workspace", "sent_emails")
-                os.makedirs(sent_emails_dir, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
-                filename = f"{timestamp}_{safe_email}_audit_report.html"
-                filepath = os.path.join(sent_emails_dir, filename)
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write(html_body)
-                logger.info("Local DEBUG email report saved for job %s.", job_id)
-                return True
-            except Exception as le:
-                logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
-                return False
+        except Exception as le:
+            logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
+            return False

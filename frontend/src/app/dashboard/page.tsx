@@ -223,7 +223,8 @@ export default function Dashboard() {
     localStorage.removeItem("fc_token");
     localStorage.removeItem("fc_username");
     localStorage.removeItem("fc_user_id");
-    router.replace("/signin");
+    const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
+    router.replace(`/signin${searchParamsString}`);
     toast("Session expired. Please sign in again.", "error");
   }, [router, toast]);
 
@@ -423,7 +424,8 @@ export default function Dashboard() {
       localStorage.removeItem("fc_token");
       localStorage.removeItem("fc_username");
       localStorage.removeItem("fc_user_id");
-      router.replace("/signin");
+      const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
+      router.replace(`/signin${searchParamsString}`);
       return;
     }
     const validateToken = async () => {
@@ -433,7 +435,8 @@ export default function Dashboard() {
           localStorage.removeItem("fc_token");
           localStorage.removeItem("fc_username");
           localStorage.removeItem("fc_user_id");
-          router.replace("/signin");
+          const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
+          router.replace(`/signin${searchParamsString}`);
           return;
         }
         setToken(savedToken);
@@ -444,7 +447,8 @@ export default function Dashboard() {
         localStorage.removeItem("fc_token");
         localStorage.removeItem("fc_username");
         localStorage.removeItem("fc_user_id");
-        router.replace("/signin");
+        const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
+        router.replace(`/signin${searchParamsString}`);
       }
     };
     void validateToken();
@@ -453,6 +457,21 @@ export default function Dashboard() {
   useEffect(() => { if (token) fetchJobs(); }, [fetchJobs, token]);
   useEffect(() => { if (token) fetchSystemStatus(); }, [fetchSystemStatus, token]);
   useEffect(() => { if (selectedJobId && token) fetchJobDetail(selectedJobId); }, [fetchJobDetail, selectedJobId, token]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !token || !authReady) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryJobId = urlParams.get("job_id");
+    if (queryJobId) {
+      setSelectedJobId(queryJobId);
+      setActiveSection("reports");
+      openReport(queryJobId);
+      // Clean up the URL to prevent double opening on refresh
+      const url = new URL(window.location.href);
+      url.searchParams.delete("job_id");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [token, authReady, openReport]);
   useEffect(() => {
     if (!selectedJob || !token || (selectedJob.status !== "queued" && selectedJob.status !== "running")) return;
     const interval = window.setInterval(() => {

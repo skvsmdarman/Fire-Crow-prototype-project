@@ -237,6 +237,46 @@ Fire Crow/
 |  |- reports/
 ```
 
+## Orchestration Pipeline & Reliability Audit
+
+FireCrow employs a 7-stage orchestration pipeline built on LangGraph. Here is a summary of the stages, critical failure points, and resilience features:
+
+### 1. The 7 Orchestration Stages
+1. **RECON (`recon_node`)**: Clones the repository, detects tech stack (Python, NodeJS, Go, Java, Docker), and lists manifests.
+   - *Failure point*: Git clone failures or malicious repositories.
+   - *Mitigation*: Depth=1 clone, strict input validation (no command options), 500MB size limit, symlink escape checks, git hooks removal.
+2. **DEPENDENCY (`dependency_node`)**: Performs dependency vulnerability scanning using `osv-scanner` or `trivy`.
+   - *Failure point*: Missing scanner binaries.
+   - *Mitigation*: Falls back to simulated findings in debug mode, or returns `[]` in production, without crashing the job.
+3. **SAST & SEMGREP (`sast_node`, `semgrep_node`)**: Scans code files for secrets and unsafe patterns using regexes and Semgrep.
+   - *Failure point*: ReDoS hangs, missing Semgrep binary.
+   - *Mitigation*: Skips files >2MB, truncates lines >2048 chars, catches individual file errors, falls back gracefully.
+4. **SANDBOX (`sandbox_node`)**: Provisions private Docker network and target/testing containers.
+   - *Failure point*: Missing Docker daemon in production environments (e.g. Render).
+   - *Mitigation*: Explicit `FIRE_CROW_MOCK_SANDBOX=true` setting enables full simulation.
+5. **DYNAMIC DYNAMIC PROBING (`network_node`, `attack_node`, `exploit_node`)**: Performs port scan, dynamic attacks (sqlmap, nuclei), and exploit proofing.
+   - *Failure point*: Container exec errors.
+   - *Mitigation*: Commands run in sandboxed Kali container, are restricted by executable allowlists, and errors are handled per-command.
+6. **ANALYSIS (`ai_analyzer_node`, `scoring_node`)**: Runs LLM deduction, deduplicates findings, scores severities using CVSS.
+   - *Failure point*: Gemini API timeouts or rate limits.
+   - *Mitigation*: Iterates fallback models, falls back to simulated remediation without failing the job if all models fail.
+7. **DELIVERY & CLEANUP (`reporter_node`, `github_mcp_node`, `google_agent_node`, `cleanup_node`)**: Compiles PDF, uploads to R2, alerts workspace via email (Resend/Brevo/SMTP), creates GitHub issue/PR via GitMCP, tears down sandboxes.
+
+### 2. Critical Configuration & Crash Protections
+
+- **R2 / S3 Endpoint Scheme**:
+  - *Issue*: `ValueError: Invalid endpoint: s3.us-east-005.backblazeb2.com` when endpoint has no protocol scheme.
+  - *Fix*: The system automatically prepends `https://` if `R2_ENDPOINT_URL` or `CLOUDFLARE_R2_ENDPOINT` is configured without a scheme.
+- **GitMCP Integration**:
+  - *Issue*: SSE remote server connection fails (`403 Forbidden`) when permissions are missing.
+  - *Fix*: Failing to connect to `gitmcp.io` is logged as a warning and falls back to direct GitHub REST API using `GITHUB_TOKEN`.
+- **E-mail Delivery & Port Blocking**:
+  - *Issue*: Render blocks outbound SMTP ports (25, 465, 587).
+  - *Fix*: Use `BREVO_API_KEY` (via Brevo HTTPS API) or `RESEND_API_KEY` to send emails over port 443.
+- **LangGraph State Reduction**:
+  - *Issue*: Incremental dictionary updates to `scanner_execution` overwritten by default LangGraph reducers.
+  - *Fix*: Custom `merge_dicts` reducer ensures compiled results from all scanners persist correctly.
+
 ## Development Notes
 
 - The launcher is intentionally defensive: it avoids duplicate services and falls forward on busy ports.

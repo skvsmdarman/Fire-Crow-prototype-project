@@ -9,6 +9,12 @@ def get_utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def merge_dicts(dict1: dict[str, Any] | None, dict2: dict[str, Any] | None) -> dict[str, Any]:
+    """Reducer function to merge dictionaries in LangGraph state."""
+    d1 = dict1 or {}
+    d2 = dict2 or {}
+    return {**d1, **d2}
+
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
@@ -117,8 +123,8 @@ class AuditState(BaseModel):
 
     # --- Error Tracking ---
     errors: Annotated[list[dict], operator.add] = []
-    retry_counts: dict[str, int] = {}
-    scanner_execution: dict[str, Any] = {}
+    retry_counts: Annotated[dict[str, int], merge_dicts] = {}
+    scanner_execution: Annotated[dict[str, Any], merge_dicts] = {}
 
     # --- Resource Budget ---
     max_scan_duration_sec: int = 2700

@@ -36,7 +36,7 @@ def test_maestro_default_path():
     assert final_state["static_findings"][0].title == "[SIMULATED] Outdated dependency package PyYAML"
     assert len(final_state["dynamic_findings"]) == 0
     assert len(final_state["exploit_proofs"]) == 0
-    assert "job-default.pdf" in final_state["report_pdf_url"]
+    assert "standard-repo_audit_" in final_state["report_pdf_url"]
 
 
 def test_maestro_secrets_leak_path():

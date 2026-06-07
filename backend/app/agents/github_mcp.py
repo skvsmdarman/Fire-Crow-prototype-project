@@ -1,6 +1,7 @@
 import logging
 import re
 import json
+import base64
 import urllib.request
 import urllib.error
 from typing import Dict, Any, List
@@ -9,6 +10,25 @@ from backend.app.config import settings
 from backend.app.schemas import Finding, Severity
 
 logger = logging.getLogger("firecrow.agents.github_mcp")
+
+
+def _github_api_request(url: str, method: str, token: str, payload: dict | None = None) -> tuple[Any, int, str]:
+    import urllib.request
+    import urllib.error
+    import json
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"token {token}")
+    req.add_header("User-Agent", "Fire-Crow-Security-Scanner")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8")), response.status, ""
+    except urllib.error.HTTPError as err:
+        err_body = err.read().decode("utf-8") if err.fp else ""
+        return None, err.code, err_body
+    except Exception as exc:
+        return None, 500, str(exc)
 
 
 def _escape_markdown_text(value: str | None) -> str:
@@ -281,6 +301,91 @@ def run_github_mcp(job_id: str, repo_url: str, findings: List[Finding], remediat
             logs.append(f"Successfully created GitHub PR via GitMCP: {pr_url}")
         else:
             logs.append("GitMCP 'create_pull_request' tool call failed.")
+
+    if remediations and not pr_created:
+        logs.append("Attempting to create PR directly via GitHub REST API...")
+        if not token:
+            logs.append("No GITHUB_TOKEN configured. Direct PR creation fallback skipped.")
+        else:
+            try:
+                # 1. Get default branch
+                repo_url_api = f"https://api.github.com/repos/{owner}/{repo}"
+                repo_data, status, err_msg = _github_api_request(repo_url_api, "GET", token)
+                if not repo_data:
+                    raise RuntimeError(f"Failed to fetch repo details: HTTP {status} - {err_msg}")
+                default_branch = repo_data.get("default_branch", "main")
+                
+                # 2. Get default branch commit SHA
+                ref_url = f"https://api.github.com/repos/{owner}/{repo}/git/ref/heads/{default_branch}"
+                ref_data, status, err_msg = _github_api_request(ref_url, "GET", token)
+                if not ref_data:
+                    raise RuntimeError(f"Failed to fetch branch ref: HTTP {status} - {err_msg}")
+                base_sha = ref_data.get("object", {}).get("sha")
+                if not base_sha:
+                    raise RuntimeError("Could not find base branch commit SHA.")
+
+                # 3. Create a new branch
+                new_branch_name = f"security-fix-fc-{job_id[:8]}"
+                create_ref_url = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
+                ref_payload = {
+                    "ref": f"refs/heads/{new_branch_name}",
+                    "sha": base_sha
+                }
+                ref_res, status, err_msg = _github_api_request(create_ref_url, "POST", token, ref_payload)
+                if not ref_res:
+                    if status == 422:
+                        logs.append(f"Branch {new_branch_name} already exists. Reusing branch.")
+                    else:
+                        raise RuntimeError(f"Failed to create new branch: HTTP {status} - {err_msg}")
+                else:
+                    logs.append(f"Successfully created branch {new_branch_name}.")
+
+                # 4. Commit each file content
+                for rem in remediations:
+                    path = rem["file"]
+                    fixed_code = rem["fixed_code"]
+                    
+                    contents_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={default_branch}"
+                    file_data, status, err_msg = _github_api_request(contents_url, "GET", token)
+                    existing_sha = None
+                    if file_data and "sha" in file_data:
+                        existing_sha = file_data["sha"]
+                    
+                    base64_content = base64.b64encode(fixed_code.encode("utf-8")).decode("utf-8")
+                    commit_payload = {
+                        "message": f"Security remediation for {path} by Fire Crow",
+                        "content": base64_content,
+                        "branch": new_branch_name
+                    }
+                    if existing_sha:
+                        commit_payload["sha"] = existing_sha
+                    
+                    commit_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+                    commit_res, status, err_msg = _github_api_request(commit_url, "PUT", token, commit_payload)
+                    if not commit_res:
+                        logs.append(f"Failed to commit fixes to {path}: HTTP {status} - {err_msg}")
+                    else:
+                        logs.append(f"Committed security fix to {path} on branch {new_branch_name}.")
+
+                # 5. Create Pull Request
+                pulls_url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+                pr_payload = {
+                    "title": "Security Remediations by Fire Crow",
+                    "body": "Automated security fixes generated by Fire Crow AI Analyzer.",
+                    "head": new_branch_name,
+                    "base": default_branch
+                }
+                pr_res, status, err_msg = _github_api_request(pulls_url, "POST", token, pr_payload)
+                if pr_res:
+                    pr_created = True
+                    pr_url = pr_res.get("html_url", "")
+                    branch = new_branch_name
+                    logs.append(f"Successfully created GitHub PR directly: {pr_url}")
+                else:
+                    logs.append(f"Failed to create Pull Request directly: HTTP {status} - {err_msg}")
+
+            except Exception as e:
+                logs.append(f"Direct GitHub PR creation failed: {e}")
 
     return {
         "github_issue_created": success,

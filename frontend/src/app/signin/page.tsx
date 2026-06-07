@@ -82,6 +82,17 @@ export default function SignInPage() {
     localStorage.removeItem("fc_user_id");
   };
 
+  const getDashboardRedirectUrl = () => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const jobId = urlParams.get("job_id");
+      if (jobId) {
+        return `/dashboard?job_id=${encodeURIComponent(jobId)}`;
+      }
+    }
+    return "/dashboard";
+  };
+
   const persistSession = (session: AuthSession) => {
     localStorage.setItem("fc_token", session.access_token);
     localStorage.setItem("fc_username", session.username);
@@ -132,7 +143,7 @@ export default function SignInPage() {
           }
           const session = (await response.json()) as AuthSession;
           persistSession(session);
-          router.replace("/dashboard");
+          router.replace(getDashboardRedirectUrl());
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Exchange failed.");
@@ -147,7 +158,7 @@ export default function SignInPage() {
         user_id: urlUserId,
         username: urlUsername,
       });
-      router.replace("/dashboard");
+      router.replace(getDashboardRedirectUrl());
       return;
     }
 
@@ -166,7 +177,7 @@ export default function SignInPage() {
           setCheckingSession(false);
           return;
         }
-        router.replace("/dashboard");
+        router.replace(getDashboardRedirectUrl());
       })
       .catch(() => setCheckingSession(false));
   }, [router]);
@@ -245,7 +256,7 @@ export default function SignInPage() {
 
       const session = (await response.json()) as AuthSession;
       persistSession(session);
-      router.push("/dashboard");
+      router.push(getDashboardRedirectUrl());
     } catch (authError) {
       const errMsg = authError instanceof Error ? authError.message : "";
       if (errMsg.toLowerCase().includes("failed to fetch") || errMsg.toLowerCase().includes("fetch")) {

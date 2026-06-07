@@ -273,6 +273,32 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         except Exception as e:
             logs.append(f"Resend email delivery failed: {redact_text(str(e))}.")
 
+    # 3. Brevo fallback
+    if not delivered and settings.BREVO_API_KEY:
+        try:
+            import httpx
+            logger.info("Google Agent sending PR Risk email to %s via Brevo", recipient_email)
+            response = httpx.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": settings.BREVO_API_KEY,
+                    "content-type": "application/json",
+                    "accept": "application/json"
+                },
+                json={
+                    "sender": {"email": settings.SENDER_EMAIL, "name": "Google Security Agent"},
+                    "to": [{"email": recipient_email}],
+                    "subject": f"🤖 Google Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
+                    "htmlContent": html_body
+                },
+                timeout=15.0
+            )
+            response.raise_for_status()
+            delivered = True
+            logs.append(f"PR risk assessment email alert successfully sent via Brevo to {recipient_email}.")
+        except Exception as e:
+            logs.append(f"Brevo email delivery failed: {redact_text(str(e))}.")
+
     if not delivered:
         if not settings.DEBUG:
             logs.append("No active mail gateway transmitted the PR risk email. Local fallback is disabled outside DEBUG mode.")

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     # --- Communication ---
     RESEND_API_KEY: str = Field(default="", validation_alias="RESEND_API_KEY")
+    BREVO_API_KEY: str = Field(default="", validation_alias="BREVO_API_KEY")
     SENDER_EMAIL: str = Field(default="reports@firecrow.dev", validation_alias="SENDER_EMAIL")
 
     # --- Google/SMTP Mail ---

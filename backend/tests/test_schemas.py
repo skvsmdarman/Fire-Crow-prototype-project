@@ -48,3 +48,18 @@ def test_submit_job_request_normalizes_empty_branch():
 def test_submit_job_request_rejects_unsafe_branch_refs(branch: str):
     with pytest.raises(ValidationError):
         SubmitJobRequest(repo_url="https://github.com/example/repo", repo_branch=branch)
+
+
+def test_audit_state_dict_reducer():
+    from backend.app.schemas.audit_state import merge_dicts
+    
+    d1 = {"recon": {"status": "executed"}}
+    d2 = {"regex_sast": {"status": "executed"}}
+    merged = merge_dicts(d1, d2)
+    assert merged == {
+        "recon": {"status": "executed"},
+        "regex_sast": {"status": "executed"}
+    }
+    
+    assert merge_dicts(None, {"x": 1}) == {"x": 1}
+    assert merge_dicts({"y": 2}, None) == {"y": 2}

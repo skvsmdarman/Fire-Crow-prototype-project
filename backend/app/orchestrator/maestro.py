@@ -31,7 +31,7 @@ from backend.app.orchestrator.runtime_context import (
     sync_runtime_state,
 )
 from backend.app.schemas import AuditState, Finding, JobStatus, Severity
-from backend.app.services.reporter import ReportGenerator
+from backend.app.services.reporter import ReportGenerator, get_clean_repo_name
 from backend.app.services.sandbox import SandboxManager
 from backend.app.services.redaction import redact_text
 
@@ -466,9 +466,13 @@ def scoring_node(state: AuditState) -> Dict[str, Any]:
 def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     all_findings = get_reportable_findings(state)
 
+    repo_name = get_clean_repo_name(state.repo_url)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pdf_filename = f"{repo_name}_audit_{timestamp}.pdf"
+
     reports_dir = os.path.join("workspace", "reports")
     os.makedirs(reports_dir, exist_ok=True)
-    pdf_path = os.path.join(reports_dir, f"{state.job_id}.pdf")
+    pdf_path = os.path.join(reports_dir, pdf_filename)
 
     generator = ReportGenerator()
     html_content = generator.generate_html_report(
