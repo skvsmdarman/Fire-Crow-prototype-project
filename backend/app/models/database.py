@@ -122,11 +122,64 @@ def _ensure_user_compatibility() -> None:
                 exc_info=True,
             )
 
+def _ensure_finding_compatibility() -> None:
+    if engine is None:
+        return
+    inspector = inspect(engine)
+    if inspector is None:
+        return
+    if "findings" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("findings")}
+    with engine.begin() as conn:
+        if "confidence" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN confidence VARCHAR(50)")
+        if "scanner_name" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN scanner_name VARCHAR(100)")
+        if "scanner_mode" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN scanner_mode VARCHAR(50)")
+        if "file_path" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN file_path VARCHAR(1024)")
+        if "line_number" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN line_number INTEGER")
+        if "route" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN route VARCHAR(1024)")
+        if "metadata_json" not in columns:
+            conn.exec_driver_sql("ALTER TABLE findings ADD COLUMN metadata_json TEXT")
+
+
+def _ensure_artifact_compatibility() -> None:
+    if engine is None:
+        return
+    inspector = inspect(engine)
+    if inspector is None:
+        return
+    if "audit_artifacts" not in inspector.get_table_names():
+        with engine.begin() as conn:
+            conn.exec_driver_sql("""
+                CREATE TABLE audit_artifacts (
+                    id VARCHAR(36) PRIMARY KEY,
+                    job_id VARCHAR(36) NOT NULL,
+                    artifact_type VARCHAR(100) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    data_json TEXT,
+                    data_text TEXT,
+                    created_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES audit_jobs(id)
+                )
+            """)
+            try:
+                conn.exec_driver_sql("CREATE INDEX ix_audit_artifacts_job_id ON audit_artifacts (job_id)")
+            except Exception:
+                logger.warning("Could not create index on audit_artifacts.job_id", exc_info=True)
 
 
 def ensure_database_compatibility() -> None:
     _ensure_audit_job_compatibility()
     _ensure_user_compatibility()
+    _ensure_finding_compatibility()
+    _ensure_artifact_compatibility()
 
 
 def check_pending_migrations() -> bool:
