@@ -117,12 +117,13 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         success = False
 
         for model_name in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
             logger.info(f"Attempting Gemini call for Google Security Agent using model: {model_name}")
             try:
                 req_data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(url, data=req_data)
                 req.add_header("Content-Type", "application/json")
+                req.add_header("x-goog-api-key", api_key)
                 
                 with urllib.request.urlopen(req, timeout=30) as response:
                     res_content = response.read().decode("utf-8")
