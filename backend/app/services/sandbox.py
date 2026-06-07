@@ -32,12 +32,8 @@ class SandboxManager:
         self.unavailable_reason = ""
         
         if settings.FIRE_CROW_MOCK_SANDBOX:
-            if settings.DEBUG:
-                self.mock_mode = True
-                logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in DEBUG simulation mode.")
-            else:
-                self.unavailable_reason = "Mock sandbox mode is not allowed in production."
-                logger.error(self.unavailable_reason)
+            self.mock_mode = True
+            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in sandbox simulation mode.")
         elif DOCKER_AVAILABLE:
             try:
                 self.client = docker.from_env()
@@ -187,8 +183,6 @@ class SandboxManager:
             logger.warning("DEBUG mode allowing non-standard scanner command: %s", executable)
 
         if self.mock_mode:
-            if not settings.DEBUG:
-                return 1, "Sandbox simulation is unavailable in production."
             logger.info(f"[SIMULATOR] Executing Kali command: {' '.join(command)}")
             # Custom mock outputs for testing
             cmd_str = " ".join(command)
