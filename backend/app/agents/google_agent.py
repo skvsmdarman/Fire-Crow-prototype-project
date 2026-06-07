@@ -109,7 +109,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         models_to_try = [settings.GEMINI_MODEL]
         if getattr(settings, "GEMINI_ENABLE_FALLBACK_MODEL", False) and getattr(settings, "GEMINI_FALLBACK_MODEL", ""):
             models_to_try.append(settings.GEMINI_FALLBACK_MODEL)
-        models_to_try = list(dict.fromkeys(models_to_try))
+        models_to_try = [m for m in dict.fromkeys(models_to_try) if m]
         success = False
 
         for model_name in models_to_try:
