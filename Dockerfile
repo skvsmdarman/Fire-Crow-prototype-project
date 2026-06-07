@@ -34,4 +34,4 @@ COPY --from=frontend-build /app/frontend/out frontend/out
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "-c", "alembic -c backend/alembic.ini upgrade head && exec uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]

@@ -20,6 +20,8 @@ Current `render.yaml` only provisions:
 
 That is enough for a minimal boot, not for all optional features.
 
+The Docker container now runs `alembic -c backend/alembic.ini upgrade head` before starting `uvicorn`. That keeps the production startup guard in `backend/app/main.py` intact while making the default Render boot path compatible with pending schema changes.
+
 ## Production Database Requirements
 
 Source: `backend/app/config.py`, `backend/app/models/database.py`.
@@ -34,6 +36,7 @@ Source: `backend/app/main.py`, `backend/app/models/database.py`, `backend/alembi
 
 - Debug startup runs `Base.metadata.create_all()` and `ensure_database_compatibility()`.
 - Non-debug startup checks for pending Alembic migrations and can block startup.
+- The Docker production start command applies Alembic migrations first, then launches `uvicorn`.
 - The compatibility helpers still auto-add some columns/tables outside Alembic in debug mode.
 
 Practical warning:
@@ -93,6 +96,5 @@ The codebase itself does not encode Render pricing or sleep behavior, but curren
 - Decide whether object storage is required for report durability.
 - Decide whether email delivery is required and configure one provider.
 - Decide whether real sandboxed active testing is possible on the target host.
-- Run `alembic upgrade head` before non-debug startup when migrations exist.
+- If you override the Docker start command, keep `alembic -c backend/alembic.ini upgrade head` ahead of `uvicorn`.
 - Verify that frontend and backend audit-submit contracts match before relying on the dashboard UI.
-
