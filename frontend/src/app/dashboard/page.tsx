@@ -36,6 +36,7 @@ import PipelineViz from "./components/PipelineViz";
 import Sidebar, { Section } from "./components/Sidebar";
 import mobile from "./mobile.module.css";
 import styles from "./page.module.css";
+import { API_BASE_URL } from "../../lib/policy";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
 type Severity = "critical" | "high" | "medium" | "low" | "info";
@@ -95,7 +96,6 @@ interface SystemStatus {
   agents: SystemAgent[];
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 const TERMINAL_STATUSES: JobStatus[] = ["completed", "failed", "cancelled", "partial"];
 const TABS: Section[] = ["home", "audits", "findings", "reports", "settings"];
 const SECTION_TITLES: Record<Section, string> = {

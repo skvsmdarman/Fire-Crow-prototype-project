@@ -444,8 +444,8 @@ export default function SignInPage() {
                   </svg>
                 </span>
                 <span className={styles.providerCopy}>
-                  <strong>GitHub OAuth unavailable</strong>
-                  <span>Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` on the backend to enable this flow.</span>
+                  <strong>GitHub sign-in is not configured</strong>
+                  <span>GitHub authentication is currently disabled for this workspace. Contact your administrator to enable GitHub OAuth.</span>
                 </span>
               </button>
             )}
@@ -482,8 +482,8 @@ export default function SignInPage() {
                   </svg>
                 </span>
                 <span className={styles.providerCopy}>
-                  <strong>Google OAuth unavailable</strong>
-                  <span>Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on the backend to enable this flow.</span>
+                  <strong>Google sign-in is not configured</strong>
+                  <span>Google authentication is currently disabled for this workspace. Contact your administrator to enable Google OAuth.</span>
                 </span>
               </button>
             )}
