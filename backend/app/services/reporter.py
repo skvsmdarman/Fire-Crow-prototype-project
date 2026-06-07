@@ -95,6 +95,13 @@ class ReportGenerator:
         Maps findings to specific compliance controls.
         """
         logger.info(f"Generating {standard} compliance report for job {job_id}")
+
+        for finding in findings:
+            if finding.evidence:
+                finding.evidence = finding.evidence[:settings.REPORT_MAX_EVIDENCE_CHARS]
+            if finding.remediation:
+                finding.remediation = finding.remediation[:settings.REPORT_MAX_REMEDIATION_CHARS]
+
         # Mock logic
         return f"Compliance Report ({standard}) for Job {job_id} generated successfully."
 
@@ -107,6 +114,12 @@ class ReportGenerator:
         scanner_execution: Dict[str, Any] | None = None,
     ) -> str:
         """Generates a premium executive vulnerability audit HTML string."""
+        for finding in findings:
+            if finding.evidence:
+                finding.evidence = finding.evidence[:settings.REPORT_MAX_EVIDENCE_CHARS]
+            if finding.remediation:
+                finding.remediation = finding.remediation[:settings.REPORT_MAX_REMEDIATION_CHARS]
+
         safe_job_id = html.escape(job_id)
         safe_repo_url = html.escape(repo_url)
         safe_branch = html.escape(branch)

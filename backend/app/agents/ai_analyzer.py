@@ -154,14 +154,10 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
         }
     }
 
-    models_to_try = list(dict.fromkeys([
-        settings.GEMINI_MODEL, 
-        "gemini-3.5-flash", 
-        "gemini-3.0-flash", 
-        "gemini-2.5-flash", 
-        "gemini-2.0-flash", 
-        "gemini-1.5-flash"
-    ]))
+    models_to_try = [settings.GEMINI_MODEL]
+    if getattr(settings, "GEMINI_ENABLE_FALLBACK_MODEL", False) and getattr(settings, "GEMINI_FALLBACK_MODEL", ""):
+        models_to_try.append(settings.GEMINI_FALLBACK_MODEL)
+    models_to_try = list(dict.fromkeys(models_to_try))
     success = False
     last_error_summary = ""
 
@@ -174,7 +170,7 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
             req.add_header("Content-Type", "application/json")
             req.add_header("x-goog-api-key", api_key)
             
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=getattr(settings, "GEMINI_TIMEOUT_SECONDS", 30)) as response:
                 res_content = response.read().decode("utf-8")
                 res_json = json.loads(res_content)
                 
