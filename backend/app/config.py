@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL"
     )
     REDIS_URL: str = Field(
-        default="redis://localhost:6379/0",
+        default="",
         validation_alias="REDIS_URL"
     )
     REDIS_PASSWORD: str = Field(default="", validation_alias="REDIS_PASSWORD")

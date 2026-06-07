@@ -33,6 +33,8 @@ REPORTS_DIR = WORKSPACE_DIR / "workspace" / "reports"
 
 
 def _is_broker_reachable() -> bool:
+    if not settings.REDIS_URL:
+        return False
     redis_url = urlparse(settings.REDIS_URL)
     host = redis_url.hostname or "localhost"
     port = redis_url.port or 6379

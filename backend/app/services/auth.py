@@ -164,10 +164,10 @@ def revoke_access_token(payload: dict) -> bool:
             return True
         except Exception:
             logger.error("Failed to write token jti=%s to Redis denylist.", jti)
-            if not settings.DEBUG:
+            if not settings.DEBUG and settings.REDIS_URL:
                 return False
 
-    if not settings.DEBUG:
+    if not settings.DEBUG and settings.REDIS_URL:
         return False
 
     _revoked_jtis[str(jti)] = expires_at
