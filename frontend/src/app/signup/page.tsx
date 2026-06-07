@@ -19,6 +19,27 @@ import {
   fadeInRight
 } from "../../lib/animations";
 
+const SIGNUP_PROMISES = [
+  {
+    title: "Continuous SAST & Agent Audits",
+    body: "Deploy 6 offensive agents working concurrently to discover secrets, source leaks, and dependency flaws in real time.",
+  },
+  {
+    title: "Secure Workspace Sandboxing",
+    body: "Your source code is cloned into an isolated Kali Linux runtime environment with local auto-destruction after verification.",
+  },
+  {
+    title: "Zero-Setup Report Generation",
+    body: "Receive direct, comprehensive PDF audit reports sent straight to your mailbox with no external account sign-ups required.",
+  },
+];
+
+const SIGNUP_METRICS = [
+  { value: "6", label: "Security agents" },
+  { value: "Sandbox", label: "Isolation" },
+  { value: "Neon", label: "Active logging" },
+];
+
 const cx = (...args: (string | undefined | false)[]) => args.filter(Boolean).join(" ");
 
 interface PolicyContext {
@@ -37,13 +58,15 @@ interface AuthSession {
   username: string;
 }
 
-export default function SignInPage() {
+export default function SignUpPage() {
   const router = useRouter();
 
   // Form State
   const [workspace, setWorkspace] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
   // Status State
   const [loading, setLoading] = useState(false);
@@ -114,17 +137,41 @@ export default function SignInPage() {
     return url.toString();
   };
 
-  const submitAuth = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleProviderClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!acceptedPrivacy) {
+      e.preventDefault();
+      setError("You must read and accept the Privacy Policy and Terms of Use first.");
+      return;
+    }
+    setError("");
+  };
+
+  const submitRegister = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedWorkspace = workspace.trim();
 
     if (!normalizedWorkspace) {
-      setError("Enter your workspace name.");
+      setError("Enter a workspace name.");
+      return;
+    }
+
+    if (email.trim() && !email.includes("@")) {
+      setError("Enter a valid work email address.");
       return;
     }
 
     if (!password) {
-      setError("Enter your workspace password.");
+      setError("Create a password for the workspace.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Use a password with at least 8 characters.");
+      return;
+    }
+
+    if (!acceptedPrivacy) {
+      setError("Read and accept the Privacy Policy and Terms of Use before continuing.");
       return;
     }
 
@@ -135,12 +182,13 @@ export default function SignInPage() {
       const tz = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
       const reg = detectRegionFromTimezone(tz);
 
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          email: email.trim() || null,
           password,
-          privacy_policy_accepted: true, // Returning users accept terms automatically on sign in click
+          privacy_policy_accepted: acceptedPrivacy,
           privacy_policy_version: activePrivacyVersion,
           username: normalizedWorkspace,
           timezone: tz,
@@ -150,7 +198,7 @@ export default function SignInPage() {
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        throw new Error(body?.detail || "Unable to sign in.");
+        throw new Error(body?.detail || "Unable to create workspace.");
       }
 
       const session = (await response.json()) as AuthSession;
@@ -161,7 +209,7 @@ export default function SignInPage() {
       if (errMsg.toLowerCase().includes("failed to fetch") || errMsg.toLowerCase().includes("fetch")) {
         setError("Could not connect to workspace services. Please try again later.");
       } else {
-        setError(errMsg || "Unable to sign in.");
+        setError(errMsg || "Unable to create workspace.");
       }
     } finally {
       setLoading(false);
@@ -175,8 +223,8 @@ export default function SignInPage() {
         <section className={styles.loadingCard}>
           <div className="auth-loading-spinner" />
           <p className={styles.eyebrow}>Session</p>
-          <h1 className={styles.loadingTitle}>Validating workspace access</h1>
-          <p className={styles.loadingCopy}>Checking your existing FireCrow token and preparing the console.</p>
+          <h1 className={styles.loadingTitle}>Preparing Workspace</h1>
+          <p className={styles.loadingCopy}>Validating active session and provisioning security console environment...</p>
         </section>
       </main>
     );
@@ -184,19 +232,19 @@ export default function SignInPage() {
 
   return (
     <main className={styles.page}>
-      <div className="auth-glow-orb auth-glow-orb-1" aria-hidden="true" style={{ background: "radial-gradient(circle, rgba(92, 144, 255, 0.22) 0%, transparent 70%)" }} />
-      <div className="auth-glow-orb auth-glow-orb-2" aria-hidden="true" style={{ background: "radial-gradient(circle, rgba(179, 92, 255, 0.16) 0%, transparent 70%)" }} />
+      <div className="auth-glow-orb auth-glow-orb-1" aria-hidden="true" style={{ background: "radial-gradient(circle, rgba(255, 77, 8, 0.28) 0%, transparent 70%)" }} />
+      <div className="auth-glow-orb auth-glow-orb-2" aria-hidden="true" style={{ background: "radial-gradient(circle, rgba(255, 184, 0, 0.2) 0%, transparent 70%)" }} />
       <div className="auth-grid-overlay" aria-hidden="true" />
 
       <div className={styles.backdrop} aria-hidden="true" />
       <div className={styles.gridGlow} aria-hidden="true" />
 
-      <div className={styles.centerContainer}>
-        <motion.div
+      <div className={styles.shell}>
+        <motion.aside
           variants={fadeInLeft}
           initial="hidden"
           animate="visible"
-          className={styles.logoContainer}
+          className={cx(styles.sidebar, "auth-shell")}
         >
           <Link href="/" className={cx(styles.brand, "auth-brand")}>
             <span className={styles.brandMark}>FC</span>
@@ -205,7 +253,47 @@ export default function SignInPage() {
               <small>Autonomous security audit</small>
             </span>
           </Link>
-        </motion.div>
+
+          <div className={styles.sidebarIntro}>
+            <p className={styles.eyebrow}>Create workspace</p>
+            <h1 className={styles.sidebarTitle}>Start your first security review today.</h1>
+            <p className={styles.sidebarCopy}>
+              Configure your dedicated workspace credentials, invite collaborators, and orchestrate offensive scans on private or public repositories.
+            </p>
+          </div>
+
+          <section className={styles.sidebarPanel}>
+            <p className={styles.panelLabel}>Platform features</p>
+            <div className={styles.promiseList}>
+              {SIGNUP_PROMISES.map((promise, index) => (
+                <motion.article
+                  whileHover={{ x: 3 }}
+                  className={styles.promiseItem}
+                  key={promise.title}
+                >
+                  <span className={styles.promiseIndex}>{String(index + 1).padStart(2, "0")}</span>
+                  <div>
+                    <h2>{promise.title}</h2>
+                    <p>{promise.body}</p>
+                  </div>
+                </motion.article>
+              ))}
+            </div>
+          </section>
+
+          <section className={styles.readinessRow} aria-label="Platform readiness">
+            {SIGNUP_METRICS.map((metric) => (
+              <article key={metric.label} className={styles.metricCard}>
+                <strong>{metric.value}</strong>
+                <span>{metric.label}</span>
+              </article>
+            ))}
+          </section>
+
+          <p className={cx(styles.sidebarFootnote, "auth-footnote")}>
+            Privacy notice and terms consent is logged for compliance and security auditing.
+          </p>
+        </motion.aside>
 
         <motion.section
           variants={fadeInRight}
@@ -213,15 +301,40 @@ export default function SignInPage() {
           animate="visible"
           className={cx(styles.card, "auth-card")}
         >
-          <div className="auth-card-accent" />
+          <div className="auth-card-accent" style={{ background: "linear-gradient(90deg, #ff4d08, #ffbf47)" }} />
 
           <div className={styles.cardHeader}>
-            <p className={styles.eyebrow}>Workspace access</p>
-            <h2>Open your workspace</h2>
+            <p className={styles.eyebrow}>Registration</p>
+            <h2>Create your workspace</h2>
             <p>
-              Sign in with your credentials or linking provider to access your console.
+              Fill out the details below to create a secure, isolated console for security audits.
             </p>
           </div>
+
+          <label className={styles.termsCard}>
+            <input
+              checked={acceptedPrivacy}
+              onChange={(event) => {
+                setAcceptedPrivacy(event.target.checked);
+                setError("");
+              }}
+              type="checkbox"
+            />
+            <span>
+              I have read and agree to the{" "}
+              <PolicyLink href="/privacy-policy" policy="privacy_policy" source="signup_checkbox">
+                Privacy Policy
+              </PolicyLink>
+              {" "}and{" "}
+              <PolicyLink href="/terms" policy="terms" source="signup_checkbox">
+                Terms of Use
+              </PolicyLink>
+              . I consent to processing and activity logging.
+            </span>
+          </label>
+          <p className={styles.termsHint}>
+            Accepted policy interaction details are logged. Privacy Policy: {activePrivacyVersion}.
+          </p>
 
           <div className={styles.providerStack}>
             {providerAvailability.github ? (
@@ -230,6 +343,7 @@ export default function SignInPage() {
                 whileTap={{ scale: 0.99 }}
                 href={oauthHref("github")}
                 className={styles.providerButton}
+                onClick={handleProviderClick}
               >
                 <span className={styles.providerIcon} aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="currentColor">
@@ -237,7 +351,8 @@ export default function SignInPage() {
                   </svg>
                 </span>
                 <span className={styles.providerCopy}>
-                  <strong>Continue with GitHub</strong>
+                  <strong>Register with GitHub</strong>
+                  <span>Fast track workspace creation via OAuth profile link.</span>
                 </span>
               </motion.a>
             ) : null}
@@ -248,6 +363,7 @@ export default function SignInPage() {
                 whileTap={{ scale: 0.99 }}
                 href={oauthHref("google")}
                 className={styles.providerButton}
+                onClick={handleProviderClick}
               >
                 <span className={cx(styles.providerIcon, styles.googleIcon)} aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="currentColor">
@@ -258,15 +374,16 @@ export default function SignInPage() {
                   </svg>
                 </span>
                 <span className={styles.providerCopy}>
-                  <strong>Continue with Google</strong>
+                  <strong>Register with Google</strong>
+                  <span>Create space via Google OAuth workflow.</span>
                 </span>
               </motion.a>
             ) : null}
           </div>
 
-          <div className={styles.divider}>or use credentials</div>
+          <div className={styles.divider}>or register with credentials</div>
 
-          <form className={styles.form} onSubmit={submitAuth}>
+          <form className={styles.form} onSubmit={submitRegister}>
             <label className={styles.field}>
               <span>Workspace name</span>
               <div className={styles.inputWrap}>
@@ -277,13 +394,36 @@ export default function SignInPage() {
                   </svg>
                 </span>
                 <input
-                  autoComplete="username"
                   value={workspace}
                   onChange={(event) => {
                     setWorkspace(event.target.value);
                     setError("");
                   }}
                   placeholder="your-security-team"
+                />
+              </div>
+              <p className={styles.fieldHint}>
+                Unique handle for your workspace console. Only alphanumeric characters allowed.
+              </p>
+            </label>
+
+            <label className={styles.field}>
+              <span>Work email</span>
+              <div className={styles.inputWrap}>
+                <span className={styles.inputIcon} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <path d="m22 7-10 6L2 7" />
+                  </svg>
+                </span>
+                <input
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setError("");
+                  }}
+                  placeholder="security@company.in"
+                  type="email"
                 />
               </div>
             </label>
@@ -299,13 +439,12 @@ export default function SignInPage() {
                 </span>
                 <input
                   type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
                   value={password}
                   onChange={(event) => {
                     setPassword(event.target.value);
                     setError("");
                   }}
-                  placeholder="Enter workspace password"
+                  placeholder="Create a strong password"
                 />
                 <button
                   type="button"
@@ -343,29 +482,16 @@ export default function SignInPage() {
               type="submit"
             >
               {loading && <span className={styles.submitSpinner} />}
-              {loading ? "Signing in..." : "Sign in to console"}
+              {loading ? "Registering Workspace..." : "Create workspace"}
             </motion.button>
           </form>
 
-          <footer className={styles.cardFootnote}>
-            <p>
-              By signing in, you agree to our{" "}
-              <PolicyLink href="/terms" policy="terms" source="signin_footnote">
-                Terms of Use
-              </PolicyLink>
-              {" "}and{" "}
-              <PolicyLink href="/privacy-policy" policy="privacy_policy" source="signin_footnote">
-                Privacy Policy
-              </PolicyLink>
-              .
-            </p>
-            <p style={{ marginTop: "12px" }}>
-              New to FireCrow?{" "}
-              <Link href="/signup" style={{ color: "#5cc8ff", fontWeight: "bold" }}>
-                Create a workspace
-              </Link>
-            </p>
-          </footer>
+          <p className={styles.cardFootnote}>
+            Already have a workspace?{" "}
+            <Link href="/signin" style={{ color: "#ff9c4a", fontWeight: "bold" }}>
+              Sign in
+            </Link>
+          </p>
         </motion.section>
       </div>
     </main>

@@ -107,12 +107,19 @@ def create_access_token(user_id: str, username: Optional[str] = None) -> str:
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_oauth_state(provider: str, privacy_policy_version: str) -> str:
+def create_oauth_state(
+    provider: str,
+    privacy_policy_version: str,
+    timezone_name: Optional[str] = None,
+    region: Optional[str] = None,
+) -> str:
     now, not_before, expire, jti = _claims(timedelta(minutes=OAUTH_STATE_EXPIRE_MINUTES))
     to_encode = {
         "type": "oauth_state",
         "provider": provider,
         "privacy_policy_version": privacy_policy_version,
+        "timezone": timezone_name,
+        "region": region,
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "iat": _timestamp(now),

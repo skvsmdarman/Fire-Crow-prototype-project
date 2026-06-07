@@ -1,60 +1,182 @@
 .homeGrid,
 .findingsHeroGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  gap: 16px;
 }
 
 .findingsHeroGrid {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
 }
 
-.postureCard,
-.riskScoreCard {
-  min-height: 232px;
+.homePrimary,
+.homeSidebar {
+  display: grid;
+  gap: 16px;
+  align-content: start;
 }
 
-.riskScoreCard {
+.intakeBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 114, 0, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 114, 0, 0.08);
+  color: var(--orange);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.intakePanel {
+  display: grid;
+  gap: 16px;
+}
+
+.intakeHero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 20px;
+  gap: 14px;
+  align-items: start;
 }
 
-.scoreRing {
-  width: 132px;
-  height: 132px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 114, 0, 0.36);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 114, 0, 0.14), rgba(255, 114, 0, 0.04) 58%, transparent 60%),
-    conic-gradient(from 220deg, rgba(255, 69, 0, 0.9), rgba(255, 184, 0, 0.72), rgba(92, 200, 255, 0.3), rgba(255, 255, 255, 0.06));
-  box-shadow: 0 22px 60px rgba(255, 69, 0, 0.14);
+.intakeHero h3 {
+  margin: 0 0 6px;
+  font-size: 24px;
 }
 
-.scoreRing strong,
-.scoreRing span {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.scoreRing strong {
-  font-family: var(--font-display), sans-serif;
-  font-size: 44px;
-  line-height: 1;
-}
-
-.scoreRing span {
-  align-self: end;
-  margin-bottom: 28px;
+.intakeHero p {
+  margin: 0;
   color: var(--dim);
+  line-height: 1.55;
+}
+
+.intakeIcon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(255, 114, 0, 0.26);
+  border-radius: 16px;
+  background: rgba(255, 114, 0, 0.08);
+  color: var(--orange);
+}
+
+.intakeMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.intakeMetaCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text);
+}
+
+.intakeMetaCard strong,
+.intakeMetaCard span {
+  display: block;
+}
+
+.intakeMetaCard strong {
+  font-size: 14px;
+}
+
+.intakeMetaCard span {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.intakeFields {
+  display: grid;
+  gap: 14px;
+}
+
+.intakeSummary {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.intakeSummaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.intakeSummaryRow span {
+  color: var(--muted);
   font-family: var(--font-mono), monospace;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.intakeSummaryRow strong {
+  color: var(--text);
+  font-size: 14px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.intakeActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.overviewCard {
+  display: grid;
+  gap: 16px;
+}
+
+.overviewStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.overviewStat {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.overviewStat span {
+  display: block;
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overviewStat strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--text);
+  font-family: var(--font-display), sans-serif;
+  font-size: 22px;
+  line-height: 1.05;
 }
 
 .panelCopy {
@@ -69,7 +191,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 16px;
 }
 
 .severityStrip span,
@@ -96,6 +217,40 @@
   gap: 10px;
 }
 
+.auditMetaList {
+  display: grid;
+  gap: 12px;
+}
+
+.auditMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.auditMetaRow:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.auditMetaRow span {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auditMetaRow strong {
+  color: var(--text);
+  font-size: 14px;
+  text-align: right;
+}
+
 .timelineList {
   display: grid;
   gap: 10px;
@@ -107,13 +262,20 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 58px;
-  padding: 12px;
+  min-height: 54px;
+  padding: 12px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.025);
   color: var(--text);
   text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-smooth),
+              background-color var(--duration-fast) var(--ease-smooth);
+}
+
+.timelineItem:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .timelineItem span {
@@ -344,19 +506,18 @@
 
 @media (max-width: 900px) {
   .homeGrid,
-  .findingsHeroGrid,
-  .riskScoreCard {
+  .findingsHeroGrid {
     grid-template-columns: 1fr;
   }
 
-  .scoreRing {
-    width: 116px;
-    height: 116px;
+  .intakeMeta {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 520px) {
   .quickActionGrid,
+  .overviewStats,
   .scopeGrid,
   .reviewGrid,
   .wizardProgress {
@@ -377,6 +538,14 @@
   .timelineItem {
     grid-template-columns: 1fr;
     align-items: flex-start;
+  }
+
+  .intakeHero {
+    grid-template-columns: 1fr;
+  }
+
+  .intakeActions {
+    justify-content: stretch;
   }
 
   .stickyBottomActions {

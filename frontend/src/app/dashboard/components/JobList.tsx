@@ -63,8 +63,8 @@ export default function JobList({
     <Card variant="surface" className={styles.panel}>
       <div className={styles.panelHeader}>
         <div>
-          <div className={styles.sectionKicker}>Queue</div>
-          <h2>Audit history</h2>
+          <div className={styles.sectionKicker}>Audit list</div>
+          <h2>Recent audits</h2>
         </div>
         <Button
           variant="ghost"
@@ -114,7 +114,7 @@ export default function JobList({
                   <span className={styles.jobMetaBlock}>
                     <strong>{shortRepoName(job.repo_url)}</strong>
                     <small>
-                      {job.repo_branch} / {formatDateTime(job.created_at)}
+                      Branch {job.repo_branch} / {formatDateTime(job.created_at)}
                     </small>
                   </span>
                 </span>

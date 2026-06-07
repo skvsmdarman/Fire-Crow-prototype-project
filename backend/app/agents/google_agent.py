@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
 from backend.app.schemas import Finding, Severity
-from backend.app.config import settings
+from backend.app.config import settings, WORKSPACE_DIR
 from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.google_agent")
@@ -312,7 +312,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             import os
             import re
             from datetime import datetime
-            sent_emails_dir = os.path.join("workspace", "sent_emails")
+            sent_emails_dir = os.path.join(WORKSPACE_DIR, "workspace", "sent_emails")
             os.makedirs(sent_emails_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', recipient_email)

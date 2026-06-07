@@ -45,6 +45,8 @@ class LoginRequest(BaseModel):
     password: str
     privacy_policy_accepted: bool
     privacy_policy_version: str
+    timezone: Optional[str] = None
+    region: Optional[str] = None
 
 
 class RegisterRequest(BaseModel):
@@ -53,6 +55,8 @@ class RegisterRequest(BaseModel):
     email: Optional[str] = None
     privacy_policy_accepted: bool
     privacy_policy_version: str
+    timezone: Optional[str] = None
+    region: Optional[str] = None
 
 
 class PolicyEventRequest(BaseModel):
@@ -100,9 +104,37 @@ def _validate_privacy_consent(accepted: bool, version: str) -> None:
         )
 
 
-def _apply_privacy_consent(user: User, version: str) -> None:
-    user.privacy_policy_version = version
-    user.privacy_policy_accepted_at = datetime.now(timezone.utc)
+import json
+
+def _add_user_activity(user: User, action: str, details: Optional[dict] = None) -> None:
+    """Stores key user events in a compressed, organized JSON array inside the User model."""
+    now = datetime.now(timezone.utc).isoformat()
+    entry: dict[str, object] = {"action": action, "timestamp": now}
+    if details:
+        entry["details"] = details
+        
+    try:
+        history = json.loads(user.activity_log) if user.activity_log else []
+    except Exception:
+        history = []
+        
+    # Prepend new entry
+    history.insert(0, entry)
+    # Cap at 20 entries to keep it compressed and efficient in the DB
+    history = history[:20]
+    user.activity_log = json.dumps(history)
+
+
+def _apply_consents(user: User, privacy_version: str) -> None:
+    now = datetime.now(timezone.utc)
+    user.privacy_policy_version = privacy_version
+    user.privacy_policy_accepted_at = now
+    
+    # Automatically accept terms as well since frontend terms and privacy are accepted in a single checkbox
+    if not user.terms_accepted_at:
+        user.terms_accepted_at = now
+        user.terms_version = TERMS_VERSION
+        _add_user_activity(user, "terms_accepted", {"version": TERMS_VERSION, "info": "first_time_accept"})
 
 
 def _current_policy_version(policy: Literal["terms", "privacy_policy"]) -> str:
@@ -270,6 +302,13 @@ async def create_policy_event(
     db: Session = Depends(get_db),
 ):
     current_version = _current_policy_version(payload.policy)
+    
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            _add_user_activity(user, f"policy_{payload.policy}_{payload.event_type}", {"version": payload.policy_version})
+            db.commit()
+
     record_security_event(
         db,
         action=f"policy.{payload.policy}.{payload.event_type}",
@@ -313,7 +352,24 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
         password_hash=hash_password(payload.password),
         email=email,
     )
-    _apply_privacy_consent(new_user, payload.privacy_policy_version)
+    _apply_consents(new_user, payload.privacy_policy_version)
+    now = datetime.now(timezone.utc)
+    new_user.first_login_at = now
+    new_user.last_login_at = now
+    _add_user_activity(
+        new_user,
+        "register",
+        {"email": email, "timezone": payload.timezone, "region": payload.region},
+    )
+    _add_user_activity(
+        new_user,
+        "login",
+        {
+            "provider": "password",
+            "timezone": payload.timezone,
+            "region": payload.region,
+        },
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -325,7 +381,11 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
         action="auth.register.success",
         request=request,
         user_id=new_user.id,
-        details={"username": new_user.username},
+        details={
+            "username": new_user.username,
+            "timezone": payload.timezone,
+            "region": payload.region,
+        },
     )
     record_security_event(
         db,
@@ -335,6 +395,8 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
         details={
             "policy_version": payload.privacy_policy_version,
             "source": "register_form",
+            "timezone": payload.timezone,
+            "region": payload.region,
         },
     )
 
@@ -369,7 +431,20 @@ async def login(request: Request, payload: LoginRequest, db: Session = Depends(g
         )
         raise HTTPException(status_code=401, detail="Invalid workspace name or password.")
 
-    _apply_privacy_consent(user, payload.privacy_policy_version)
+    _apply_consents(user, payload.privacy_policy_version)
+    now = datetime.now(timezone.utc)
+    if not user.first_login_at:
+        user.first_login_at = now
+    user.last_login_at = now
+    _add_user_activity(
+        user,
+        "login",
+        {
+            "provider": "password",
+            "timezone": payload.timezone,
+            "region": payload.region,
+        },
+    )
     if password_needs_rehash(user.password_hash):
         user.password_hash = hash_password(payload.password)
     _clear_login_failures(request, username)
@@ -382,7 +457,11 @@ async def login(request: Request, payload: LoginRequest, db: Session = Depends(g
         action="auth.login.success",
         request=request,
         user_id=user.id,
-        details={"username": user.username},
+        details={
+            "username": user.username,
+            "timezone": payload.timezone,
+            "region": payload.region,
+        },
     )
     record_security_event(
         db,
@@ -392,6 +471,8 @@ async def login(request: Request, payload: LoginRequest, db: Session = Depends(g
         details={
             "policy_version": payload.privacy_policy_version,
             "source": "login_form",
+            "timezone": payload.timezone,
+            "region": payload.region,
         },
     )
 
@@ -413,6 +494,12 @@ async def logout(
     user_id = str(token_payload.get("sub", ""))
     if not revoke_access_token(token_payload):
         raise HTTPException(status_code=503, detail="Logout could not revoke the active session.")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.last_logout_at = datetime.now(timezone.utc)
+        _add_user_activity(user, "logout")
+        db.commit()
 
     record_security_event(
         db,
@@ -448,25 +535,36 @@ async def github_login(
     request: Request,
     privacy_policy_accepted: bool,
     privacy_policy_version: str,
+    timezone: Optional[str] = None,
+    region: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="GitHub OAuth is not configured.")
 
     _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-    oauth_state = create_oauth_state("github", privacy_policy_version)
+    oauth_state = create_oauth_state(
+        "github",
+        privacy_policy_version,
+        timezone_name=timezone,
+        region=region,
+    )
 
     record_security_event(
         db,
         action="auth.oauth.github.initiated",
         request=request,
-        details={"policy_version": privacy_policy_version},
+        details={
+            "policy_version": privacy_policy_version,
+            "timezone": timezone,
+            "region": region,
+        },
     )
 
     params = {
         "client_id": settings.GITHUB_CLIENT_ID,
         "redirect_uri": _oauth_redirect_url(request, "github_callback"),
-        "scope": "user:email",
+        "scope": "repo,user:email",
         "state": oauth_state,
     }
     url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
@@ -548,7 +646,24 @@ async def github_callback(
         )
         db.add(user)
 
-    _apply_privacy_consent(user, oauth_state["privacy_policy_version"])
+    _apply_consents(user, oauth_state["privacy_policy_version"])
+    now = datetime.now(timezone.utc)
+    if not user.first_login_at:
+        user.first_login_at = now
+    user.last_login_at = now
+    
+    tz_name = oauth_state.get("timezone")
+    reg_name = oauth_state.get("region")
+    
+    _add_user_activity(
+        user,
+        "login",
+        {
+            "provider": "github",
+            "timezone": tz_name,
+            "region": reg_name,
+        },
+    )
     db.commit()
     db.refresh(user)
 
@@ -559,7 +674,11 @@ async def github_callback(
         action="auth.oauth.github.success",
         request=request,
         user_id=user.id,
-        details={"username": user.username},
+        details={
+            "username": user.username,
+            "timezone": tz_name,
+            "region": reg_name,
+        },
     )
     record_security_event(
         db,
@@ -569,6 +688,8 @@ async def github_callback(
         details={
             "policy_version": oauth_state["privacy_policy_version"],
             "source": "github_oauth",
+            "timezone": tz_name,
+            "region": reg_name,
         },
     )
 
@@ -585,19 +706,30 @@ async def google_login(
     request: Request,
     privacy_policy_accepted: bool,
     privacy_policy_version: str,
+    timezone: Optional[str] = None,
+    region: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
 
     _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-    oauth_state = create_oauth_state("google", privacy_policy_version)
+    oauth_state = create_oauth_state(
+        "google",
+        privacy_policy_version,
+        timezone_name=timezone,
+        region=region,
+    )
 
     record_security_event(
         db,
         action="auth.oauth.google.initiated",
         request=request,
-        details={"policy_version": privacy_policy_version},
+        details={
+            "policy_version": privacy_policy_version,
+            "timezone": timezone,
+            "region": region,
+        },
     )
 
     params = {
@@ -672,7 +804,24 @@ async def google_callback(
         )
         db.add(user)
 
-    _apply_privacy_consent(user, oauth_state["privacy_policy_version"])
+    _apply_consents(user, oauth_state["privacy_policy_version"])
+    now = datetime.now(timezone.utc)
+    if not user.first_login_at:
+        user.first_login_at = now
+    user.last_login_at = now
+    
+    tz_name = oauth_state.get("timezone")
+    reg_name = oauth_state.get("region")
+    
+    _add_user_activity(
+        user,
+        "login",
+        {
+            "provider": "google",
+            "timezone": tz_name,
+            "region": reg_name,
+        },
+    )
     db.commit()
     db.refresh(user)
 
@@ -683,7 +832,11 @@ async def google_callback(
         action="auth.oauth.google.success",
         request=request,
         user_id=user.id,
-        details={"username": user.username},
+        details={
+            "username": user.username,
+            "timezone": tz_name,
+            "region": reg_name,
+        },
     )
     record_security_event(
         db,
@@ -693,6 +846,8 @@ async def google_callback(
         details={
             "policy_version": oauth_state["privacy_policy_version"],
             "source": "google_oauth",
+            "timezone": tz_name,
+            "region": reg_name,
         },
     )
 

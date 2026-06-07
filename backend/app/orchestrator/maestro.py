@@ -31,6 +31,7 @@ from backend.app.orchestrator.runtime_context import (
     sync_runtime_state,
 )
 from backend.app.schemas import AuditState, Finding, JobStatus, Severity
+from backend.app.config import WORKSPACE_DIR
 from backend.app.services.reporter import ReportGenerator, get_clean_repo_name
 from backend.app.services.sandbox import SandboxManager
 from backend.app.services.redaction import redact_text
@@ -470,7 +471,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     pdf_filename = f"{repo_name}_audit_{timestamp}.pdf"
 
-    reports_dir = os.path.join("workspace", "reports")
+    reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
     os.makedirs(reports_dir, exist_ok=True)
     pdf_path = os.path.join(reports_dir, pdf_filename)
 
@@ -503,7 +504,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         Severity.LOW: len([finding for finding in all_findings if finding.severity == Severity.LOW]),
         Severity.INFO: len([finding for finding in all_findings if finding.severity == Severity.INFO]),
     }
-    generator.send_email_report(user_email, pdf_url, state.job_id, counts)
+    generator.send_email_report(user_email, pdf_url, state.job_id, counts, repo_url=state.repo_url, pdf_path=pdf_path)
     log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated.")
 
     return {
@@ -648,11 +649,21 @@ def ai_analyzer_node(state: AuditState) -> Dict[str, Any]:
 
 def cleanup_body(db: Session, state: AuditState) -> Dict[str, Any]:
     cleanup_resources(state)
+    
+    # Run a persistent scan to remove non-PDF clutter from the R2 bucket to preserve space
+    try:
+        from backend.app.services.reporter import ReportGenerator
+        generator = ReportGenerator()
+        generator.clean_r2_bucket_clutter()
+    except Exception as e:
+        logger.error(f"Failed to run R2 bucket clutter cleanup: {str(e)}")
+
     mark_cleanup_completed()
     if state.clone_path:
         log_agent_message(db, state.job_id, "CLEANUP", f"Purged temporary workspace clone directory: {state.clone_path}")
     log_agent_message(db, state.job_id, "CLEANUP", "Resources cleanly deprovisioned.")
     return {}
+
 
 
 def cleanup_node(state: AuditState) -> Dict[str, Any]:

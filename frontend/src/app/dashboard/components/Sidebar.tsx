@@ -34,7 +34,7 @@ export default function Sidebar({
         <div className={styles.brandMark}>FC</div>
         <div>
           <div className={styles.brandName}>Fire Crow</div>
-          <div className={styles.brandSubtitle}>FCv1 Security Audit</div>
+          <div className={styles.brandSubtitle}>Security workspace</div>
         </div>
       </div>
 

@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     if not settings.DEBUG:
         logger.warning("Running metadata create_all compatibility check; configure Alembic migrations for production.")
     Base.metadata.create_all(bind=engine)
+    ensure_database_compatibility()
     
     # Startup check for pending migration problems
     try:

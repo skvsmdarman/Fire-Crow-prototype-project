@@ -15,6 +15,7 @@ interface LogLine {
 interface LogStreamProps {
   logs: LogLine[];
   streamActive: boolean;
+  hasSelection: boolean;
 }
 
 function formatDateTime(value: string | null): string {
@@ -28,7 +29,7 @@ function formatDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
-export default function LogStream({ logs, streamActive }: LogStreamProps) {
+export default function LogStream({ logs, streamActive, hasSelection }: LogStreamProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -41,8 +42,8 @@ export default function LogStream({ logs, streamActive }: LogStreamProps) {
     <Card variant="surface" className={styles.panel}>
       <div className={styles.panelHeader}>
         <div>
-          <div className={styles.sectionKicker}>Live Trace</div>
-          <h2>Agent stream</h2>
+          <div className={styles.sectionKicker}>Audit log</div>
+          <h2>Execution history</h2>
         </div>
         <div className={styles.streamStatusBlock}>
           <span
@@ -54,14 +55,16 @@ export default function LogStream({ logs, streamActive }: LogStreamProps) {
               .join(" ")}
           >
             {streamActive && <span className={styles.streamDot} />}
-            {streamActive ? "live" : "idle"}
+            {streamActive ? "live" : "saved"}
           </span>
         </div>
       </div>
 
       <div ref={listRef} className={styles.logList}>
         {logs.length === 0 ? (
-          <div className={styles.emptyState}>Select a running audit to stream logs.</div>
+          <div className={styles.emptyState}>
+            {hasSelection ? "No saved logs are available for this audit yet." : "Select an audit to view its logs."}
+          </div>
         ) : (
           logs.map((log, index) => {
             const levelClass = styles[log.log_level.toLowerCase()] || "";

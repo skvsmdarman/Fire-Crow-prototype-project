@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { Terminal, AlertTriangle, FileText } from "lucide-react";
+import { AlertTriangle, FileText, Terminal } from "lucide-react";
 import Card from "../../../components/ui/Card";
 import styles from "../page.module.css";
 
@@ -56,24 +56,20 @@ export default function MetricsRow({
     <section className={styles.metricsGrid} aria-label="Audit metrics">
       <Card interactive hoverLift variant="surface" className={styles.metricCard}>
         <div className={styles.metricHeader}>
-          <span>Active audits</span>
-          <span className={styles.pulseIndicator}>
-            <span className={styles.pulseDot} />
-          </span>
+          <span>Active</span>
+          <span className={styles.metricAccent} aria-hidden="true" />
         </div>
-        <strong className={styles.metricValue}>
-          <AnimatedNumber value={activeAudits} />
-        </strong>
+        <strong className={styles.metricValue}><AnimatedNumber value={activeAudits} /></strong>
+        <p className={styles.metricNote}>{activeAudits === 1 ? "1 audit running" : `${activeAudits} audits running`}</p>
       </Card>
 
       <Card interactive hoverLift variant="surface" className={styles.metricCard}>
         <div className={styles.metricHeader}>
-          <span>Jobs in workspace</span>
+          <span>Jobs</span>
           <Terminal size={16} className={styles.metricIcon} />
         </div>
-        <strong className={styles.metricValue}>
-          <AnimatedNumber value={totalJobs} />
-        </strong>
+        <strong className={styles.metricValue}><AnimatedNumber value={totalJobs} /></strong>
+        <p className={styles.metricNote}>Saved in this workspace</p>
       </Card>
 
       <Card
@@ -88,22 +84,22 @@ export default function MetricsRow({
           .join(" ")}
       >
         <div className={styles.metricHeader}>
-          <span>Critical findings</span>
+          <span>Critical</span>
           <AlertTriangle size={16} className={styles.metricIcon} />
         </div>
-        <strong className={styles.metricValue}>
-          <AnimatedNumber value={criticalFindings} />
-        </strong>
+        <strong className={styles.metricValue}><AnimatedNumber value={criticalFindings} /></strong>
+        <p className={styles.metricNote}>Need immediate review</p>
       </Card>
 
       <Card interactive hoverLift variant="surface" className={styles.metricCard}>
         <div className={styles.metricHeader}>
-          <span>Latest report</span>
+          <span>Report</span>
           <FileText size={16} className={styles.metricIcon} />
         </div>
         <strong className={styles.metricValue} style={{ fontSize: latestReport ? "20px" : "28px" }}>
           {latestReport ? "Ready" : "None"}
         </strong>
+        <p className={styles.metricNote}>{latestReport ? "Latest export available" : "No export yet"}</p>
       </Card>
     </section>
   );

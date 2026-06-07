@@ -2,8 +2,8 @@ import logging
 import os
 import html
 from datetime import datetime, timezone
-from typing import List, Dict, Any
-from backend.app.config import settings
+from typing import List, Dict, Any, Optional
+from backend.app.config import settings, WORKSPACE_DIR
 from backend.app.schemas import Finding, Severity
 from backend.app.services.redaction import redact_text
 
@@ -25,6 +25,20 @@ def _first_non_empty(*values: str | None) -> str:
         if value:
             return value
     return ""
+
+
+def _is_r2_auth_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(
+        token in lowered
+        for token in (
+            "invalidaccesskeyid",
+            "accessdenied",
+            "signaturedoesnotmatch",
+            "malformed access key id",
+            "invalid access key id",
+        )
+    )
 
 
 def get_clean_repo_name(repo_url: str) -> str:
@@ -96,6 +110,9 @@ class ReportGenerator:
         safe_job_id = html.escape(job_id)
         safe_repo_url = html.escape(repo_url)
         safe_branch = html.escape(branch)
+
+        repo_name = get_clean_repo_name(repo_url)
+        safe_repo_name = html.escape(repo_name)
 
         # Calculate summary metrics
         counts = {Severity.CRITICAL: 0, Severity.HIGH: 0, Severity.MEDIUM: 0, Severity.LOW: 0, Severity.INFO: 0}
@@ -182,12 +199,12 @@ class ReportGenerator:
                     <strong>CWE Link:</strong> {cwe_badge or "N/A"} &nbsp;|&nbsp;
                     <strong>CVSS:</strong> {safe_cvss_score} ({safe_cvss_vector})
                 </div>
-
+ 
                 <div class="section-title">Vulnerability Description</div>
                 <p class="description-text">{safe_desc}</p>
-
+ 
                 {evidence_block}
-
+ 
                 <div class="section-title">Remediation Guidance</div>
                 <p class="remediation-text">{safe_remediation or "Follow standard secure coding patterns, validate all entry points, and sanitise parameters."}</p>
             </div>
@@ -239,7 +256,7 @@ class ReportGenerator:
                         color: #94a3b8;
                     }}
                     @bottom-left {{
-                        content: "Fire Crow Security Audit • Job {safe_job_id}";
+                        content: "Fire Crow Security Audit • {safe_repo_name} ({safe_branch})";
                         font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                         font-size: 9pt;
                         color: #94a3b8;
@@ -675,16 +692,92 @@ class ReportGenerator:
             logger.info("Report uploaded successfully to R2 for job %s with object key %s.", job_id, key)
             return url
         except Exception as e:
-            logger.error("R2 upload failed for job %s: %s. Falling back to local report endpoint.", job_id, redact_text(str(e)))
+            redacted_error = redact_text(str(e))
+            if _is_r2_auth_error(redacted_error):
+                logger.warning(
+                    "R2 credentials were rejected for job %s. Serving the local report endpoint instead.",
+                    job_id,
+                )
+            else:
+                logger.error(
+                    "R2 upload failed for job %s: %s. Falling back to local report endpoint.",
+                    job_id,
+                    redacted_error,
+                )
             return f"/reports/{filename}"
 
-    def send_email_report(self, to_email: str, report_url: str, job_id: str, counts: Dict[Severity, int]) -> bool:
-        """Sends a beautiful transactional email with the PDF link via Google/SMTP or Resend."""
+    def clean_r2_bucket_clutter(self) -> None:
+        """
+        Scans the Cloudflare R2 bucket and deletes any objects that are not PDFs (e.g. temporary logs, non-pdf artifacts)
+        to optimize storage.
+        """
+        if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
+            logger.info("R2 storage not configured. Skipping bucket clutter cleanup.")
+            return
+
+        try:
+            import boto3  # type: ignore
+            from botocore.client import Config  # type: ignore
+
+            endpoint = self.r2_endpoint
+            if endpoint and not (endpoint.startswith("http://") or endpoint.startswith("https://")):
+                endpoint = f"https://{endpoint}"
+
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=endpoint,
+                aws_access_key_id=self.r2_access_key,
+                aws_secret_access_key=self.r2_secret_key,
+                config=Config(signature_version="s3v4"),
+                region_name="auto"
+            )
+
+            logger.info("Scanning R2 bucket '%s' to clean up non-PDF clutter.", self.r2_bucket)
+            paginator = s3.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=self.r2_bucket)
+
+            delete_keys = []
+            for page in pages:
+                if "Contents" in page:
+                    for obj in page["Contents"]:
+                        key = obj["Key"]
+                        # Delete any file that does not end with .pdf
+                        if not key.lower().endswith(".pdf"):
+                            logger.warning("R2 Cleanup: Tagged non-PDF object for deletion: %s", key)
+                            delete_keys.append({"Key": key})
+
+            if delete_keys:
+                # Batch delete up to 1000 at a time (AWS/S3 API constraint)
+                for i in range(0, len(delete_keys), 1000):
+                    batch = delete_keys[i:i+1000]
+                    s3.delete_objects(
+                        Bucket=self.r2_bucket,
+                        Delete={"Objects": batch, "Quiet": True}
+                    )
+                logger.info("Successfully cleaned up %d non-PDF clutter items from R2.", len(delete_keys))
+            else:
+                logger.info("No non-PDF clutter found in R2 bucket.")
+        except Exception as e:
+            logger.error("Failed cleaning up R2 bucket: %s", redact_text(str(e)))
+
+
+    def send_email_report(
+        self,
+        to_email: str,
+        report_url: str,
+        job_id: str,
+        counts: Dict[Severity, int],
+        repo_url: str = "",
+        pdf_path: Optional[str] = None,
+    ) -> bool:
+        """Sends a beautiful transactional email with the PDF link and attachment via Google/SMTP or Resend."""
         if report_url.startswith("/"):
             report_link = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
         else:
             report_link = report_url
 
+        repo_name = get_clean_repo_name(repo_url) if repo_url else "Repository"
+        safe_repo_name = html.escape(repo_name)
         safe_job_id = html.escape(job_id)
         safe_report_url = html.escape(report_link, quote=True)
         
@@ -702,158 +795,185 @@ class ReportGenerator:
     body {{
       margin: 0;
       padding: 0;
-      background-color: #030712;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #f3f4f6;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }}
     .wrapper {{
       width: 100%;
-      background-color: #030712;
+      background-color: #f3f4f6;
       padding: 40px 20px;
       box-sizing: border-box;
     }}
     .container {{
       max-width: 600px;
       margin: 0 auto;
-      background: #0b0f19;
-      border: 1px solid #1f2937;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: 16px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
       overflow: hidden;
     }}
     .header {{
-      background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
-      padding: 32px 24px;
-      border-bottom: 1px solid #1f2937;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      padding: 36px 32px;
       text-align: center;
-    }}
-    .logo-container {{
-      display: inline-block;
-      margin-bottom: 12px;
     }}
     .logo-mark {{
-      background: linear-gradient(135deg, #fb923c 0%, #ef4444 50%, #7c3aed 100%);
+      background: linear-gradient(135deg, #f97316 0%, #ef4444 50%, #8b5cf6 100%);
       color: #ffffff;
       font-weight: 800;
-      font-size: 20px;
-      width: 42px;
-      height: 42px;
-      border-radius: 10px;
+      font-size: 22px;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
       display: inline-block;
-      line-height: 42px;
+      line-height: 48px;
       text-align: center;
+      box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
     }}
     .logo-text {{
       color: #ffffff;
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 24px;
+      font-weight: 800;
       margin-left: 12px;
       display: inline-block;
       vertical-align: middle;
+      letter-spacing: -0.025em;
     }}
     .header-title {{
-      color: #f3f4f6;
-      font-size: 20px;
-      font-weight: 600;
-      margin: 8px 0 0 0;
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      margin: 16px 0 0 0;
+      letter-spacing: -0.025em;
     }}
     .content {{
-      padding: 32px 24px;
-      background-color: #0b0f19;
+      padding: 32px;
     }}
     .greeting {{
-      color: #9ca3af;
-      font-size: 15px;
+      color: #1f2937;
+      font-size: 16px;
+      font-weight: 600;
       margin-top: 0;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }}
     .intro-text {{
-      color: #d1d5db;
+      color: #4b5563;
       font-size: 15px;
       line-height: 1.6;
-      margin-bottom: 28px;
+      margin-bottom: 24px;
+    }}
+    .meta-card {{
+      background-color: #f9fafb;
+      border: 1px solid #f3f4f6;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 24px;
+    }}
+    .meta-item {{
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }}
+    .meta-item:last-child {{
+      margin-bottom: 0;
+    }}
+    .meta-label {{
+      font-weight: 600;
+      color: #374151;
+      display: inline-block;
+      width: 90px;
+    }}
+    .meta-value {{
+      font-family: monospace;
+      color: #111827;
     }}
     .stats-card {{
-      background-color: #111827;
-      border: 1px solid #1f2937;
+      border: 1px solid #e5e7eb;
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 28px;
     }}
     .stats-title {{
-      color: #9ca3af;
-      font-size: 12px;
-      font-weight: 600;
+      color: #374151;
+      font-size: 13px;
+      font-weight: 700;
       text-transform: uppercase;
       margin-top: 0;
       margin-bottom: 16px;
       letter-spacing: 0.05em;
     }}
-    .stats-table {{
+    .stats-grid {{
+      display: table;
       width: 100%;
-      border-collapse: collapse;
     }}
-    .stats-table td {{
-      padding: 10px 0;
+    .stats-row {{
+      display: table-row;
+    }}
+    .stats-cell {{
+      display: table-cell;
+      padding: 12px 8px;
+      border-bottom: 1px solid #f3f4f6;
       font-size: 14px;
-      vertical-align: middle;
-      border-bottom: 1px solid #1f2937;
     }}
-    .stats-table tr:last-child td {{
+    .stats-row:last-child .stats-cell {{
       border-bottom: none;
     }}
     .stat-label {{
-      color: #9ca3af;
+      color: #4b5563;
+      font-weight: 500;
     }}
-    .stat-value {{
+    .stat-val-container {{
       text-align: right;
-      font-weight: 600;
     }}
     .badge {{
       display: inline-block;
-      padding: 4px 10px;
-      font-size: 11px;
-      font-weight: 600;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 700;
       border-radius: 9999px;
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }}
     .badge-critical {{
-      background-color: rgba(239, 68, 68, 0.15);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background-color: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
     }}
     .badge-high {{
-      background-color: rgba(249, 115, 22, 0.15);
-      color: #fb923c;
-      border: 1px solid rgba(249, 115, 22, 0.3);
+      background-color: #ffedd5;
+      color: #9a3412;
+      border: 1px solid #fed7aa;
     }}
-    .badge-medium {{
-      background-color: rgba(234, 179, 8, 0.12);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.25);
+    .badge-medium-low {{
+      background-color: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
     }}
     .cta-container {{
       text-align: center;
-      margin: 32px 0;
+      margin: 32px 0 8px 0;
     }}
     .cta-button {{
-      background: linear-gradient(135deg, #ef4444 0%, #7c3aed 100%);
+      background: linear-gradient(135deg, #ea580c 0%, #7c3aed 100%);
       color: #ffffff !important;
-      padding: 14px 28px;
+      padding: 16px 32px;
       text-decoration: none;
-      border-radius: 8px;
-      font-weight: 600;
+      border-radius: 10px;
+      font-weight: 700;
       font-size: 15px;
       display: inline-block;
-      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+      box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3);
+      transition: all 0.2s ease;
     }}
     .footer {{
-      background-color: #0b0f19;
+      background-color: #f9fafb;
       padding: 24px;
-      border-top: 1px solid #1f2937;
+      border-top: 1px solid #e5e7eb;
       text-align: center;
     }}
     .footer-text {{
-      color: #4b5563;
+      color: #9ca3af;
       font-size: 12px;
       line-height: 1.5;
       margin: 0;
@@ -868,48 +988,59 @@ class ReportGenerator:
           <span class="logo-mark">FC</span>
           <span class="logo-text">FireCrow</span>
         </div>
-        <h1 class="header-title">Autonomous Security Audit Complete</h1>
+        <h1 class="header-title">Security Audit Complete</h1>
       </div>
       
       <div class="content">
         <p class="greeting">Hello,</p>
         <p class="intro-text">
-          Your authorization-only security audit job <strong>{safe_job_id}</strong> is complete. The system scanned code files, used controlled sandbox validation when available, and prepared evidence-backed remediation guidance.
+          The autonomous security review of your repository has concluded successfully. Scanners analyzed all code paths, and security agents triaged the results to generate a verified remediation plan.
         </p>
+
+        <div class="meta-card">
+          <div class="meta-item">
+            <span class="meta-label">Project:</span>
+            <span class="meta-value">{safe_repo_name}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Job ID:</span>
+            <span class="meta-value">{safe_job_id}</span>
+          </div>
+        </div>
         
         <div class="stats-card">
-          <h2 class="stats-title">Audit Summary</h2>
-          <table class="stats-table">
-            <tr>
-              <td class="stat-label">Critical Severities</td>
-              <td class="stat-value">
+          <h2 class="stats-title">Audit Findings Overview</h2>
+          <div class="stats-grid">
+            <div class="stats-row">
+              <div class="stats-cell stat-label">Critical Findings</div>
+              <div class="stats-cell stat-val-container">
                 <span class="badge badge-critical">{critical_count}</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="stat-label">High Severities</td>
-              <td class="stat-value">
+              </div>
+            </div>
+            <div class="stats-row">
+              <div class="stats-cell stat-label">High Findings</div>
+              <div class="stats-cell stat-val-container">
                 <span class="badge badge-high">{high_count}</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="stat-label">Medium/Low/Info Severities</td>
-              <td class="stat-value">
-                <span class="badge badge-medium">{medium_low_count}</span>
-              </td>
-            </tr>
-          </table>
+              </div>
+            </div>
+            <div class="stats-row">
+              <div class="stats-cell stat-label">Medium/Low/Info</div>
+              <div class="stats-cell stat-val-container">
+                <span class="badge badge-medium-low">{medium_low_count}</span>
+              </div>
+            </div>
+          </div>
         </div>
         
         <div class="cta-container">
-          <a href="{safe_report_url}" class="cta-button">Download PDF Audit Report</a>
+          <a href="{safe_report_url}" class="cta-button">View Security Report</a>
         </div>
       </div>
       
       <div class="footer">
         <p class="footer-text">
-          This email was automatically generated by Fire Crow Security Platform.<br>
-          Keep your dependencies patched and code safe.
+          This email was automatically generated by Fire Crow Security.<br>
+          Keep your code secure and dependencies up to date.
         </p>
       </div>
     </div>
@@ -918,94 +1049,144 @@ class ReportGenerator:
 </html>
 """
 
-        # 1. Try Google SMTP/Gmail if configured
-        if settings.SMTP_USER and settings.SMTP_PASSWORD:
-            try:
-                import smtplib
-                from email.mime.text import MIMEText
-                from email.mime.multipart import MIMEMultipart
+        success = False
+        try:
+            # 1. Try Google SMTP/Gmail if configured
+            if settings.SMTP_USER and settings.SMTP_PASSWORD:
+                try:
+                    import smtplib
+                    from email.mime.text import MIMEText
+                    from email.mime.multipart import MIMEMultipart
 
-                logger.info("Sending transactional email report for job %s via Google/SMTP.", job_id)
-                
-                msg = MIMEMultipart("alternative")
-                msg["Subject"] = f"Fire Crow Security Audit Report - Job {job_id}"
-                msg["From"] = f"Fire Crow Audit <{settings.SMTP_USER}>"
-                msg["To"] = to_email
+                    logger.info("Sending transactional email report for job %s via Google/SMTP.", job_id)
+                    
+                    msg = MIMEMultipart("mixed")
+                    msg["Subject"] = f"Fire Crow Security Audit: {repo_name}"
+                    msg["From"] = f"Fire Crow Audit <{settings.SMTP_USER}>"
+                    msg["To"] = to_email
 
-                part = MIMEText(html_body, "html")
-                msg.attach(part)
+                    body_part = MIMEMultipart("alternative")
+                    body_part.attach(MIMEText(html_body, "html"))
+                    msg.attach(body_part)
 
-                with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-                    server.starttls()
-                    server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                    server.sendmail(settings.SMTP_USER, [to_email], msg.as_string())
-                
-                logger.info("Transactional email successfully sent via Google/SMTP.")
-                return True
-            except Exception as e:
-                logger.error("Failed to send email via Google/SMTP for job %s: %s.", job_id, redact_text(str(e)))
+                    if pdf_path and os.path.exists(pdf_path):
+                        from email.mime.base import MIMEBase
+                        from email import encoders
+                        with open(pdf_path, "rb") as attachment_file:
+                            part = MIMEBase("application", "octet-stream")
+                            part.set_payload(attachment_file.read())
+                            encoders.encode_base64(part)
+                            part.add_header(
+                                "Content-Disposition",
+                                f"attachment; filename={os.path.basename(pdf_path)}",
+                            )
+                            msg.attach(part)
 
-        # 2. Try Resend if configured
-        if RESEND_AVAILABLE and self.resend_api_key:
-            try:
-                logger.info("Sending transactional email report for job %s via Resend.", job_id)
-                params: Any = {
-                    "from": f"Fire Crow Audit <{self.sender_email}>",
-                    "to": [to_email],
-                    "subject": f"Fire Crow Security Audit Report - Job {job_id}",
-                    "html": html_body
-                }
-                resend.Emails.send(params)
-                logger.info("Transactional email successfully sent via Resend.")
-                return True
-            except Exception as e:
-                logger.error("Failed to send email via Resend for job %s: %s.", job_id, redact_text(str(e)))
+                    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+                        server.starttls()
+                        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                        server.sendmail(settings.SMTP_USER, [to_email], msg.as_string())
+                    
+                    logger.info("Transactional email successfully sent via Google/SMTP.")
+                    success = True
+                except Exception as e:
+                    logger.error("Failed to send email via Google/SMTP for job %s: %s.", job_id, redact_text(str(e)))
 
-        # 3. Try Brevo HTTP API if configured
-        if settings.BREVO_API_KEY:
-            try:
-                import httpx
-                logger.info("Sending transactional email report for job %s via Brevo.", job_id)
-                response = httpx.post(
-                    "https://api.brevo.com/v3/smtp/email",
-                    headers={
-                        "api-key": settings.BREVO_API_KEY,
-                        "content-type": "application/json",
-                        "accept": "application/json"
-                    },
-                    json={
+            # 2. Try Resend if configured
+            if not success and RESEND_AVAILABLE and self.resend_api_key:
+                try:
+                    logger.info("Sending transactional email report for job %s via Resend.", job_id)
+                    import base64
+                    params: Any = {
+                        "from": f"Fire Crow Audit <{self.sender_email}>",
+                        "to": [to_email],
+                        "subject": f"Fire Crow Security Audit: {repo_name}",
+                        "html": html_body
+                    }
+                    if pdf_path and os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as f:
+                            pdf_bytes = f.read()
+                        params["attachments"] = [
+                            {
+                                "content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                                "filename": os.path.basename(pdf_path),
+                            }
+                        ]
+                    resend.Emails.send(params)
+                    logger.info("Transactional email successfully sent via Resend.")
+                    success = True
+                except Exception as e:
+                    logger.error("Failed to send email via Resend for job %s: %s.", job_id, redact_text(str(e)))
+
+            # 3. Try Brevo HTTP API if configured
+            if not success and settings.BREVO_API_KEY:
+                try:
+                    import httpx
+                    import base64
+                    logger.info("Sending transactional email report for job %s via Brevo.", job_id)
+                    payload_json = {
                         "sender": {"email": self.sender_email, "name": "Fire Crow Audit"},
                         "to": [{"email": to_email}],
-                        "subject": f"Fire Crow Security Audit Report - Job {job_id}",
+                        "subject": f"Fire Crow Security Audit: {repo_name}",
                         "htmlContent": html_body
-                    },
-                    timeout=15.0
-                )
-                response.raise_for_status()
-                logger.info("Transactional email successfully sent via Brevo.")
-                return True
-            except Exception as e:
-                logger.error("Failed to send email via Brevo for job %s: %s.", job_id, redact_text(str(e)))
+                    }
+                    if pdf_path and os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as f:
+                            pdf_bytes = f.read()
+                        payload_json["attachment"] = [
+                            {
+                                "content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                                "name": os.path.basename(pdf_path)
+                            }
+                        ]
+                    response = httpx.post(
+                        "https://api.brevo.com/v3/smtp/email",
+                        headers={
+                            "api-key": settings.BREVO_API_KEY,
+                            "content-type": "application/json",
+                            "accept": "application/json"
+                        },
+                        json=payload_json,
+                        timeout=15.0
+                    )
+                    response.raise_for_status()
+                    logger.info("Transactional email successfully sent via Brevo.")
+                    success = True
+                except Exception as e:
+                    logger.error("Failed to send email via Brevo for job %s: %s.", job_id, redact_text(str(e)))
 
-        # 4. Final Fallback (local saving in DEBUG, or fail in production)
-        if not settings.DEBUG:
-            logger.warning("No email provider succeeded or configured for job %s. Local email fallback is disabled outside DEBUG mode.", job_id)
-            return False
+            # 4. Final Fallback (local saving in DEBUG, or fail in production)
+            if not success:
+                if not settings.DEBUG:
+                    logger.warning("No email provider succeeded or configured for job %s. Local email fallback is disabled outside DEBUG mode.", job_id)
+                    return False
 
-        logger.warning("No email provider configured or succeeded. Saving DEBUG notification email locally.")
-        try:
-            import re
-            from datetime import datetime
-            sent_emails_dir = os.path.join("workspace", "sent_emails")
-            os.makedirs(sent_emails_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
-            filename = f"{timestamp}_{safe_email}_audit_report.html"
-            filepath = os.path.join(sent_emails_dir, filename)
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(html_body)
-            logger.info("Local DEBUG email report saved for job %s.", job_id)
-            return True
-        except Exception as le:
-            logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
-            return False
+                logger.warning("No email provider configured or succeeded. Saving DEBUG notification email locally.")
+                try:
+                    import re
+                    from datetime import datetime
+                    sent_emails_dir = os.path.join(WORKSPACE_DIR, "workspace", "sent_emails")
+                    os.makedirs(sent_emails_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    safe_email = re.sub(r'[^a-zA-Z0-9@.]', '_', to_email)
+                    filename = f"{timestamp}_{safe_email}_audit_report.html"
+                    filepath = os.path.join(sent_emails_dir, filename)
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(html_body)
+                    logger.info("Local DEBUG email report saved for job %s.", job_id)
+                    success = True
+                except Exception as le:
+                    logger.error("Failed to save local fallback email for job %s: %s", job_id, redact_text(str(le)))
+                    
+            return success
+        finally:
+            if pdf_path:
+                try:
+                    if os.path.exists(pdf_path):
+                        os.remove(pdf_path)
+                    html_path = pdf_path.replace(".pdf", ".html")
+                    if os.path.exists(html_path):
+                        os.remove(html_path)
+                    logger.info("Purged local report file copies after email dispatch.")
+                except Exception as delete_error:
+                    logger.warning("Failed to delete local report copies after email dispatch: %s", str(delete_error))

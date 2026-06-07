@@ -1,12 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, Cpu, Layers, RefreshCw, Shield } from "lucide-react";
 
 import PolicyLink from "../components/PolicyLink";
+import Footer from "../components/Footer";
 import { fadeInLeft, fadeInRight, fadeInUp, scaleUp, staggerContainer } from "../lib/animations";
+import {
+  getServerAuthSessionSnapshot,
+  getStoredAuthSessionSnapshot,
+  subscribeToAuthSession
+} from "../lib/authSession";
 import styles from "./page.module.css";
 
 const HERO_METRICS = [
@@ -68,14 +74,12 @@ const cx = (...tokens: Array<string | false | null | undefined>) => tokens.filte
 
 export default function LandingPage() {
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  useEffect(() => {
-    const token = localStorage.getItem("fc_token");
-    const username = localStorage.getItem("fc_username");
-    const userId = localStorage.getItem("fc_user_id");
-    if (token && username && userId) queueMicrotask(() => setIsLoggedIn(true));
-  }, []);
+  const session = useSyncExternalStore(
+    subscribeToAuthSession,
+    getStoredAuthSessionSnapshot,
+    getServerAuthSessionSnapshot
+  );
+  const isLoggedIn = session.hasDashboardSession;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -153,7 +157,7 @@ export default function LandingPage() {
 
         <motion.section initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={fadeInUp} className="cta-band"><div className="cta-band-content"><p className={styles.eyebrow}>Next step</p><h2>Run it on a repo your team already knows.</h2><p>That first pass is where trust gets built. Keep the scope familiar, keep the language human, and the review moves faster.</p><div className={styles.heroActions} style={{ marginTop: 24 }}><motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.primaryButton}>{isLoggedIn ? "Go to Dashboard" : "Go to sign in"}</Link></motion.div><motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>Review privacy policy</PolicyLink></motion.div></div></div></motion.section>
 
-        <footer className={styles.footer}><div className={styles.footerBrand}><Link href="/" className={styles.brand}><span className={styles.brandMark}>FC</span><span className={styles.brandText}><strong>Fire Crow</strong><small>FCv1 security audit</small></span></Link><p>Repository intake, validation, severity scoring, and remediation handoff in a single security workflow.</p></div><div className={styles.footerLinks}><a href="#capabilities">Platform</a><a href="#workflow">Workflow</a><a href="#agents">Agents</a><Link href={isLoggedIn ? "/dashboard" : "/signin"}>{isLoggedIn ? "Dashboard" : "Sign in"}</Link><PolicyLink href="/terms" policy="terms" source="landing_footer">Terms</PolicyLink><PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_footer">Privacy</PolicyLink></div></footer>
+        <Footer />
       </div>
     </main>
   );

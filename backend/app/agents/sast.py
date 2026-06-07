@@ -20,37 +20,30 @@ SECRET_SIGNATURES = {
 # Unsafe code call signatures (SAST patterns)
 UNSAFE_CODE_PATTERNS = [
     {
-        "pattern": r"\beval\s*\(",
+        "pattern": r"^[^\#\'\"/]*\beval\s*\(",
         "title": "Use of unsafe eval() function",
         "description": "Evaluating code dynamically from inputs can lead to Remote Code Execution (RCE).",
         "severity": Severity.HIGH,
         "cwe_id": "CWE-95"
     },
     {
-        "pattern": r"\bexec\s*\(",
+        "pattern": r"^[^\#\'\"/]*\bexec\s*\(",
         "title": "Use of unsafe exec() function",
         "description": "Executing code dynamically from arbitrary inputs can lead to Remote Code Execution (RCE).",
         "severity": Severity.HIGH,
         "cwe_id": "CWE-95"
     },
     {
-        "pattern": r"(?i)\b(?:select|insert|update|delete|create|drop|alter)\b.*(?:%.*\{\w+\}|\{\w+\}|%\s*\w+)",
-        "title": "SQL Injection vulnerability via string formatting",
-        "description": "Using string interpolation or percent formatting to build SQL queries can permit SQL injection.",
-        "severity": Severity.CRITICAL,
-        "cwe_id": "CWE-89"
-    },
-    {
-        "pattern": r"(?:execute|query)\s*\(\s*['\"].*%\s*\w+",
-        "title": "SQL Injection vulnerability via string formatting in execute call",
-        "description": "Using string interpolation or percent formatting directly inside DB execute calls can permit SQL injection.",
-        "severity": Severity.CRITICAL,
-        "cwe_id": "CWE-89"
-    },
-    {
-        "pattern": r"(?:execute|query)\s*\(\s*f['\"].*\{\w+\}",
+        "pattern": r"(?i)^[^\#\'\"/]*f['\"].*\b(?:select\s+.*\s+from|insert\s+.*\s+into|update\s+.*\s+set|delete\s+.*\s+from|create\s+(?:table|database|index|view)|drop\s+(?:table|database|index|view)|alter\s+(?:table|database))\b.*\{",
         "title": "SQL Injection vulnerability via f-string execution",
         "description": "Executing raw queries constructed with f-strings can permit SQL injection.",
+        "severity": Severity.CRITICAL,
+        "cwe_id": "CWE-89"
+    },
+    {
+        "pattern": r"(?i)^[^\#\'\"/]*['\"].*\b(?:select\s+.*\s+from|insert\s+.*\s+into|update\s+.*\s+set|delete\s+.*\s+from|create\s+(?:table|database|index|view)|drop\s+(?:table|database|index|view)|alter\s+(?:table|database))\b.*(?:\.format\s*\(|%\s*[\w\(\\])",
+        "title": "SQL Injection vulnerability via string formatting",
+        "description": "Using string interpolation or percent formatting to build SQL queries can permit SQL injection.",
         "severity": Severity.CRITICAL,
         "cwe_id": "CWE-89"
     },

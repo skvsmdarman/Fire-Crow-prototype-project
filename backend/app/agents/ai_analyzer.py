@@ -1,5 +1,6 @@
 import logging
 import json
+import socket
 import urllib.request
 import urllib.error
 from typing import List, Tuple, Dict, Any
@@ -7,6 +8,16 @@ from backend.app.schemas import Finding, Severity
 from backend.app.config import settings
 
 logger = logging.getLogger("firecrow.agents.ai")
+
+RETRYABLE_GEMINI_HTTP_CODES = {404, 408, 429, 500, 502, 503, 504}
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        return isinstance(exc.reason, (TimeoutError, socket.timeout)) or "timed out" in str(exc.reason).lower()
+    return "timed out" in str(exc).lower()
 
 def run_ai_analyzer(
     static_findings: List[Finding],
@@ -66,35 +77,58 @@ def run_ai_analyzer(
             "owasp_category": f.owasp_category
         })
 
-    prompt = f"""You are an advanced AI Security Auditor. Analyze these vulnerability findings detected in a repository:
+    prompt = f"""You are a Principal Offensive Security Engineer & Application Security Architect.
+Analyze the following vulnerability findings detected by automated scanners in a repository:
 {json.dumps(findings_data, indent=2)}
 
+You must perform a rigorous security audit and triage the findings according to enterprise security standards.
+
 Your tasks:
-1. Deduplicate findings: Group duplicate alerts from different scanners. Keep the one that is most descriptive.
-2. Filter false positives: Identify and dismiss issues that are false positives (e.g. comments, test fixtures, already rotated or harmless values). Place their IDs in false_positives.
-3. Identify attack chains: Find how multiple findings might be chained together to create a higher impact attack path.
-4. Generate secure code remediations: For each real vulnerability, identify the file path, the code block, and write the drop-in replacement (fix).
+1. Deduplicate findings:
+   - Identify and group duplicate or overlapping alerts from different scanners.
+   - Keep only the single most descriptive and contextually accurate finding.
+   - Merge related evidences where appropriate.
+
+2. Filter false positives:
+   - Carefully analyze code references, paths, and patterns to dismiss false positives.
+   - Identify and exclude:
+     * Test fixtures, test files (e.g. files under `tests/`, `test_*.py`), mock files, or sample templates, UNLESS they contain real, active, unredacted credentials.
+     * False alarms from regex patterns, such as string logging, error messages (e.g., `raise RuntimeError(...)`), print statement interpolation, HTTP path parameters (e.g., `@router.delete("/path/{id}")`), or non-SQL queries (e.g., Redis delete/get operations).
+   - Any findings determined to be false positives must be dismissed by adding their IDs to the "false_positives" list.
+
+3. Re-evaluate severity and metadata:
+   - Recalculate severity (critical, high, medium, low, info) based on the exploitability of the finding within the source context.
+   - Standardize titles to be professional, descriptive, and non-generic.
+   - Map each valid finding to the correct CWE ID (Common Weakness Enumeration) and OWASP Top 10 category.
+
+4. Identify complex attack chains:
+   - Group findings that could be combined sequentially by an attacker to gain escalated privileges or breach the system.
+   - Map out the exact step-by-step logic of the attack chain.
+
+5. Generate production-grade remediations:
+   - For every verified finding, specify the target file and the precise block of vulnerable code.
+   - Provide a drop-in secure code replacement using modern framework best practices (e.g., proper parameterized DB queries, safe parsing, secure token management). No placeholders.
 
 Output your results in this exact JSON format (and ONLY output this raw JSON structure, no other text or explanation):
 {{
   "deduplicated_findings": [
     {{
       "id": "original finding id",
-      "title": "Cleaned up title",
+      "title": "A precise, professional title describing the weakness",
       "severity": "critical | high | medium | low | info",
-      "description": "Deduplicated/improved description",
+      "description": "An in-depth, security-expert explanation of the issue, detailing why it is vulnerable and how it could be exploited.",
       "evidence": "evidence string",
-      "remediation": "remediation description",
+      "remediation": "Step-by-step developer remediation guide.",
       "cwe_id": "CWE-...",
-      "owasp_category": "..."
+      "owasp_category": "A01:2021-..."
     }}
   ],
   "false_positives": ["id1", "id2"],
   "attack_chains": [
     {{
-      "title": "Chain description",
-      "description": "How the vulnerabilities chain together",
-      "severity": "high",
+      "title": "Chained Attack Path: [Title]",
+      "description": "Detailed explanation of the multi-stage exploit flow.",
+      "severity": "critical | high | medium",
       "chained_finding_ids": ["id_a", "id_b"]
     }}
   ],
@@ -102,8 +136,8 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
     {{
       "finding_id": "original finding id",
       "file": "file_path_relative_to_repo",
-      "original_code": "code block to find",
-      "fixed_code": "replacement code block"
+      "original_code": "exact original code block to replace",
+      "fixed_code": "exact drop-in secure code replacement"
     }}
   ]
 }}
@@ -129,6 +163,7 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
         "gemini-1.5-flash"
     ]))
     success = False
+    last_error_summary = ""
 
     for model_name in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
@@ -194,18 +229,34 @@ Output your results in this exact JSON format (and ONLY output this raw JSON str
                 success = True
                 break
         except urllib.error.HTTPError as err:
-            if err.code == 404:
-                logger.warning(f"Model {model_name} returned 404. Trying next fallback model...")
+            last_error_summary = f"HTTP {err.code}: {err.reason}"
+            if err.code in RETRYABLE_GEMINI_HTTP_CODES:
+                logger.warning(
+                    "Gemini model %s returned HTTP %s. Trying next fallback model.",
+                    model_name,
+                    err.code,
+                )
                 continue
-            else:
-                logger.exception(f"Gemini API call failed for model {model_name} with status {err.code}: {err}")
-                break
-        except Exception as exc:
-            logger.exception(f"Gemini API call failed for model {model_name}: {exc}")
+            logger.exception(
+                "Gemini API call failed for model %s with non-retryable status %s: %s",
+                model_name,
+                err.code,
+                err,
+            )
             break
+        except Exception as exc:
+            last_error_summary = str(exc)
+            if _is_timeout_error(exc):
+                logger.warning("Gemini model %s timed out. Trying next fallback model.", model_name)
+                continue
+            logger.exception("Gemini API call failed for model %s. Trying next fallback model.", model_name)
+            continue
 
     if not success:
-        logger.error("All Gemini models failed.")
+        if last_error_summary:
+            logger.error("All Gemini models failed. Last error: %s", last_error_summary)
+        else:
+            logger.error("All Gemini models failed.")
         if settings.DEBUG:
             logger.info("DEBUG mode enabled. Using local simulated AI remediation.")
             remediations.append({

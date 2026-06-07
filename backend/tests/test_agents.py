@@ -1,6 +1,9 @@
 import os
 import shutil
 import logging
+import json
+import urllib.error
+from email.message import Message
 from backend.app.agents.recon import run_recon, detect_tech_stack
 from backend.app.agents.sast import run_sast, scan_for_secrets, scan_for_unsafe_code
 from backend.app.agents.dependency_scan import run_dependency_scan
@@ -168,6 +171,91 @@ def test_google_agent_run_mock():
     assert any("Started Google Agent" in log for log in res["google_agent_logs"])
 
 
+def test_ai_analyzer_tries_next_model_after_timeout(monkeypatch):
+    from backend.app.agents.ai_analyzer import run_ai_analyzer
+    from backend.app.schemas import Finding, Severity
+
+    finding = Finding(
+        id="f-ai-1",
+        agent_source="SAST",
+        title="SQL Injection",
+        description="Vulnerable to SQL Injection",
+        severity=Severity.CRITICAL,
+    )
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": json.dumps(
+                                {
+                                    "deduplicated_findings": [
+                                        {
+                                            "id": "f-ai-1",
+                                            "title": "SQL Injection",
+                                            "severity": "critical",
+                                            "description": "Confirmed finding",
+                                            "evidence": "query evidence",
+                                            "remediation": "Use parameterized queries.",
+                                            "cwe_id": "CWE-89",
+                                            "owasp_category": "A03:2021-Injection",
+                                        }
+                                    ],
+                                    "false_positives": [],
+                                    "attack_chains": [],
+                                    "remediations": [],
+                                }
+                            )
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    responses = [
+        urllib.error.URLError(TimeoutError("The read operation timed out")),
+        json.dumps(payload).encode("utf-8"),
+    ]
+
+    class FakeResponse:
+        def __init__(self, body: bytes):
+            self.body = body
+
+        def read(self) -> bytes:
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(_req, timeout=0):
+        current = responses.pop(0)
+        if isinstance(current, Exception):
+            raise current
+        return FakeResponse(current)
+
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-test")
+    monkeypatch.setattr("backend.app.agents.ai_analyzer.urllib.request.urlopen", fake_urlopen)
+
+    deduplicated, false_positives, attack_chains, remediations = run_ai_analyzer(
+        [finding],
+        [],
+        [],
+        [],
+        [],
+    )
+
+    assert len(deduplicated) == 1
+    assert deduplicated[0].id == "f-ai-1"
+    assert false_positives == []
+    assert attack_chains == []
+    assert remediations == []
+
+
 def test_mock_scanners_do_not_create_findings_in_production(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "DEBUG", False)
     monkeypatch.setattr("backend.app.agents.dependency_scan.shutil.which", lambda _name: None)
@@ -212,3 +300,73 @@ def test_report_upload_logging_does_not_include_presigned_url(monkeypatch, caplo
 
     assert "X-Amz-Signature=secret-signature" in url
     assert "X-Amz-Signature=secret-signature" not in caplog.text
+
+
+def test_github_mcp_forbidden_sse_falls_back_to_rest(monkeypatch):
+    from backend.app.agents.github_mcp import run_github_mcp
+    from backend.app.schemas import Finding, Severity
+
+    findings = [
+        Finding(
+            id="f-gh-1",
+            agent_source="SAST",
+            title="SQL Injection",
+            description="Vulnerable to SQL Injection",
+            severity=Severity.CRITICAL,
+        )
+    ]
+
+    def fake_urlopen(req, timeout=0):
+        url = req.full_url
+        if url == "https://gitmcp.io/owner/repo":
+            raise urllib.error.HTTPError(url, 403, "Forbidden", hdrs=Message(), fp=None)
+
+        class FakeResponse:
+            def read(self) -> bytes:
+                return json.dumps({"html_url": "https://github.com/owner/repo/issues/1"}).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        return FakeResponse()
+
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "GITHUB_TOKEN", "token")
+    monkeypatch.setattr("backend.app.agents.github_mcp.urllib.request.urlopen", fake_urlopen)
+
+    result = run_github_mcp("job-gh-1", "https://github.com/owner/repo", findings)
+
+    assert result["github_issue_created"] is True
+    assert any("GitMCP access was denied" in log for log in result["github_mcp_logs"])
+    assert any("Successfully created GitHub issue" in log for log in result["github_mcp_logs"])
+
+
+def test_report_upload_auth_failure_falls_back_cleanly(monkeypatch, caplog, tmp_path):
+    import sys
+    import types
+    from backend.app.services.reporter import ReportGenerator
+
+    class FakeS3:
+        def upload_file(self, *_args, **_kwargs):
+            raise RuntimeError("InvalidAccessKeyId: Malformed Access Key Id")
+
+    fake_boto3 = types.SimpleNamespace(client=lambda *args, **kwargs: FakeS3())
+    fake_botocore_client = types.SimpleNamespace(Config=lambda **kwargs: object())
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    monkeypatch.setitem(sys.modules, "botocore.client", fake_botocore_client)
+
+    generator = ReportGenerator()
+    generator.r2_endpoint = "https://r2.example"
+    generator.r2_access_key = "bad-key"
+    generator.r2_secret_key = "bad-secret"
+    pdf_path = tmp_path / "job.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    with caplog.at_level(logging.WARNING):
+        url = generator.upload_to_r2(str(pdf_path), "job-r2-auth")
+
+    assert url == "/reports/job.pdf"
+    assert "Serving the local report endpoint instead." in caplog.text

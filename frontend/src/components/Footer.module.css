@@ -1,0 +1,217 @@
+.footerWrapper {
+  margin-top: 80px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(8, 10, 21, 0.4) 0%, #030408 100%);
+  padding: 60px 0 20px;
+  position: relative;
+  width: 100%;
+}
+
+.footerContainer {
+  width: min(1200px, calc(100% - 40px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr);
+  gap: 48px;
+}
+
+.brandCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.logoWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ff9e59;
+}
+
+.logoFlame {
+  width: 32px;
+  height: 32px;
+  color: #ff4d08;
+  filter: drop-shadow(0 0 12px rgba(255, 77, 8, 0.5));
+}
+
+.logoTitle {
+  font-family: var(--font-display), sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffb800;
+  line-height: 1;
+}
+
+.logoCrow {
+  width: 32px;
+  height: 32px;
+  color: #ff9e59;
+  filter: drop-shadow(0 0 12px rgba(255, 158, 89, 0.5));
+}
+
+.logoSubtitle {
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #5b6880;
+  text-transform: uppercase;
+  padding-left: 2px;
+}
+
+.brandDescription {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #b7bfdc;
+  max-width: 340px;
+}
+
+.novalabsBadge {
+  font-size: 13px;
+  color: #b7bfdc;
+}
+
+.highlightText {
+  color: #ffb800;
+  font-weight: 700;
+}
+
+.linksCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.linksCol h4 {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #ffece0;
+  text-transform: uppercase;
+}
+
+.linksCol ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.linksCol ul a {
+  font-size: 14px;
+  color: #8fa0c2;
+  text-decoration: none;
+  transition: color 180ms ease, transform 180ms ease;
+  font-weight: 500;
+}
+
+.linksCol ul a:hover {
+  color: #ff9e59;
+  transform: translateX(2px);
+}
+
+.footerEmail {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  color: #ff9e59;
+}
+
+.addressLabel {
+  display: block;
+  font-size: 11px;
+  font-family: var(--font-mono), monospace;
+  color: #5b6880;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
+
+.addressValue {
+  display: block;
+  font-size: 13px;
+  color: #b7bfdc;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.footerBottom {
+  width: min(1200px, calc(100% - 40px));
+  margin: 40px auto 0;
+  padding: 24px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.copyrightText {
+  font-size: 13px;
+  color: #5b6880;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  background: rgba(0, 230, 118, 0.04);
+  border: 1px solid rgba(0, 230, 118, 0.16);
+  color: #00e676;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.05);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00e676;
+  box-shadow: 0 0 8px #00e676;
+}
+
+@media (max-width: 960px) {
+  .footerContainer {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+
+  .brandCol {
+    grid-column: span 2;
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 580px) {
+  .footerContainer {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .brandCol {
+    grid-column: span 1;
+  }
+
+  .footerBottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

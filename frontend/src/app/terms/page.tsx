@@ -1,49 +1,38 @@
+"use client";
+
 import Link from "next/link";
+import { useState, useSyncExternalStore } from "react";
 
 import PolicyLink from "../../components/PolicyLink";
 import PolicyPageTracker from "../../components/PolicyPageTracker";
+import Footer from "../../components/Footer";
 import { TERMS_VERSION } from "../../lib/policy";
+import {
+  TERMS_SECTIONS,
+  REGION_OPTIONS,
+  detectRegionFromTimezone
+} from "../../lib/policyData";
+import styles from "./policy-tabs.module.css";
 
-const TERMS = [
-  {
-    title: "1. Service Scope",
-    body: "FireCrow provides repository security audit orchestration, including repository intake, scanner execution, runtime validation workflows, report generation, and operational logging needed to show audit history and security events.",
-  },
-  {
-    title: "2. Authorized Use Only",
-    body: "You may only submit repositories, systems, applications, endpoints, or environments that you own or are explicitly authorized to test. You remain responsible for ensuring each audit request is lawful and contractually permitted.",
-  },
-  {
-    title: "3. Security Testing Boundaries",
-    body: "FireCrow is intended for controlled defensive security work. You must not use it to gain unauthorized access, exfiltrate data, overload services, or interfere with systems outside the scope of your authorization.",
-  },
-  {
-    title: "4. Workspace Authentication",
-    body: "Access to FireCrow depends on real workspace credentials or configured OAuth providers. You are responsible for protecting passwords, provider accounts, access tokens, and report artifacts associated with your workspace.",
-  },
-  {
-    title: "5. Reports and Remediation Output",
-    body: "Audit findings, evidence, remediation notes, and generated reports may contain sensitive security information. Review outputs carefully before sharing them outside the approved team or customer context.",
-  },
-  {
-    title: "6. No Warranty of Complete Detection",
-    body: "Security tooling can reduce risk but cannot guarantee detection of every vulnerability, misconfiguration, dependency issue, exploit path, or secret exposure. Findings should be reviewed by qualified personnel before remediation decisions are finalized.",
-  },
-  {
-    title: "7. Service Changes",
-    body: "Nova Devs may modify, suspend, replace, or improve FireCrow components, authentication flows, legal notices, integrations, reports, or agent behavior to improve reliability, security, and compliance.",
-  },
-  {
-    title: "8. Liability Limits",
-    body: "To the maximum extent permitted by law, Nova Devs is not liable for indirect, incidental, special, consequential, or punitive damages arising from use of FireCrow, including losses connected with data, revenue, business opportunity, or security posture.",
-  },
-  {
-    title: "9. Contact and Grievance Channel",
-    body: "Questions about these terms, privacy, security concerns, or workspace access can be sent to the designated Grievance Officer / operator contact at security@novadevs.dev. Production deployments should replace this with the real grievance officer name, postal address, and contact details used by the operator.",
-  },
-];
+const readClientTimezone = () =>
+  (typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "") || "";
+const subscribeToClientTimezone = () => () => undefined;
 
 export default function TermsPage() {
+  const timezone = useSyncExternalStore(subscribeToClientTimezone, readClientTimezone, () => "");
+  const detectedRegion = detectRegionFromTimezone(timezone);
+  const [selectedRegionOverride, setSelectedRegionOverride] = useState<"global" | "in" | "eu" | "us" | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const selectedRegion = selectedRegionOverride ?? detectedRegion;
+  const showBanner = detectedRegion !== "global" && !bannerDismissed;
+
+  // Filter clauses: show global clauses + clauses matching the selected region
+  const activeClauses = TERMS_SECTIONS.filter(
+    (clause) => clause.regions.includes("global") || clause.regions.includes(selectedRegion)
+  );
+
+  const detectedRegionOption = REGION_OPTIONS.find((r) => r.code === detectedRegion);
+
   return (
     <main className="legal-shell">
       <PolicyPageTracker policy="terms" policyVersion={TERMS_VERSION} source="terms_page" />
@@ -66,37 +55,92 @@ export default function TermsPage() {
       </nav>
 
       <section className="legal-hero">
-        <div className="section-kicker">Legal</div>
-        <h1>Terms of Use</h1>
+        <div className="section-kicker">Legal Framework</div>
+        <h1>Terms of Service</h1>
         <p>
-          These terms govern how FireCrow may be accessed and used for authorized security audit work.
+          Governing the subscription, code auditing, and automated defensive security execution boundaries.
         </p>
         <span>Version: {TERMS_VERSION}</span>
       </section>
 
-      <section className="legal-card">
-        {TERMS.map((term) => (
-          <article className="legal-clause" key={term.title}>
-            <h2>{term.title}</h2>
-            <p>{term.body}</p>
-          </article>
+      {/* Timezone Detection Banner */}
+      {showBanner && detectedRegionOption && (
+        <div className={styles.timezoneBanner}>
+          <div className={styles.bannerLeft}>
+            <span className={styles.bannerIcon}>🗺️</span>
+            <div className={styles.bannerText}>
+              We detected your timezone is <strong>{timezone}</strong>. We have loaded terms compliant with
+              {" "}
+              <strong>{detectedRegionOption.name}</strong> legal standards ({detectedRegionOption.badge}).
+            </div>
+          </div>
+          <button className={styles.closeBanner} onClick={() => setBannerDismissed(true)} aria-label="Close banner">
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Regional Selector Tabs */}
+      <div className={styles.tabBar} role="tablist" aria-label="Regional compliance clauses">
+        {REGION_OPTIONS.map((region) => (
+          <button
+            key={region.code}
+            role="tab"
+            aria-selected={selectedRegion === region.code}
+            className={`${styles.tabButton} ${selectedRegion === region.code ? styles.activeTab : ""}`}
+            onClick={() => setSelectedRegionOverride(region.code)}
+          >
+            <span>{region.flag}</span>
+            <span>{region.name}</span>
+            {detectedRegion === region.code && (
+              <span className={styles.detectedBadge}>Detected</span>
+            )}
+          </button>
         ))}
+      </div>
+
+      <section className="legal-card" style={{ padding: "8px 24px" }}>
+        <div className={styles.clauseList}>
+          {activeClauses.map((clause) => {
+            const isRegionSpecific = !clause.regions.includes("global");
+            return (
+              <article
+                className={`${styles.clauseCard} ${isRegionSpecific ? styles.highlightedCard : ""}`}
+                key={clause.id}
+              >
+                <div className={styles.clauseCardHeader}>
+                  <h2 className={styles.clauseTitle}>{clause.title}</h2>
+                  <div className={styles.clauseBadges}>
+                    {clause.regions.map((r) => {
+                      const regOpt = REGION_OPTIONS.find((o) => o.code === r);
+                      if (!regOpt) return null;
+                      return (
+                        <span
+                          key={r}
+                          className={`${styles.regionBadge} ${
+                            r === "global"
+                              ? styles.badgeGlobal
+                              : r === "in"
+                              ? styles.badgeIn
+                              : r === "eu"
+                              ? styles.badgeEu
+                              : styles.badgeUs
+                          }`}
+                        >
+                          {regOpt.flag} {regOpt.badge.split(" ")[0]}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className={styles.clauseBody}>{clause.body}</p>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
-      <footer className="public-footer">
-        <div>
-          <strong>Nova Devs</strong>
-          <p>FireCrow FCv1 security audit orchestration.</p>
-        </div>
-        <div className="footer-links">
-          <Link href="/">Home</Link>
-          <PolicyLink href="/privacy-policy" policy="privacy_policy" source="terms_footer">
-            Privacy Policy
-          </PolicyLink>
-          <Link href="/signin">Sign in</Link>
-          <a href="mailto:security@novadevs.dev">security@novadevs.dev</a>
-        </div>
-      </footer>
+      <Footer />
     </main>
   );
 }

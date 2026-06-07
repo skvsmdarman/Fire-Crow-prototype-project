@@ -23,11 +23,18 @@ def clone_repository(repo_url: str, branch: str, target_dir: str) -> bool:
             logger.error(f"Malicious branch name rejected: {branch}")
             return False
 
-        logger.info(f"Cloning {repo_url} (branch: {branch}) into {target_dir}")
+        clone_url = repo_url
+        if settings.GITHUB_TOKEN and "github.com" in repo_url.lower() and "x-access-token" not in repo_url:
+            if repo_url.startswith("https://"):
+                clone_url = repo_url.replace("https://", f"https://x-access-token:{settings.GITHUB_TOKEN}@")
+            elif repo_url.startswith("http://"):
+                clone_url = repo_url.replace("http://", f"http://x-access-token:{settings.GITHUB_TOKEN}@")
+
+        logger.info(f"Cloning repo (branch: {branch}) into {target_dir}")
         # Run git clone with a timeout of 60 seconds and an argument isolator (--)
         # to prevent malicious input URLs from being parsed as options flags.
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", branch, "--", repo_url, target_dir],
+            ["git", "clone", "--depth", "1", "--branch", branch, "--", clone_url, target_dir],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

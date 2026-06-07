@@ -1,23 +1,11 @@
 "use client";
 
 import React from "react";
-import { Download, Square, Check, RefreshCw } from "lucide-react";
+import { Download, FileWarning, GitBranch, Square } from "lucide-react";
 import Card from "../../../components/ui/Card";
+import Badge from "../../../components/ui/Badge";
 import Button from "../../../components/ui/Button";
 import styles from "../page.module.css";
-
-const PIPELINE = [
-  "INTAKE",
-  "STATIC SCAN",
-  "SANDBOX",
-  "NETWORK",
-  "ATTACK",
-  "EXPLOIT",
-  "SCORING",
-  "REPORTER",
-  "GOOGLE AGENT",
-  "CLEANUP",
-];
 
 interface Job {
   id: string;
@@ -32,7 +20,6 @@ interface Job {
 
 interface PipelineVizProps {
   job: Job | null;
-  activeStep: number;
   onOpenReport: (jobId: string) => void;
   onCancel: (jobId: string) => void;
   reportError: string;
@@ -42,9 +29,28 @@ function shortRepoName(repoUrl: string): string {
   return repoUrl.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
 }
 
+function formatDateTime(value: string | null): string {
+  if (!value) return "Pending";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function statusCopy(job: Job | null): string {
+  if (!job) return "Select an audit to review its current state and available actions.";
+  if (job.status === "queued") return "The audit is queued and waiting for the worker to begin.";
+  if (job.status === "running") return "The audit is active. Live agent logs will continue streaming below.";
+  if (job.status === "completed") return "The audit completed successfully and the report is ready when available.";
+  if (job.status === "partial") return "The audit finished with partial results. Review findings and logs before exporting.";
+  if (job.status === "cancelled") return "The audit was cancelled before full completion.";
+  return "The audit stopped with an error. Review the saved logs for operational context.";
+}
+
 export default function PipelineViz({
   job,
-  activeStep,
   onOpenReport,
   onCancel,
   reportError,
@@ -55,10 +61,11 @@ export default function PipelineViz({
     <Card variant="surface" className={styles.panel}>
       <div className={styles.panelHeader}>
         <div>
-          <div className={styles.sectionKicker}>Maestro</div>
+          <div className={styles.sectionKicker}>Selected audit</div>
           <h2>{job ? shortRepoName(job.repo_url) : "No audit selected"}</h2>
         </div>
         <div className={styles.headerActions}>
+          {job && <Badge variant="status" type={job.cancel_requested && isRunning ? "cancelling" : job.status}>{job.cancel_requested && isRunning ? "cancelling" : job.status}</Badge>}
           {job?.report_pdf_url && (
             <Button variant="secondary" size="sm" onClick={() => onOpenReport(job.id)}>
               <Download size={14} />
@@ -74,30 +81,30 @@ export default function PipelineViz({
         </div>
       </div>
 
-      <div className={styles.pipeline}>
-        {PIPELINE.map((phase, index) => {
-          const isDone = activeStep > index;
-          const isCurrent = activeStep === index;
-          
-          let stepClass = styles.pipelineStep;
-          if (isDone) stepClass += ` ${styles.pipelineDone}`;
-          if (isCurrent) stepClass += ` ${styles.pipelineCurrent}`;
+      <p className={styles.auditLead}>{statusCopy(job)}</p>
 
-          return (
-            <div key={phase} className={stepClass}>
-              <div className={styles.pipelineStepBadge}>
-                {isDone ? (
-                  <Check size={10} className={styles.checkIcon} />
-                ) : isCurrent && isRunning ? (
-                  <RefreshCw size={10} className={styles.spin} />
-                ) : (
-                  <span>{String(index).padStart(2, "0")}</span>
-                )}
-              </div>
-              <strong className={styles.pipelineStepName}>{phase}</strong>
-            </div>
-          );
-        })}
+      <div className={styles.auditSummaryGrid}>
+        <div className={styles.auditSummaryItem}>
+          <span>Repository</span>
+          <strong>{job ? shortRepoName(job.repo_url) : "—"}</strong>
+        </div>
+        <div className={styles.auditSummaryItem}>
+          <span>Branch</span>
+          <strong>{job?.repo_branch || "—"}</strong>
+        </div>
+        <div className={styles.auditSummaryItem}>
+          <span>Created</span>
+          <strong>{job ? formatDateTime(job.created_at) : "—"}</strong>
+        </div>
+        <div className={styles.auditSummaryItem}>
+          <span>Report</span>
+          <strong>{job?.report_pdf_url ? "Available" : "Not ready"}</strong>
+        </div>
+      </div>
+
+      <div className={styles.auditStatusStrip}>
+        <span><GitBranch size={13} /> Backend status only</span>
+        <span><FileWarning size={13} /> No fake progress percentage</span>
       </div>
 
       {job && ["failed", "cancelled"].includes(job.status) && job.error_message && (

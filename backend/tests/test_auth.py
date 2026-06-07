@@ -370,3 +370,104 @@ def test_oauth_code_exchange():
     # Act again (one-time use check): exchange code again should fail
     response_retry = client.post("/api/v1/auth/exchange", json={"code": code})
     assert response_retry.status_code == 400
+
+
+def test_user_activity_logging():
+    username = f"logtester_{uuid.uuid4().hex[:6]}"
+    # 1. Register a new user
+    reg_payload = _register_payload(username)
+    reg_payload["email"] = f"{username}@example.com"
+    reg_response = client.post(
+        "/api/v1/auth/register",
+        json=reg_payload,
+    )
+    assert reg_response.status_code == 200
+    user_id = reg_response.json()["user_id"]
+    token = reg_response.json()["access_token"]
+
+    from backend.app.api.routes_auth import TERMS_VERSION
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        assert user is not None
+        assert user.terms_version == TERMS_VERSION
+        assert user.terms_accepted_at is not None
+        assert user.first_login_at is not None
+        assert user.last_login_at is not None
+        assert user.activity_log is not None
+        
+        # Verify JSON activity log
+        activity_history = json.loads(user.activity_log)
+        assert len(activity_history) >= 2
+        assert activity_history[0]["action"] == "login"
+        assert activity_history[1]["action"] == "register"
+    finally:
+        db.close()
+
+    # 2. Login again
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            **_register_payload(username),
+            "password": "supersecretpassword",
+        },
+    )
+    assert login_response.status_code == 200
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        assert user is not None
+        assert user.activity_log is not None
+        activity_history = json.loads(user.activity_log)
+        assert len(activity_history) >= 3
+        assert activity_history[0]["action"] == "login"
+        assert activity_history[0]["details"]["provider"] == "password"
+    finally:
+        db.close()
+
+    # 3. Post a policy event
+    policy_response = client.post(
+        "/api/v1/auth/policy-events",
+        json={
+            "policy": "privacy_policy",
+            "policy_version": PRIVACY_POLICY_VERSION,
+            "event_type": "link_click",
+            "source": "footer",
+            "href": "https://app.example/path",
+            "page_path": "/dashboard",
+            "referrer_path": "/home"
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert policy_response.status_code == 202
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        assert user is not None
+        assert user.activity_log is not None
+        activity_history = json.loads(user.activity_log)
+        assert len(activity_history) >= 4
+        assert activity_history[0]["action"] == "policy_privacy_policy_link_click"
+    finally:
+        db.close()
+
+    # 4. Logout
+    logout_response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert logout_response.status_code == 200
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        assert user is not None
+        assert user.last_logout_at is not None
+        assert user.activity_log is not None
+        activity_history = json.loads(user.activity_log)
+        assert len(activity_history) >= 5
+        assert activity_history[0]["action"] == "logout"
+    finally:
+        db.close()

@@ -109,10 +109,14 @@ class GitMCPClient:
         # The base SSE endpoint URL for this specific repository
         self.sse_url = f"https://gitmcp.io/{owner}/{repo}"
         self.write_url = None
+        self.last_connect_status: int | None = None
+        self.last_connect_error = ""
 
     def connect_sse(self) -> bool:
         """Connects to the SSE stream to discover the messaging endpoint."""
         logger.info(f"Connecting to GitMCP SSE endpoint: {self.sse_url}")
+        self.last_connect_status = None
+        self.last_connect_error = ""
         try:
             req = urllib.request.Request(self.sse_url)
             req.add_header("Accept", "text/event-stream")
@@ -138,8 +142,26 @@ class GitMCPClient:
                                 self.write_url = endpoint
                             logger.info(f"Discovered GitMCP write endpoint: {self.write_url}")
                             return True
+        except urllib.error.HTTPError as exc:
+            self.last_connect_status = exc.code
+            self.last_connect_error = str(exc)
+            if exc.code in {401, 403}:
+                logger.info(
+                    "GitMCP SSE access denied for %s/%s (HTTP %s). Direct GitHub fallback will be used when available.",
+                    self.owner,
+                    self.repo,
+                    exc.code,
+                )
+            else:
+                logger.warning(
+                    "GitMCP SSE connection returned HTTP %s for %s/%s.",
+                    exc.code,
+                    self.owner,
+                    self.repo,
+                )
         except Exception as exc:
-            logger.warning(f"GitMCP SSE connection failed: {exc}")
+            self.last_connect_error = str(exc)
+            logger.warning("GitMCP SSE connection failed for %s/%s: %s", self.owner, self.repo, exc)
         return False
 
     def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any] | None:
@@ -244,10 +266,13 @@ def run_github_mcp(job_id: str, repo_url: str, findings: List[Finding], remediat
             logs.append(f"Successfully raised issue via GitMCP: {result.get('url', 'Created')}")
         else:
             logs.append("GitMCP 'create_issue' tool call failed.")
+    elif client.last_connect_status in {401, 403}:
+        logs.append("GitMCP access was denied for this repository. Using direct GitHub REST API fallback.")
+    else:
+        logs.append("GitMCP was unavailable. Using direct GitHub REST API fallback.")
 
     # 5. Fallback to GitHub REST API directly
     if not success:
-        logs.append("Falling back to direct GitHub REST API...")
         if not token:
             logs.append("No GITHUB_TOKEN configured. Cannot complete API write operations.")
             return {

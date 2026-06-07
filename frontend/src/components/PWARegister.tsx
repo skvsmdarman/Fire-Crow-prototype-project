@@ -62,8 +62,8 @@ export default function PWARegister() {
   }
 
   return (
-    <button className="fc-install-prompt" type="button" onClick={install} aria-label="Install Fire Crow PWA">
-      Install FCv1
+    <button className="fc-install-prompt" type="button" onClick={install} aria-label="Install Fire Crow app">
+      Install app
     </button>
   );
 }

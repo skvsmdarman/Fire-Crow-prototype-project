@@ -87,6 +87,18 @@ def _ensure_user_compatibility() -> None:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(64)")
         if "privacy_policy_accepted_at" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_accepted_at TIMESTAMP")
+        if "terms_version" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN terms_version VARCHAR(64)")
+        if "terms_accepted_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN terms_accepted_at TIMESTAMP")
+        if "first_login_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN first_login_at TIMESTAMP")
+        if "last_login_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP")
+        if "last_logout_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_logout_at TIMESTAMP")
+        if "activity_log" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN activity_log TEXT")
         try:
             if engine.dialect.name == "postgresql":
                 conn.exec_driver_sql(
@@ -103,6 +115,7 @@ def _ensure_user_compatibility() -> None:
                 "Could not create unique normalized users.email index. Existing duplicate emails may need manual review.",
                 exc_info=True,
             )
+
 
 
 def ensure_database_compatibility() -> None:
