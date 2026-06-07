@@ -30,6 +30,7 @@ export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
 
   await fetch(`${apiBase}${ENDPOINTS.auth.policyEvents}`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...headers,

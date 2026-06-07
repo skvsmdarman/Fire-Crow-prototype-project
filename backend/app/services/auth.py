@@ -13,6 +13,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError, VerificationError
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.app.models.database import get_db
 
@@ -50,6 +51,12 @@ def _utc_now() -> datetime:
 
 def _timestamp(value: datetime) -> int:
     return int(value.timestamp())
+
+
+def _coerce_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _get_redis_client():
@@ -213,6 +220,15 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
     if client is not None:
         try:
             client.setex(_denylist_key(str(jti)), ttl, "1")
+            if db is not None:
+                from backend.app.models.user import UserSession
+
+                sess = db.query(UserSession).filter(UserSession.id == jti).first()
+                if sess:
+                    sess.is_revoked = True
+                    sess.revocation_reason = reason or "logout"
+                    db.commit()
+            return True
         except Exception:
             logger.error("Failed to write token jti=%s to Redis denylist.", jti)
             if not settings.DEBUG and settings.REDIS_URL:
@@ -381,59 +397,63 @@ def decrypt_provider_token(token: str | None) -> str:
     return "" if decrypted == "ERROR_DECRYPTING" else decrypted
 
 
-_exchange_codes: dict[str, dict] = {}
-
-
-def create_exchange_code(user_id: str, username: str, token: str) -> str:
+def create_exchange_code(user_id: str, username: str, token: str, *, db: Session) -> str:
     import secrets
-    import json
-    code = secrets.token_urlsafe(32)
-    data = {
-        "user_id": user_id,
-        "username": username,
-        "access_token": token,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    client = _get_redis_client()
-    if client is not None:
+
+    from backend.app.models.user import AuthExchangeCode
+
+    now = _utc_now()
+    expires_at = now + timedelta(seconds=60)
+    db.query(AuthExchangeCode).filter(AuthExchangeCode.expires_at <= now).delete(synchronize_session=False)
+
+    for _ in range(3):
+        code = secrets.token_urlsafe(32)
         try:
-            client.setex(f"firecrow:exchange_code:{code}", 60, json.dumps(data))
+            db.add(
+                AuthExchangeCode(
+                    code=code,
+                    user_id=user_id,
+                    username=username,
+                    access_token=token,
+                    created_at=now,
+                    expires_at=expires_at,
+                )
+            )
+            db.commit()
             return code
-        except Exception:
-            logger.error("Failed to store exchange code in Redis")
-    
-    _exchange_codes[code] = {
-        **data,
-        "expires_at": datetime.now(timezone.utc) + timedelta(seconds=60)
-    }
-    return code
+        except IntegrityError:
+            db.rollback()
+
+    raise RuntimeError("Could not generate a unique exchange code.")
 
 
-def verify_and_consume_exchange_code(code: str) -> Optional[dict]:
-    import json
-    client = _get_redis_client()
-    if client is not None:
-        try:
-            val = client.get(f"firecrow:exchange_code:{code}")
-            if val:
-                client.delete(f"firecrow:exchange_code:{code}")
-                return json.loads(val)
-        except Exception:
-            logger.error("Failed to retrieve exchange code from Redis")
-            
-    now = datetime.now(timezone.utc)
-    expired = [c for c, d in _exchange_codes.items() if d.get("expires_at", now) <= now]
-    for c in expired:
-        _exchange_codes.pop(c, None)
-        
-    data = _exchange_codes.pop(code, None)
-    if data and data.get("expires_at", now) > now:
-        return {
-            "user_id": data["user_id"],
-            "username": data["username"],
-            "access_token": data["access_token"]
+def verify_and_consume_exchange_code(code: str, *, db: Session) -> Optional[dict]:
+    from backend.app.models.user import AuthExchangeCode
+
+    now = _utc_now()
+    try:
+        db.query(AuthExchangeCode).filter(AuthExchangeCode.expires_at <= now).delete(synchronize_session=False)
+        exchange_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()
+        if exchange_code is None:
+            db.commit()
+            return None
+        expires_at = _coerce_utc(exchange_code.expires_at)
+        if expires_at <= now:
+            db.delete(exchange_code)
+            db.commit()
+            return None
+
+        payload = {
+            "user_id": exchange_code.user_id,
+            "username": exchange_code.username,
+            "access_token": exchange_code.access_token,
         }
-    return None
+        db.delete(exchange_code)
+        db.commit()
+        return payload
+    except Exception:
+        db.rollback()
+        raise
 
 
 def hash_login_key(ip: str, username: str) -> str:
@@ -530,4 +550,3 @@ def revoke_session_family(db: Session, token_family: str, reason: str = "family_
                 pass
         _revoked_jtis[sess.id] = sess.expires_at
     db.commit()
-

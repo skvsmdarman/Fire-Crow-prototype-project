@@ -7,10 +7,11 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
 from backend.app.main import app
-from backend.app.models import SecurityLog, SessionLocal, User
+from backend.app.models import AuthExchangeCode, SecurityLog, SessionLocal, User
 from backend.app.services.auth import (
     AUTH_COOKIE_NAME,
     create_access_token,
+    create_exchange_code,
     legacy_hash_password_for_tests,
     verify_access_token,
 )
@@ -92,6 +93,34 @@ def test_logout_revokes_token():
     assert response.status_code == 401
 
 
+def test_logout_revokes_token_with_redis_configured(monkeypatch):
+    class FakeRedis:
+        def __init__(self):
+            self.revoked: dict[str, tuple[int, str]] = {}
+
+        def exists(self, key: str) -> int:
+            return int(key in self.revoked)
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            self.revoked[key] = (ttl, value)
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr("backend.app.services.auth._get_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://cache.firecrow.test:6379/0")
+
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("redisrevoker"))
+    assert reg_response.status_code == 200
+    token = reg_response.json()["access_token"]
+
+    logout_response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    assert logout_response.status_code == 200
+    assert fake_redis.revoked
+
+    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
 def test_legacy_pbkdf2_hash_rehashes_on_login():
     db = SessionLocal()
     try:
@@ -125,6 +154,11 @@ def test_legacy_pbkdf2_hash_rehashes_on_login():
 
 
 def test_registration_and_login_flow():
+    original_frontend_url = settings.FRONTEND_URL
+    original_debug = settings.DEBUG
+    settings.FRONTEND_URL = "https://app.firecrow.test"
+    settings.DEBUG = False
+
     reg_response = client.post(
         "/api/v1/auth/register",
         json={
@@ -132,28 +166,42 @@ def test_registration_and_login_flow():
             "email": "newuser@example.com",
         },
     )
-    assert reg_response.status_code == 200
-    assert reg_response.json()["username"] == "newuser"
+    try:
+        assert reg_response.status_code == 200
+        assert reg_response.json()["username"] == "newuser"
+        reg_cookie = reg_response.headers["set-cookie"]
+        assert f"{AUTH_COOKIE_NAME}=" in reg_cookie
+        assert "HttpOnly" in reg_cookie
+        assert "Secure" in reg_cookie
+        assert "SameSite=lax" in reg_cookie
 
-    login_ok = client.post(
-        "/api/v1/auth/login",
-        json={
-            **_register_payload("newuser"),
-            "password": "supersecretpassword",
-        },
-    )
-    assert login_ok.status_code == 200
-    assert login_ok.json()["access_token"] is not None
+        login_ok = client.post(
+            "/api/v1/auth/login",
+            json={
+                **_register_payload("newuser"),
+                "password": "supersecretpassword",
+            },
+        )
+        assert login_ok.status_code == 200
+        assert login_ok.json()["access_token"] is not None
+        login_cookie = login_ok.headers["set-cookie"]
+        assert f"{AUTH_COOKIE_NAME}=" in login_cookie
+        assert "HttpOnly" in login_cookie
+        assert "Secure" in login_cookie
+        assert "SameSite=lax" in login_cookie
 
-    login_fail = client.post(
-        "/api/v1/auth/login",
-        json={
-            **_register_payload("newuser"),
-            "password": "wrongpassword",
-        },
-    )
-    assert login_fail.status_code == 401
-    assert "Invalid" in login_fail.json()["detail"]
+        login_fail = client.post(
+            "/api/v1/auth/login",
+            json={
+                **_register_payload("newuser"),
+                "password": "wrongpassword",
+            },
+        )
+        assert login_fail.status_code == 401
+        assert "Invalid" in login_fail.json()["detail"]
+    finally:
+        settings.FRONTEND_URL = original_frontend_url
+        settings.DEBUG = original_debug
 
 
 def test_login_requires_privacy_consent():
@@ -389,21 +437,47 @@ def test_policy_event_logging_redacts_sensitive_details():
 
 
 def test_oauth_code_exchange():
-    from backend.app.services.auth import create_exchange_code
     token = create_access_token(user_id="usr_test_oauth", username="oauth_tester")
-    code = create_exchange_code(user_id="usr_test_oauth", username="oauth_tester", token=token)
-    
-    # Act: exchange the code
-    response = client.post("/api/v1/auth/exchange", json={"code": code})
+    original_frontend_url = settings.FRONTEND_URL
+    original_debug = settings.DEBUG
+    settings.FRONTEND_URL = "https://app.firecrow.test"
+    settings.DEBUG = False
+
+    db = SessionLocal()
+    try:
+        code = create_exchange_code(user_id="usr_test_oauth", username="oauth_tester", token=token, db=db)
+
+        stored_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()
+        assert stored_code is not None
+
+        response = client.post("/api/v1/auth/exchange", json={"code": code})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["access_token"] == token
+        assert data["username"] == "oauth_tester"
+        assert data["user_id"] == "usr_test_oauth"
+        set_cookie = response.headers["set-cookie"]
+        assert f"{AUTH_COOKIE_NAME}=" in set_cookie
+        assert "HttpOnly" in set_cookie
+        assert "Secure" in set_cookie
+        assert "SameSite=lax" in set_cookie
+
+        db.expire_all()
+        consumed_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()
+        assert consumed_code is None
+
+        response_retry = client.post("/api/v1/auth/exchange", json={"code": code})
+        assert response_retry.status_code == 400
+    finally:
+        db.close()
+        settings.FRONTEND_URL = original_frontend_url
+        settings.DEBUG = original_debug
+
+
+def test_policy_context_reports_password_auth_available():
+    response = client.get("/api/v1/auth/policy-context")
     assert response.status_code == 200
-    data = response.json()
-    assert data["access_token"] == token
-    assert data["username"] == "oauth_tester"
-    assert data["user_id"] == "usr_test_oauth"
-    
-    # Act again (one-time use check): exchange code again should fail
-    response_retry = client.post("/api/v1/auth/exchange", json={"code": code})
-    assert response_retry.status_code == 400
+    assert response.json()["providers"]["password"] is True
 
 
 def test_user_activity_logging():

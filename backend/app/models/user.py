@@ -52,3 +52,17 @@ class UserSession(Base):
     is_revoked: Mapped[bool] = mapped_column(default=False, nullable=False)
     revocation_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+
+class AuthExchangeCode(Base):
+    __tablename__ = "auth_exchange_codes"
+
+    code: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

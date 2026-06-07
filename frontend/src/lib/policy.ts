@@ -44,6 +44,7 @@ export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
 
   await fetch(`${API_BASE_URL}/auth/policy-events`, {
     method: "POST",
+    credentials: "include",
     headers,
     body: JSON.stringify({
       event_type: input.eventType,

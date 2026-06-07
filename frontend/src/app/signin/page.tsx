@@ -18,6 +18,7 @@ const cx = (...args: (string | undefined | false)[]) => args.filter(Boolean).joi
 export default function SignInPage() {
   const router = useRouter();
   const authSession = useAuthSession();
+  const login = authSession.login;
   const { activePrivacyVersion, providerAvailability } = usePolicyContext();
 
   const [loading, setLoading] = useState(false);
@@ -25,10 +26,10 @@ export default function SignInPage() {
   const handledExchangeCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (authSession.token && authSession.workspace) {
+    if (authSession.hasDashboardSession && authSession.workspace) {
       router.push(`/dashboard?workspace=${encodeURIComponent(authSession.workspace)}`);
     }
-  }, [authSession.token, authSession.workspace, router]);
+  }, [authSession.hasDashboardSession, authSession.workspace, router]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -50,7 +51,7 @@ export default function SignInPage() {
         if (!active) {
           return;
         }
-        authSession.login({
+        login({
           access_token: session.access_token,
           user_id: session.user_id,
           username: session.username,
@@ -79,7 +80,7 @@ export default function SignInPage() {
     return () => {
       active = false;
     };
-  }, [router, authSession]);
+  }, [login, router]);
 
   const oauthHref = (provider: "github" | "google") => {
     const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
@@ -96,7 +97,7 @@ export default function SignInPage() {
 
   const providerCount = Number(providerAvailability.github) + Number(providerAvailability.google);
 
-  if (authSession.token) {
+  if (authSession.hasDashboardSession) {
     return (
       <main className={styles.loadingPage}>
         <div className={styles.loadingBackdrop} aria-hidden="true" />

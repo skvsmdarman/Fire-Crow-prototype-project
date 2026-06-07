@@ -232,9 +232,9 @@ def _ensure_session_and_failure_compatibility() -> None:
     tables_to_create = []
 
     # Import models here to make sure they are in Base.metadata
-    from backend.app.models.user import LoginFailure, UserSession
+    from backend.app.models.user import AuthExchangeCode, LoginFailure, UserSession
 
-    for table_name in ["login_failures", "user_sessions"]:
+    for table_name in ["login_failures", "user_sessions", "auth_exchange_codes"]:
         if table_name not in existing_tables:
             table_obj = Base.metadata.tables.get(table_name)
             if table_obj is not None:

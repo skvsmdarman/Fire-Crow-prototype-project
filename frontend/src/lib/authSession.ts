@@ -1,5 +1,5 @@
 export interface AuthSessionPayload {
-  access_token: string;
+  access_token?: string;
   user_id: string;
   username: string;
 }
@@ -41,8 +41,8 @@ function buildStoredAuthSession(): StoredAuthSession {
     userId,
     username,
     workspace,
-    hasConsoleSession: Boolean(token && workspace),
-    hasDashboardSession: Boolean(token && userId && username),
+    hasConsoleSession: Boolean(workspace),
+    hasDashboardSession: Boolean(userId && username),
   };
 }
 
@@ -108,7 +108,11 @@ export function persistAuthSession(session: AuthSessionPayload): void {
     return;
   }
 
-  window.localStorage.setItem("fc_token", session.access_token);
+  if (session.access_token) {
+    window.localStorage.setItem("fc_token", session.access_token);
+  } else {
+    window.localStorage.removeItem("fc_token");
+  }
   window.localStorage.setItem("fc_user_id", session.user_id);
   window.localStorage.setItem("fc_username", session.username);
   window.localStorage.setItem("fc_workspace", session.username);

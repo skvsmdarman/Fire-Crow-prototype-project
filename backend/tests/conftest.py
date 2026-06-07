@@ -1,9 +1,11 @@
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 from sqlalchemy.orm import close_all_sessions
+from starlette.testclient import TestClient
 
 # 1. Set environment variables at the very top to force a dedicated SQLite database for tests
 # This must happen before any backend imports are triggered.
@@ -21,6 +23,21 @@ from backend.app.services.limiter import limiter
 limiter.enabled = False
 
 from backend.app.models.database import Base, engine
+
+
+@pytest.fixture(autouse=True, scope="function")
+def clear_test_client_cookies():
+    for module in tuple(sys.modules.values()):
+        client = getattr(module, "client", None)
+        if isinstance(client, TestClient):
+            client.cookies.clear()
+
+    yield
+
+    for module in tuple(sys.modules.values()):
+        client = getattr(module, "client", None)
+        if isinstance(client, TestClient):
+            client.cookies.clear()
 
 
 @pytest.fixture(autouse=True, scope="function")

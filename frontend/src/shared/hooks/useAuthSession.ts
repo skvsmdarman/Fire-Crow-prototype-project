@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import {
   subscribeToAuthSession,
   getStoredAuthSessionSnapshot,
@@ -8,6 +8,7 @@ import {
   AuthSessionPayload,
 } from "../../lib/authSession";
 import { apiClient } from "../api/client";
+import { API_BASE_URL } from "../api/client";
 import { ENDPOINTS } from "../api/endpoints";
 
 export function useAuthSession() {
@@ -17,12 +18,12 @@ export function useAuthSession() {
     getServerAuthSessionSnapshot
   );
 
-  const login = (payload: AuthSessionPayload) => {
+  const login = useCallback((payload: AuthSessionPayload) => {
     persistAuthSession(payload);
-  };
+  }, []);
 
-  const logout = async () => {
-    if (session.token) {
+  const logout = useCallback(async () => {
+    if (session.hasDashboardSession || session.hasConsoleSession || session.token) {
       try {
         await apiClient.post(ENDPOINTS.auth.logout);
       } catch (error) {
@@ -30,21 +31,32 @@ export function useAuthSession() {
       }
     }
     clearStoredAuthSession();
-  };
+  }, [session.hasConsoleSession, session.hasDashboardSession, session.token]);
 
-  const validateSession = async (): Promise<boolean> => {
-    if (!session.token) {
-      clearStoredAuthSession();
-      return false;
-    }
+  const validateSession = useCallback(async (): Promise<boolean> => {
     try {
-      await apiClient.get(ENDPOINTS.auth.me);
+      const response = await fetch(`${API_BASE_URL}${ENDPOINTS.auth.session}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        clearStoredAuthSession();
+        return false;
+      }
+      const data = (await response.json()) as { user_id?: string; username?: string };
+      if (!data.user_id || !data.username) {
+        clearStoredAuthSession();
+        return false;
+      }
+      persistAuthSession({
+        user_id: data.user_id,
+        username: data.username,
+      });
       return true;
     } catch {
       clearStoredAuthSession();
       return false;
     }
-  };
+  }, []);
 
   return {
     token: session.token,

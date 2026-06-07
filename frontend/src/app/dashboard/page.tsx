@@ -93,6 +93,7 @@ export default function Dashboard() {
   const router = useRouter();
   const { toast } = useToast();
   const authSession = useAuthSession();
+  const validateSession = authSession.validateSession;
 
   const [activeSection, setActiveSection] = useState<Section>("home");
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -108,20 +109,32 @@ export default function Dashboard() {
   const [reportError, setReportError] = useState<string | null>(null);
   const touchStartXRef = useRef<number | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const isAuthenticated = authSession.hasDashboardSession;
 
   useEffect(() => {
-    if (authSession.token === null) {
-      router.push("/signin");
-    } else if (authSession.token) {
-      const timer = setTimeout(() => {
-        setAuthReady(true);
-      }, 0);
-      return () => clearTimeout(timer);
+    let active = true;
+
+    async function bootstrapSession() {
+      const valid = await validateSession();
+      if (!active) {
+        return;
+      }
+      if (!valid) {
+        router.replace("/signin");
+        return;
+      }
+      setAuthReady(true);
     }
-  }, [authSession.token, router]);
+
+    void bootstrapSession();
+
+    return () => {
+      active = false;
+    };
+  }, [router, validateSession]);
 
   const fetchJobs = useCallback(async () => {
-    if (!authSession.token) return;
+    if (!isAuthenticated) return;
     setLoadingJobs(true);
     try {
       const data = await apiFetchJobs();
@@ -133,11 +146,11 @@ export default function Dashboard() {
     } finally {
       setLoadingJobs(false);
     }
-  }, [authSession.token]);
+  }, [isAuthenticated]);
 
   const fetchJobDetail = useCallback(
     async (jobId: string) => {
-      if (!authSession.token) return;
+      if (!isAuthenticated) return;
       setLoadingDetail(true);
       try {
         const detail = await apiFetchJobDetail(jobId);
@@ -148,7 +161,7 @@ export default function Dashboard() {
         setLoadingDetail(false);
       }
     },
-    [authSession.token],
+    [isAuthenticated],
   );
 
   const selectedJob = useMemo(
@@ -158,6 +171,7 @@ export default function Dashboard() {
 
   // Use hook-based SSE logs
   const { logs, streamActive, startLogStream, stopLogStream } = useSSE({
+    authenticated: isAuthenticated,
     token: authSession.token,
     onJobStatusChange: useCallback(() => {
       void fetchJobs();
@@ -166,14 +180,14 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    if (!authSession.token || !selectedJobId || activeSection !== "audits") {
+    if (!isAuthenticated || !selectedJobId || activeSection !== "audits") {
       stopLogStream();
       return;
     }
 
     void startLogStream(selectedJobId);
     return stopLogStream;
-  }, [activeSection, selectedJobId, startLogStream, stopLogStream, authSession.token]);
+  }, [activeSection, isAuthenticated, selectedJobId, startLogStream, stopLogStream]);
 
   const findings = selectedJobDetail?.findings || [];
   const activeJobs = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
@@ -188,7 +202,7 @@ export default function Dashboard() {
   const recentJobs = jobs.slice(0, 4);
 
   const fetchSystemStatus = useCallback(async () => {
-    if (!authSession.token) return;
+    if (!isAuthenticated) return;
     setLoadingSystem(true);
     setSystemError("");
     try {
@@ -200,17 +214,19 @@ export default function Dashboard() {
     } finally {
       setLoadingSystem(false);
     }
-  }, [authSession.token]);
+  }, [isAuthenticated]);
 
   const openReport = useCallback(
     async (jobId: string) => {
-      if (!authSession.token) return;
+      if (!isAuthenticated) return;
       setReportError(null);
       toast("Retrieving report PDF...", "info");
       try {
         // Binary fetch bypasses request JSON parser
+        const headers = authSession.token ? { Authorization: `Bearer ${authSession.token}` } : undefined;
         const response = await fetch(`${API_BASE_URL}${ENDPOINTS.audit.report(jobId)}`, {
-          headers: { Authorization: `Bearer ${authSession.token}` }
+          credentials: "include",
+          headers,
         });
         if (!response.ok) {
           const errorBody = await response.json().catch(() => null);
@@ -228,11 +244,11 @@ export default function Dashboard() {
         toast(msg, "error");
       }
     },
-    [authSession.token, toast],
+    [authSession.token, isAuthenticated, toast],
   );
 
   const handleLaunchScan = async (repoUrl: string, repoBranch: string) => {
-    if (!authSession.token) return setSubmitError("Connect a workspace before launching an audit.");
+    if (!isAuthenticated) return setSubmitError("Connect a workspace before launching an audit.");
     if (!repoUrl.trim()) return setSubmitError("Repository URL is required.");
     setSubmitting(true);
     setSubmitError(null);
@@ -257,7 +273,7 @@ export default function Dashboard() {
   };
 
   const cancelScan = async (jobId: string) => {
-    if (!authSession.token) return;
+    if (!isAuthenticated) return;
     toast("Requesting job cancellation...", "info");
     try {
       await apiCancelJob(jobId);
@@ -277,26 +293,26 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (authSession.token) {
+    if (isAuthenticated) {
       const timer = setTimeout(() => {
         void fetchJobs();
         void fetchSystemStatus();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [fetchJobs, fetchSystemStatus, authSession.token]);
+  }, [fetchJobs, fetchSystemStatus, isAuthenticated]);
 
   useEffect(() => {
-    if (selectedJobId && authSession.token) {
+    if (selectedJobId && isAuthenticated) {
       const timer = setTimeout(() => {
         void fetchJobDetail(selectedJobId);
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [fetchJobDetail, selectedJobId, authSession.token]);
+  }, [fetchJobDetail, isAuthenticated, selectedJobId]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !authSession.token) return;
+    if (typeof window === "undefined" || !isAuthenticated) return;
     const urlParams = new URLSearchParams(window.location.search);
     const queryJobId = urlParams.get("job_id");
     if (queryJobId) {
@@ -311,16 +327,16 @@ export default function Dashboard() {
       window.history.replaceState({}, "", url.toString());
       return () => clearTimeout(timer);
     }
-  }, [authSession.token, openReport]);
+  }, [isAuthenticated, openReport]);
 
   useEffect(() => {
-    if (!selectedJob || !authSession.token || (selectedJob.status !== "queued" && selectedJob.status !== "running")) return;
+    if (!selectedJob || !isAuthenticated || (selectedJob.status !== "queued" && selectedJob.status !== "running")) return;
     const interval = window.setInterval(() => {
       void fetchJobs();
       void fetchJobDetail(selectedJob.id);
     }, 3500);
     return () => window.clearInterval(interval);
-  }, [fetchJobDetail, fetchJobs, selectedJob, authSession.token]);
+  }, [fetchJobDetail, fetchJobs, isAuthenticated, selectedJob]);
 
   const onTouchStart = (event: React.TouchEvent) => { touchStartXRef.current = event.touches[0].clientX; };
   const onTouchEnd = (event: React.TouchEvent) => {

@@ -17,6 +17,7 @@ from backend.app.models.user import User
 from backend.app.services.auth import (
     ACCESS_TOKEN_EXPIRE_SECONDS,
     create_access_token,
+    create_exchange_code,
     create_oauth_state,
     encrypt_provider_token,
     get_current_token_payload,
@@ -25,6 +26,7 @@ from backend.app.services.auth import (
     hash_password,
     password_needs_rehash,
     revoke_access_token,
+    verify_and_consume_exchange_code,
     verify_oauth_state,
     verify_password,
     check_login_lockout,
@@ -286,19 +288,25 @@ class ExchangePayload(BaseModel):
 
 @router.post("/exchange")
 @limiter.limit("20/minute")
-async def exchange_token(payload: ExchangePayload, request: Request):
-    from backend.app.services.auth import verify_and_consume_exchange_code
-    data = verify_and_consume_exchange_code(payload.code)
+async def exchange_token(
+    payload: ExchangePayload,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    data = verify_and_consume_exchange_code(payload.code, db=db)
     if not data:
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired exchange code"
         )
-    return {
-        "access_token": data["access_token"],
-        "username": data["username"],
-        "user_id": data["user_id"],
-    }
+    _set_session_cookie(response, data["access_token"])
+    return TokenResponse(
+        access_token=data["access_token"],
+        token_type="bearer",
+        username=data["username"],
+        user_id=data["user_id"],
+    )
 
 
 @router.get("/policy-context")
@@ -309,7 +317,7 @@ async def policy_context():
         "providers": {
             "github": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
             "google": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
-            "password": False,
+            "password": True,
         },
     }
 
@@ -352,7 +360,12 @@ async def create_policy_event(
 
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("10/minute")
-async def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)):
+async def register(
+    request: Request,
+    response: Response,
+    payload: RegisterRequest,
+    db: Session = Depends(get_db),
+):
     username = _normalize_username(payload.username)
     email = _normalize_email(payload.email)
     if not username:
@@ -402,6 +415,7 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    _set_session_cookie(response, token)
 
     record_security_event(
         db,
@@ -437,7 +451,12 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("20/minute")
-async def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+async def login(
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+):
     username = _normalize_username(payload.username)
     if not username:
         raise HTTPException(status_code=400, detail="Workspace name is required.")
@@ -484,6 +503,7 @@ async def login(request: Request, payload: LoginRequest, db: Session = Depends(g
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    _set_session_cookie(response, token)
 
     record_security_event(
         db,
@@ -739,8 +759,7 @@ async def github_callback(
         },
     )
 
-    from backend.app.services.auth import create_exchange_code
-    code = create_exchange_code(user_id=user.id, username=user.username, token=token)
+    code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
     response = RedirectResponse(f"{_frontend_signin_url()}?code={code}")
     _set_session_cookie(response, token)
     return response
@@ -903,8 +922,7 @@ async def google_callback(
         },
     )
 
-    from backend.app.services.auth import create_exchange_code
-    code = create_exchange_code(user_id=user.id, username=user.username, token=token)
+    code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
     response = RedirectResponse(f"{_frontend_signin_url()}?code={code}")
     _set_session_cookie(response, token)
     return response

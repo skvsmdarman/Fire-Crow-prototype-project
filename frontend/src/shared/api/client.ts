@@ -48,6 +48,7 @@ export async function request<T>(path: string, options: FetchOptions = {}): Prom
   try {
     response = await fetch(url, {
       ...rest,
+      credentials: rest.credentials ?? "include",
       headers: reqHeaders,
     });
   } catch {
