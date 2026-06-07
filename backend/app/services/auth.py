@@ -15,6 +15,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.app.config import settings
+from backend.app.services.crypto import crypto_manager
 
 logger = logging.getLogger("firecrow.services.auth")
 
@@ -314,6 +315,17 @@ def legacy_hash_password_for_tests(password: str) -> str:
     salt = os.urandom(16)
     pw_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
     return f"{salt.hex()}:{pw_hash.hex()}"
+
+
+def encrypt_provider_token(token: str) -> str:
+    return crypto_manager.encrypt_secret(token)
+
+
+def decrypt_provider_token(token: str | None) -> str:
+    if not token:
+        return ""
+    decrypted = crypto_manager.decrypt_secret(token)
+    return "" if decrypted == "ERROR_DECRYPTING" else decrypted
 
 
 _exchange_codes: dict[str, dict] = {}

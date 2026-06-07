@@ -2,13 +2,13 @@ import os
 import subprocess
 import shutil
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from backend.app.config import settings
 
 logger = logging.getLogger("firecrow.agents.recon")
 
 
-def clone_repository(repo_url: str, branch: str, target_dir: str) -> bool:
+def clone_repository(repo_url: str, branch: str, target_dir: str, github_token: Optional[str] = None) -> bool:
     """Clones a remote git repository branch to target_dir using subprocess."""
     try:
         # If target directory already exists, clear it first
@@ -24,11 +24,12 @@ def clone_repository(repo_url: str, branch: str, target_dir: str) -> bool:
             return False
 
         clone_url = repo_url
-        if settings.GITHUB_TOKEN and "github.com" in repo_url.lower() and "x-access-token" not in repo_url:
+        resolved_token = github_token or settings.GITHUB_TOKEN
+        if resolved_token and "github.com" in repo_url.lower() and "x-access-token" not in repo_url:
             if repo_url.startswith("https://"):
-                clone_url = repo_url.replace("https://", f"https://x-access-token:{settings.GITHUB_TOKEN}@")
+                clone_url = repo_url.replace("https://", f"https://x-access-token:{resolved_token}@")
             elif repo_url.startswith("http://"):
-                clone_url = repo_url.replace("http://", f"http://x-access-token:{settings.GITHUB_TOKEN}@")
+                clone_url = repo_url.replace("http://", f"http://x-access-token:{resolved_token}@")
 
         logger.info(f"Cloning repo (branch: {branch}) into {target_dir}")
         # Run git clone with a timeout of 60 seconds and an argument isolator (--)
@@ -131,7 +132,7 @@ def detect_tech_stack(target_dir: str) -> Tuple[List[str], List[str], List[str]]
     return tech_stack, dependency_manifests, entry_points
 
 
-def run_recon(job_id: str, repo_url: str, branch: str) -> dict:
+def run_recon(job_id: str, repo_url: str, branch: str, github_token: Optional[str] = None) -> dict:
     """
     Main entry point for RECON agent.
     Clones the target repository and performs static composition analysis.
@@ -152,7 +153,7 @@ def run_recon(job_id: str, repo_url: str, branch: str) -> dict:
             "error": None
         }
 
-    success = clone_repository(repo_url, branch, target_dir)
+    success = clone_repository(repo_url, branch, target_dir, github_token=github_token)
     if not success:
         return {
             "clone_path": "",

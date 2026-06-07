@@ -16,6 +16,9 @@ class User(Base):
     tenant_id: Mapped[Optional[str]] = mapped_column(String(255), index=True, nullable=True)
     role_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     github_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    github_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    github_token_scopes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    github_token_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     privacy_policy_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     privacy_policy_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -26,4 +29,3 @@ class User(Base):
     last_logout_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     activity_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-

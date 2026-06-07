@@ -235,7 +235,12 @@ def execute_phase(
 
 
 def recon_body(db: Session, state: AuditState) -> Dict[str, Any]:
-    recon_result = run_recon(job_id=state.job_id, repo_url=state.repo_url, branch=state.repo_branch)
+    recon_result = run_recon(
+        job_id=state.job_id,
+        repo_url=state.repo_url,
+        branch=state.repo_branch,
+        github_token=state.github_access_token or None,
+    )
     if recon_result.get("error"):
         raise ValueError(recon_result["error"])
 
@@ -531,7 +536,8 @@ def github_mcp_body(db: Session, state: AuditState) -> Dict[str, Any]:
         job_id=state.job_id,
         repo_url=state.repo_url,
         findings=all_findings,
-        remediations=state.remediations
+        remediations=state.remediations,
+        github_token=state.github_access_token or None,
     )
     for log_msg in result.get("github_mcp_logs", []):
         log_agent_message(db, state.job_id, "GITHUB_MCP", log_msg)

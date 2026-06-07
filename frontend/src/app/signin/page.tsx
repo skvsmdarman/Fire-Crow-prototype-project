@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion } from "framer-motion";
 import PolicyLink from "../../components/PolicyLink";
 import {
@@ -48,6 +48,7 @@ export default function SignInPage() {
   // Status State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const handledExchangeCodeRef = useRef<string | null>(null);
 
   // Policy Context
   const [activePrivacyVersion, setActivePrivacyVersion] = useState(PRIVACY_POLICY_VERSION);
@@ -97,10 +98,67 @@ export default function SignInPage() {
     }
   }, [browserSession.hasConsoleSession, browserSession.workspace, router]);
 
-  const getDashboardRedirectUrl = () => {
-    const targetWorkspace = workspace.trim() || "workspace";
+  const getDashboardRedirectUrl = (workspaceOverride?: string) => {
+    const targetWorkspace = workspaceOverride?.trim() || workspace.trim() || "workspace";
     return `/dashboard?workspace=${encodeURIComponent(targetWorkspace)}`;
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const code = new URLSearchParams(window.location.search).get("code") ?? "";
+    if (!code || handledExchangeCodeRef.current === code) {
+      return;
+    }
+
+    let active = true;
+    handledExchangeCodeRef.current = code;
+    setLoading(true);
+    setError("");
+
+    async function finishOauthSignIn() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/exchange`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.detail || "Unable to finish sign-in.");
+        }
+
+        const session = (await response.json()) as AuthSession;
+        if (!active) {
+          return;
+        }
+        persistAuthSession(session);
+        router.replace(`/dashboard?workspace=${encodeURIComponent(session.username)}`);
+      } catch (authError) {
+        if (!active) {
+          return;
+        }
+        const errMsg = authError instanceof Error ? authError.message : "";
+        setError(errMsg || "Unable to finish sign-in.");
+        if (typeof window !== "undefined") {
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.delete("code");
+          window.history.replaceState({}, "", nextUrl.toString());
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void finishOauthSignIn();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const oauthHref = (provider: "github" | "google") => {
     const url = new URL(`${API_BASE_URL}/auth/${provider}`);
@@ -219,7 +277,7 @@ export default function SignInPage() {
             <p className={styles.eyebrow}>Workspace access</p>
             <h2>Open your workspace</h2>
             <p>
-              Sign in with your credentials or linking provider to access your console.
+              Sign in with your credentials or GitHub access to audit private repositories and create remediation PRs.
             </p>
           </div>
 

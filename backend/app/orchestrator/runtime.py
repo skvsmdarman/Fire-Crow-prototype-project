@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal
+from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
 from backend.app.orchestrator.maestro import cleanup_resources, maestro_graph
 from backend.app.orchestrator.runtime_context import (
     JobCancellationRequested,
@@ -13,6 +13,7 @@ from backend.app.orchestrator.runtime_context import (
     reset_runtime_tracker,
 )
 from backend.app.schemas import AuditState, JobStatus
+from backend.app.services.auth import decrypt_provider_token
 
 logger = logging.getLogger("firecrow.orchestrator.runtime")
 
@@ -35,6 +36,15 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
         if not job:
             raise RuntimeError(f"Job {job_id} not found in database.")
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            initial_state.github_access_token = decrypt_provider_token(user.github_access_token)
+            initial_state.github_token_scopes = [
+                scope.strip()
+                for scope in (user.github_token_scopes or "").split(",")
+                if scope.strip()
+            ]
 
         if job.cancel_requested:
             raise JobCancellationRequested("Cancellation requested before orchestration started.")

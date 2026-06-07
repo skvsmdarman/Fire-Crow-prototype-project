@@ -19,6 +19,7 @@ from backend.app.services.auth import (
     AUTH_COOKIE_NAME,
     create_access_token,
     create_oauth_state,
+    encrypt_provider_token,
     get_current_token_payload,
     get_current_user,
     get_optional_current_user,
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 PRIVACY_POLICY_VERSION = "2026-06-06"
 TERMS_VERSION = "2026-06-06"
+GITHUB_OAUTH_SCOPES = ("repo", "workflow", "read:org", "user:email")
 LOGIN_FAILURE_WINDOW = timedelta(minutes=10)
 LOGIN_FAILURE_LIMIT = 5
 _login_failures: dict[str, deque[datetime]] = defaultdict(deque)
@@ -236,6 +238,26 @@ def _frontend_signin_url() -> str:
     return f"{settings.FRONTEND_URL.rstrip('/')}/signin"
 
 
+def _parse_scope_string(scope_string: Optional[str]) -> list[str]:
+    if not scope_string:
+        return []
+    return sorted({scope.strip() for scope in scope_string.split(",") if scope.strip()})
+
+
+def _github_provider_payload(user: User) -> dict:
+    scopes = _parse_scope_string(user.github_token_scopes)
+    return {
+        "connected": bool(user.github_id and user.github_access_token),
+        "private_repo_access": "repo" in scopes,
+        "pr_write_access": "repo" in scopes,
+        "workflow_write_access": "workflow" in scopes,
+        "org_read_access": "read:org" in scopes,
+        "scopes": scopes,
+        "required_scopes": list(GITHUB_OAUTH_SCOPES),
+        "token_persisted": bool(user.github_access_token),
+    }
+
+
 def _user_session_payload(user: User) -> dict:
     return {
         "user_id": user.id,
@@ -246,6 +268,10 @@ def _user_session_payload(user: User) -> dict:
         "privacy_policy_accepted_at": user.privacy_policy_accepted_at.isoformat()
         if user.privacy_policy_accepted_at
         else None,
+        "providers": {
+            "github": _github_provider_payload(user),
+            "google": {"connected": bool(user.google_id)},
+        },
     }
 
 
@@ -564,7 +590,7 @@ async def github_login(
     params = {
         "client_id": settings.GITHUB_CLIENT_ID,
         "redirect_uri": _oauth_redirect_url(request, "github_callback"),
-        "scope": "repo,user:email",
+        "scope": ",".join(GITHUB_OAUTH_SCOPES),
         "state": oauth_state,
     }
     url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
@@ -606,6 +632,7 @@ async def github_callback(
                 status_code=400,
                 detail=f"GitHub OAuth error: {token_data.get('error_description', 'No access token')}",
             )
+        granted_scope_string = str(token_data.get("scope") or "")
 
         user_res = await client.get(
             "https://api.github.com/user",
@@ -613,6 +640,8 @@ async def github_callback(
         )
         if user_res.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to retrieve user profile from GitHub.")
+        if not granted_scope_string:
+            granted_scope_string = str(getattr(user_res, "headers", {}).get("X-OAuth-Scopes", ""))
 
         profile = user_res.json()
         github_id = str(profile.get("id"))
@@ -651,6 +680,9 @@ async def github_callback(
     if not user.first_login_at:
         user.first_login_at = now
     user.last_login_at = now
+    user.github_access_token = encrypt_provider_token(access_token)
+    user.github_token_scopes = ",".join(_parse_scope_string(granted_scope_string))
+    user.github_token_updated_at = now
     
     tz_name = oauth_state.get("timezone")
     reg_name = oauth_state.get("region")
@@ -678,6 +710,7 @@ async def github_callback(
             "username": user.username,
             "timezone": tz_name,
             "region": reg_name,
+            "github_scopes": _parse_scope_string(granted_scope_string),
         },
     )
     record_security_event(

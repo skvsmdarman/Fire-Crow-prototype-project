@@ -19,8 +19,8 @@ class CryptoManager:
         self.fernet_key = base64.urlsafe_b64encode(key_hash)
         self.cipher = Fernet(self.fernet_key)
         
-    def encrypt_finding(self, plaintext: str) -> str:
-        """Encrypts sensitive finding data before database storage."""
+    def encrypt_secret(self, plaintext: str) -> str:
+        """Encrypts a generic sensitive string before database storage."""
         if not plaintext:
             return plaintext
         try:
@@ -32,8 +32,8 @@ class CryptoManager:
             encoded = base64.b64encode(plaintext.encode("utf-8")).decode("utf-8")
             return f"ENC[{encoded}]"
 
-    def decrypt_finding(self, ciphertext: str) -> str:
-        """Decrypts sensitive finding data from database storage."""
+    def decrypt_secret(self, ciphertext: str) -> str:
+        """Decrypts a generic sensitive string from database storage."""
         if not ciphertext or not ciphertext.startswith("ENC["):
             return ciphertext
         
@@ -50,5 +50,13 @@ class CryptoManager:
             except Exception:
                 logger.error("Failed to decrypt finding data using Fernet or legacy base64 fallback.")
                 return "ERROR_DECRYPTING"
+
+    def encrypt_finding(self, plaintext: str) -> str:
+        """Backwards-compatible alias for finding encryption."""
+        return self.encrypt_secret(plaintext)
+
+    def decrypt_finding(self, ciphertext: str) -> str:
+        """Backwards-compatible alias for finding decryption."""
+        return self.decrypt_secret(ciphertext)
 
 crypto_manager = CryptoManager()

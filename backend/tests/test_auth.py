@@ -1,6 +1,7 @@
 import json
 import uuid
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
@@ -77,6 +78,7 @@ def test_auth_session_accepts_cookie():
 
     assert response.status_code == 200
     assert response.json()["username"] == "cookietester"
+    assert response.json()["providers"]["github"]["connected"] is False
 
 
 def test_logout_revokes_token():
@@ -193,11 +195,30 @@ def test_oauth_redirects_fail_when_provider_not_configured():
     assert "not configured" in google_response.json()["detail"]
 
 
+def test_github_oauth_requests_private_repo_pr_scopes(monkeypatch):
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
+
+    response = client.get(
+        "/api/v1/auth/github",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 307}
+    query = parse_qs(urlparse(response.headers["location"]).query)
+    assert query["scope"] == ["repo,workflow,read:org,user:email"]
+
+
 def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     class FakeResponse:
-        def __init__(self, payload: Any, status_code: int = 200):
+        def __init__(self, payload: Any, status_code: int = 200, headers: dict[str, str] | None = None):
             self._payload = payload
             self.status_code = status_code
+            self.headers = headers or {}
 
         def json(self):
             return self._payload
@@ -210,11 +231,14 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
             return None
 
         async def post(self, *args, **kwargs):
-            return FakeResponse({"access_token": "github-oauth-token"})
+            return FakeResponse({"access_token": "github-oauth-token", "scope": "repo,workflow,read:org,user:email"})
 
         async def get(self, url, *args, **kwargs):
             if url.endswith("/user"):
-                return FakeResponse({"id": 123, "login": "octo", "email": "Octo@Example.com"})
+                return FakeResponse(
+                    {"id": 123, "login": "octo", "email": "Octo@Example.com"},
+                    headers={"X-OAuth-Scopes": "repo,workflow,read:org,user:email"},
+                )
             return FakeResponse([])
 
     monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
@@ -245,6 +269,16 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
     assert "SameSite=lax" in set_cookie
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == "octo").first()
+        assert user is not None
+        assert user.github_access_token is not None
+        assert user.github_access_token.startswith("ENC[")
+        assert user.github_token_scopes == "read:org,repo,user:email,workflow"
+    finally:
+        db.close()
 
 
 def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):

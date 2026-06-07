@@ -200,7 +200,13 @@ class GitMCPClient:
             logger.error(f"Failed to invoke GitMCP tool {tool_name}: {exc}")
         return None
 
-def run_github_mcp(job_id: str, repo_url: str, findings: List[Finding], remediations: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+def run_github_mcp(
+    job_id: str,
+    repo_url: str,
+    findings: List[Finding],
+    remediations: List[Dict[str, Any]] | None = None,
+    github_token: str | None = None,
+) -> Dict[str, Any]:
     """
     Main entry point for GITHUB_MCP agent.
     Connects to the repository's gitmcp.io remote server to raise issues/PRs.
@@ -220,7 +226,8 @@ def run_github_mcp(job_id: str, repo_url: str, findings: List[Finding], remediat
     logs = [f"Initiated GitHub MCP agent for {owner}/{repo}"]
 
     # 2. Check mock/debug
-    is_mock = "example/" in repo_url or settings.DEBUG and not settings.GITHUB_TOKEN
+    resolved_token = github_token or settings.GITHUB_TOKEN
+    is_mock = "example/" in repo_url or settings.DEBUG and not resolved_token
     if is_mock:
         logs.append("Running in development/mock mode. Simulating GitHub Issue creation and PR creation.")
         logs.append(f"Simulated creation of security issue on repository {owner}/{repo}.")
@@ -246,7 +253,7 @@ def run_github_mcp(job_id: str, repo_url: str, findings: List[Finding], remediat
     issue_body = format_findings_markdown(repo_url, findings)
 
     # 4. Attempt GitMCP connection
-    token = settings.GITHUB_TOKEN
+    token = resolved_token
     client = GitMCPClient(owner=owner, repo=repo, token=token)
     
     logs.append(f"Attempting to connect to gitmcp.io remote server for {owner}/{repo}...")

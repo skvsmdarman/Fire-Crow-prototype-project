@@ -4,6 +4,7 @@ import logging
 import json
 import urllib.error
 from email.message import Message
+from subprocess import CompletedProcess
 from backend.app.agents.recon import run_recon, detect_tech_stack
 from backend.app.agents.sast import run_sast, scan_for_secrets, scan_for_unsafe_code
 from backend.app.agents.dependency_scan import run_dependency_scan
@@ -17,6 +18,30 @@ def test_recon_mock_path():
     assert res["error"] is None
     assert "Python" in res["tech_stack"]
     assert "main.py" in res["entry_points"]
+
+
+def test_recon_prefers_user_github_token_for_clone(monkeypatch):
+    captured: dict[str, str] = {}
+
+    def fake_run(command, **kwargs):
+        captured["clone_url"] = command[-2]
+        target_dir = command[-1]
+        os.makedirs(os.path.join(target_dir, ".git", "hooks"), exist_ok=True)
+        return CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("backend.app.agents.recon.subprocess.run", fake_run)
+    monkeypatch.setattr("backend.app.agents.recon.os.path.getsize", lambda _path: 0)
+    monkeypatch.setattr(settings, "GITHUB_TOKEN", "server-token")
+
+    result = run_recon(
+        "job-private-repo",
+        "https://github.com/owner/private-repo",
+        "main",
+        github_token="user-token",
+    )
+
+    assert result["error"] is None
+    assert captured["clone_url"].startswith("https://x-access-token:user-token@github.com/")
 
 
 def test_tech_stack_detection(tmp_path):

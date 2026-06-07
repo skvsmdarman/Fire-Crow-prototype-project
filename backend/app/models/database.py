@@ -81,6 +81,12 @@ def _ensure_user_compatibility() -> None:
     with engine.begin() as conn:
         if "github_id" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_id VARCHAR(255)")
+        if "github_access_token" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_access_token TEXT")
+        if "github_token_scopes" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_token_scopes TEXT")
+        if "github_token_updated_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_token_updated_at TIMESTAMP")
         if "google_id" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN google_id VARCHAR(255)")
         if "privacy_policy_version" not in columns:

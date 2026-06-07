@@ -55,6 +55,8 @@ class AuditState(BaseModel):
     repo_branch: str = "main"
     repo_owner: str = ""
     repo_name: str = ""
+    github_access_token: str = ""
+    github_token_scopes: list[str] = []
     created_at: datetime = PydanticField(default_factory=get_utc_now)
 
     # --- Phase Tracking ---
