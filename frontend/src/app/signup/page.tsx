@@ -126,7 +126,8 @@ export default function SignUpPage() {
   };
 
   const oauthHref = (provider: "github" | "google") => {
-    const url = new URL(`${API_BASE_URL}/auth/${provider}`);
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const url = new URL(`${API_BASE_URL}/auth/${provider}`, base);
     url.searchParams.set("privacy_policy_accepted", "true");
     url.searchParams.set("privacy_policy_version", activePrivacyVersion);
     if (typeof window !== "undefined") {
@@ -134,7 +135,7 @@ export default function SignUpPage() {
       url.searchParams.set("timezone", tz);
       url.searchParams.set("region", detectRegionFromTimezone(tz));
     }
-    return url.toString();
+    return url.toString().replace(base, "");
   };
 
   const handleProviderClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
