@@ -53,3 +53,27 @@ def test_settings_rejects_latest_scanner_image_in_production():
             DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
             FIRE_CROW_SCANNER_IMAGE="kalilinux/kali-rolling:latest",
         )
+
+
+def test_settings_accepts_comma_separated_github_oauth_scopes_from_env(monkeypatch):
+    monkeypatch.setenv("GITHUB_OAUTH_SCOPES", "repo, workflow, read:org, user:email")
+
+    configured = Settings(
+        DEBUG=False,
+        SECRET_KEY="x" * 40,
+        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
+    )
+
+    assert configured.GITHUB_OAUTH_SCOPES == ["repo", "workflow", "read:org", "user:email"]
+
+
+def test_settings_accepts_json_github_oauth_scopes_from_env(monkeypatch):
+    monkeypatch.setenv("GITHUB_OAUTH_SCOPES", '["repo","workflow","read:org","user:email"]')
+
+    configured = Settings(
+        DEBUG=False,
+        SECRET_KEY="x" * 40,
+        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
+    )
+
+    assert configured.GITHUB_OAUTH_SCOPES == ["repo", "workflow", "read:org", "user:email"]

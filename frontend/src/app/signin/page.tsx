@@ -221,10 +221,7 @@ export default function SignInPage() {
               .
             </p>
             <p style={{ marginTop: "12px" }}>
-              Need access?{" "}
-              <Link href="/signup" style={{ color: "#5cc8ff", fontWeight: "bold" }}>
-                Continue with OAuth
-              </Link>
+              Use GitHub or Google above to continue.
             </p>
           </footer>
         </framerMotion.section>

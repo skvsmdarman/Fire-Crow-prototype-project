@@ -1,7 +1,9 @@
 import os
+import json
 from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator
+from typing import Annotated, Any
+from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
+from pydantic import Field, field_validator, model_validator
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -21,7 +23,7 @@ class Settings(BaseSettings):
     # --- Security and Compliance Constants ---
     PRIVACY_POLICY_VERSION: str = Field(default="2026-06-06", validation_alias="PRIVACY_POLICY_VERSION")
     TERMS_VERSION: str = Field(default="2026-06-06", validation_alias="TERMS_VERSION")
-    GITHUB_OAUTH_SCOPES: list[str] = Field(
+    GITHUB_OAUTH_SCOPES: Annotated[list[str], NoDecode] = Field(
         default=["repo", "workflow", "read:org", "user:email"],
         validation_alias="GITHUB_OAUTH_SCOPES"
     )
@@ -141,6 +143,30 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @field_validator("GITHUB_OAUTH_SCOPES", mode="before")
+    @classmethod
+    def parse_github_oauth_scopes(cls, value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        if value is None:
+            return ["repo", "workflow", "read:org", "user:email"]
+
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return ["repo", "workflow", "read:org", "user:email"]
+
+            if raw.startswith("["):
+                parsed = json.loads(raw)
+                if not isinstance(parsed, list):
+                    raise ValueError("GITHUB_OAUTH_SCOPES JSON value must be a list.")
+                return [str(item).strip() for item in parsed if str(item).strip()]
+
+            return [scope.strip() for scope in raw.split(",") if scope.strip()]
+
+        raise ValueError("Unsupported GITHUB_OAUTH_SCOPES value.")
 
     @model_validator(mode="after")
     def validate_production_keys(self) -> "Settings":

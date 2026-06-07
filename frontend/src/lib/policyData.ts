@@ -16,7 +16,7 @@ export const TERMS_SECTIONS: PolicySection[] = [
   {
     id: "user-accounts",
     title: "2. User Accounts & Security",
-    body: "To access the platform, you must register a workspace account. You are solely responsible for maintaining the confidentiality of your account credentials, passwords, and API tokens. You agree to notify us immediately of any unauthorized access. Nova Devs is not liable for any losses caused by unauthorized use of your account, and you may be held liable for activities occurring under your credentials.",
+    body: "To access the platform, you must use a configured OAuth sign-in provider such as GitHub or Google. You are solely responsible for maintaining control of your provider account, connected sessions, and any linked API tokens. You agree to notify us immediately of any unauthorized access. Nova Devs is not liable for losses caused by unauthorized use of your account, and you may be held liable for activities occurring under your credentials.",
     regions: ["global", "in", "eu", "us"]
   },
   {
@@ -157,7 +157,7 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
   {
     id: "data-collection",
     title: "2. Types of Data We Process",
-    body: "We process: (a) account identifiers (emails, hashed credentials, workspace names); (b) audit targets (repository URLs, branch names, code manifests); (c) security findings (secrets, dependency reports, vulnerability code snippets); (d) legal consents (notice click timestamps, IP addresses, timezone options, and browser user-agents recorded in Neon DB to preserve a compliance log).",
+    body: "We process: (a) account identifiers such as usernames, emails, provider identities, and connected-session metadata; (b) audit targets including repository URLs, branch names, and code manifests; (c) security findings such as secrets, dependency reports, and vulnerability code snippets; and (d) legal consents including notice click timestamps, IP addresses, timezone options, and browser user-agents recorded to preserve a compliance log.",
     regions: ["global", "in", "eu", "us"]
   },
   {
