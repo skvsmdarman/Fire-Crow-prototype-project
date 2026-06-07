@@ -67,6 +67,25 @@ class Settings(BaseSettings):
     # --- AI Models API Keys ---
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-3.5-flash", validation_alias="GEMINI_MODEL")
+
+    # --- Gemini Tuning ---
+    GEMINI_FALLBACK_MODEL: str = Field(default="gemini-1.5-flash", validation_alias="GEMINI_FALLBACK_MODEL")
+    GEMINI_ENABLE_FALLBACK_MODEL: bool = Field(default=True, validation_alias="GEMINI_ENABLE_FALLBACK_MODEL")
+    GEMINI_MAX_ATTEMPTS: int = Field(default=3, validation_alias="GEMINI_MAX_ATTEMPTS")
+    GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias="GEMINI_TIMEOUT_SECONDS")
+    GEMINI_MAX_FINDINGS_PER_CALL: int = Field(default=50, validation_alias="GEMINI_MAX_FINDINGS_PER_CALL")
+    GEMINI_MAX_PROMPT_CHARS: int = Field(default=100000, validation_alias="GEMINI_MAX_PROMPT_CHARS")
+    GEMINI_DAILY_SOFT_LIMIT: int = Field(default=1000, validation_alias="GEMINI_DAILY_SOFT_LIMIT")
+    GEMINI_MIN_SECONDS_BETWEEN_CALLS: int = Field(default=1, validation_alias="GEMINI_MIN_SECONDS_BETWEEN_CALLS")
+
+    # --- Reporter Tuning ---
+    REPORT_COMPACT_MODE: bool = Field(default=False, validation_alias="REPORT_COMPACT_MODE")
+    REPORT_MAX_PAGES: int = Field(default=50, validation_alias="REPORT_MAX_PAGES")
+    REPORT_MAX_FINDINGS_IN_PDF: int = Field(default=100, validation_alias="REPORT_MAX_FINDINGS_IN_PDF")
+    REPORT_MAX_EVIDENCE_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_EVIDENCE_CHARS")
+    REPORT_MAX_REMEDIATION_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_REMEDIATION_CHARS")
+    REPORT_INCLUDE_DETAILED_FINDINGS: bool = Field(default=True, validation_alias="REPORT_INCLUDE_DETAILED_FINDINGS")
+    REPORT_STORE_FULL_ARTIFACT_JSON: bool = Field(default=True, validation_alias="REPORT_STORE_FULL_ARTIFACT_JSON")
     OPENAI_API_KEY: str = Field(default="", validation_alias="OPENAI_API_KEY")
 
     model_config = SettingsConfigDict(
