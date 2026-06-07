@@ -4,7 +4,7 @@ import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from backend.app.services.limiter import limiter
 from sqlalchemy.orm import Session
 from typing import List
@@ -12,7 +12,16 @@ from urllib.parse import unquote, urlparse
 
 from backend.app.api.audit_queries import get_owned_job_or_404
 from backend.app.config import WORKSPACE_DIR, settings
-from backend.app.models import get_db, AuditJob, FindingModel, AgentLog, User, Membership
+from backend.app.models import (
+    AgentLog,
+    AuditArtifact,
+    AuditJob,
+    AuthorizationAttestation,
+    FindingModel,
+    Membership,
+    User,
+    get_db,
+)
 from sqlalchemy import or_
 from backend.app.schemas import (
     JobDetailResponse,
@@ -137,7 +146,21 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
     return any(hostname == allowed_host or hostname.endswith(f".{allowed_host}") for allowed_host in allowed_hosts)
 
 
-from backend.app.models import get_db, AuditJob, FindingModel, AgentLog, User, Membership, AuthorizationAttestation
+def _persisted_report_html_response(db: Session, job_id: str) -> HTMLResponse | None:
+    artifact = (
+        db.query(AuditArtifact)
+        .filter(
+            AuditArtifact.job_id == job_id,
+            AuditArtifact.artifact_type == "report_html",
+        )
+        .order_by(AuditArtifact.created_at.desc())
+        .first()
+    )
+    if artifact and artifact.data_text:
+        return HTMLResponse(content=artifact.data_text)
+    return None
+
+
 import hashlib
 
 def _sha256_hash(val: str | None) -> str | None:
@@ -327,10 +350,17 @@ async def download_report(
                     media_type = "text/html"
 
                 if not file_path.exists():
+                    html_response = _persisted_report_html_response(db, job_id)
+                    if html_response is not None:
+                        return html_response
                     raise HTTPException(status_code=404, detail="Report file not found on disk")
 
                 return FileResponse(path=file_path, filename=file_name, media_type=media_type)
-        except HTTPException:
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                html_response = _persisted_report_html_response(db, job_id)
+                if html_response is not None:
+                    return html_response
             raise
         except Exception as e:
             logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
@@ -353,6 +383,9 @@ async def download_report(
             media_type = "text/html"
 
         if not file_path.exists():
+            html_response = _persisted_report_html_response(db, job_id)
+            if html_response is not None:
+                return html_response
             raise HTTPException(status_code=404, detail="Report file not found on disk")
 
         return FileResponse(path=file_path, filename=file_name, media_type=media_type)

@@ -33,7 +33,7 @@ from backend.app.agents.dependency_scan import run_dependency_scan
 from backend.app.agents.iac_scan import run_iac_scan
 from backend.app.agents.ai_analyzer import run_ai_analyzer
 from backend.app.agents.google_agent import run_google_agent
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, PhaseLedgerModel, AuthorizationAttestation
+from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, PhaseLedgerModel, AuthorizationAttestation, AuditArtifact
 from backend.app.orchestrator.runtime_context import (
     JobCancellationRequested,
     apply_runtime_updates,
@@ -731,6 +731,16 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         findings=all_findings,
         scanner_execution=state.scanner_execution,
     )
+
+    db.add(
+        AuditArtifact(
+            job_id=state.job_id,
+            artifact_type="report_html",
+            name=pdf_filename.replace(".pdf", ".html"),
+            data_text=html_content,
+        )
+    )
+    db.commit()
 
     success = generator.compile_pdf(html_content, pdf_path)
     if not success:

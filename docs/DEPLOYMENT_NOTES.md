@@ -62,6 +62,7 @@ This means a hosted deployment can still serve the UI/API while never performing
 ## Object Storage
 
 - Reports and evidence can stay local if object storage is not configured.
+- Completed jobs now keep a database-backed HTML snapshot of the generated report, so the authenticated report route can still return a report even if a local report file disappears after a redeploy.
 - For persistent multi-instance deployments, configure `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, and `R2_BUCKET_NAME`.
 - Legacy `CLOUDFLARE_R2_*` aliases are still honored in some services.
 

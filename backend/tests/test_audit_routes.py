@@ -3,7 +3,7 @@ import pytest
 
 from backend.app.main import app
 from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User, get_db
+from backend.app.models import AgentLog, AuditArtifact, AuditJob, FindingModel, SessionLocal, User, get_db
 from backend.app.schemas import JobStatus, Severity
 
 client = TestClient(app)
@@ -229,6 +229,49 @@ def test_download_report_serves_local_report(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF-1.4")
+
+
+def test_download_report_falls_back_to_persisted_html_when_local_artifact_is_missing():
+    headers, user_id = _auth_session("report-html-fallback")
+
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditJob(
+                id="job-report-html-fallback",
+                user_id=user_id,
+                repo_url="https://example.com/report",
+                repo_branch="main",
+                status=JobStatus.COMPLETED,
+                report_pdf_url="artifact://artifact-missing-report",
+            )
+        )
+        db.add(
+            AuditArtifact(
+                id="artifact-missing-report",
+                job_id="job-report-html-fallback",
+                artifact_type="report_pdf",
+                name="job-report.pdf",
+            )
+        )
+        db.add(
+            AuditArtifact(
+                id="artifact-html-snapshot",
+                job_id="job-report-html-fallback",
+                artifact_type="report_html",
+                name="job-report.html",
+                data_text="<html><body><h1>Persisted report</h1></body></html>",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/audit/job/job-report-html-fallback/report", headers=headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Persisted report" in response.text
 
 
 @pytest.mark.parametrize("report_url", ["/reports/../secret.pdf", "file:///tmp/report.pdf", "https://evil.example/report.pdf"])
