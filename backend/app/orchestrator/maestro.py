@@ -17,6 +17,15 @@ from backend.app.agents import (
     run_recon,
     run_sast,
 )
+from backend.app.agents.api_surface import api_surface_body
+from backend.app.agents.secret_history import secret_history_body
+from backend.app.agents.sbom_graph import sbom_graph_body
+from backend.app.agents.cicd_scan import cicd_scan_body
+from backend.app.agents.container_scan import container_scan_body
+from backend.app.agents.authz_idor import authz_idor_body
+from backend.app.services.attack_graph import attack_graph_body
+from backend.app.services.remediation_planner import remediation_planner_body
+
 from backend.app.agents.github_mcp import run_github_mcp
 from backend.app.agents.sast_semgrep import run_semgrep_scan
 from backend.app.agents.dependency_scan import run_dependency_scan
@@ -697,37 +706,81 @@ def route_after_attack(state: AuditState) -> Literal["exploit", "ai_analyzer"]:
     return "exploit"
 
 
+
+def api_surface_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="api_surface", agent_name="API_SURFACE", start_message="Mapping API surface...", body=api_surface_body)
+
+def secret_history_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="secret_history", agent_name="SECRET_HISTORY", start_message="Scanning git history for secrets...", body=secret_history_body)
+
+def sbom_graph_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="sbom_graph", agent_name="SBOM_GRAPH", start_message="Building dependency graph...", body=sbom_graph_body)
+
+def cicd_scan_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="cicd_scan", agent_name="CICD_SCAN", start_message="Scanning CI/CD pipelines...", body=cicd_scan_body)
+
+def container_scan_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="container_scan", agent_name="CONTAINER_SCAN", start_message="Scanning container configurations...", body=container_scan_body)
+
+def authz_idor_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="authz_idor", agent_name="AUTHZ_IDOR", start_message="Analyzing authorization and IDOR risks...", body=authz_idor_body)
+
+def attack_graph_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="attack_graph", agent_name="ATTACK_GRAPH", start_message="Building correlated attack graph...", body=attack_graph_body)
+
+def remediation_planner_node(state: AuditState) -> Dict[str, Any]:
+    return execute_phase(state, phase_name="remediation_planner", agent_name="REMEDIATION_PLANNER", start_message="Generating remediation plans...", body=remediation_planner_body)
+
 def create_maestro_graph() -> CompiledStateGraph:
     builder = StateGraph(AuditState)
 
     builder.add_node("recon", recon_node)
+    builder.add_node("api_surface", api_surface_node)
+    builder.add_node("secret_history", secret_history_node)
     builder.add_node("dependency", dependency_node)
+    builder.add_node("sbom_graph", sbom_graph_node)
     builder.add_node("iac", iac_node)
+    builder.add_node("cicd_scan", cicd_scan_node)
+    builder.add_node("container_scan", container_scan_node)
     builder.add_node("sast", sast_node)
     builder.add_node("semgrep", semgrep_node)
+    builder.add_node("authz_idor", authz_idor_node)
     builder.add_node("sandbox", sandbox_node)
     builder.add_node("network", network_node)
     builder.add_node("attack", attack_node)
     builder.add_node("exploit", exploit_node)
     builder.add_node("ai_analyzer", ai_analyzer_node)
     builder.add_node("scoring", scoring_node)
+    builder.add_node("attack_graph", attack_graph_node)
+    builder.add_node("remediation_planner", remediation_planner_node)
     builder.add_node("reporter", reporter_node)
     builder.add_node("github_mcp", github_mcp_node)
     builder.add_node("google_agent", google_agent_node)
     builder.add_node("cleanup", cleanup_node)
 
     builder.add_edge(START, "recon")
-    builder.add_edge("recon", "dependency")
-    builder.add_edge("dependency", "iac")
-    builder.add_edge("iac", "sast")
+    builder.add_edge("recon", "api_surface")
+    builder.add_edge("api_surface", "secret_history")
+    builder.add_edge("secret_history", "dependency")
+    builder.add_edge("dependency", "sbom_graph")
+    builder.add_edge("sbom_graph", "iac")
+    builder.add_edge("iac", "cicd_scan")
+    builder.add_edge("cicd_scan", "container_scan")
+    builder.add_edge("container_scan", "sast")
     builder.add_edge("sast", "semgrep")
-    builder.add_conditional_edges("semgrep", route_after_semgrep, {"ai_analyzer": "ai_analyzer", "sandbox": "sandbox"})
+    builder.add_edge("semgrep", "authz_idor")
+
+    # After authz_idor, conditionally route to ai_analyzer or sandbox
+    builder.add_conditional_edges("authz_idor", route_after_semgrep, {"ai_analyzer": "ai_analyzer", "sandbox": "sandbox"})
+
     builder.add_edge("sandbox", "network")
     builder.add_edge("network", "attack")
     builder.add_conditional_edges("attack", route_after_attack, {"exploit": "exploit", "ai_analyzer": "ai_analyzer"})
     builder.add_edge("exploit", "ai_analyzer")
     builder.add_edge("ai_analyzer", "scoring")
-    builder.add_edge("scoring", "reporter")
+    builder.add_edge("scoring", "attack_graph")
+    builder.add_edge("attack_graph", "remediation_planner")
+    builder.add_edge("remediation_planner", "reporter")
     builder.add_edge("reporter", "github_mcp")
     builder.add_edge("github_mcp", "google_agent")
     builder.add_edge("google_agent", "cleanup")

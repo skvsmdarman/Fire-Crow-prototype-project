@@ -45,6 +45,13 @@ class Finding(BaseModel):
     remediation: Optional[str] = None
     cwe_id: Optional[str] = None
     owasp_category: Optional[str] = None
+    confidence: Optional[str] = None
+    scanner_name: Optional[str] = None
+    scanner_mode: Optional[str] = None
+    file_path: Optional[str] = None
+    line_number: Optional[int] = None
+    route: Optional[str] = None
+    metadata_json: Optional[str] = None
 
 
 class AuditState(BaseModel):
@@ -73,12 +80,32 @@ class AuditState(BaseModel):
     dependency_vulns: Annotated[list[Finding], operator.add] = []
     iac_findings: Annotated[list[Finding], operator.add] = []
 
+    # --- API SURFACE outputs ---
+    api_surface: list[dict[str, Any]] = []
+    route_risk_summary: dict[str, Any] = {}
+
+    # --- SBOM outputs ---
+    sbom_components: list[dict[str, Any]] = []
+    dependency_graph: dict[str, Any] = {}
+    vulnerable_components: list[dict[str, Any]] = []
+
+    # --- CI/CD outputs ---
+    cicd_findings: Annotated[list[Finding], operator.add] = []
+
+    # --- CONTAINER outputs ---
+    container_findings: Annotated[list[Finding], operator.add] = []
+
+    # --- AUTHZ outputs ---
+    authz_findings: Annotated[list[Finding], operator.add] = []
+
     # --- SAST outputs ---
     static_findings: Annotated[list[Finding], operator.add] = []
     semgrep_findings: Annotated[list[Finding], operator.add] = []
     secret_findings: Annotated[list[Finding], operator.add] = []
+    secret_history_findings: Annotated[list[Finding], operator.add] = []
     bandit_findings: Annotated[list[Finding], operator.add] = []
     cve_matches: Annotated[list[dict], operator.add] = []
+    normalized_findings: Annotated[list[dict[str, Any]], operator.add] = []
 
     # --- SANDBOX ---
     sandbox_container_id: str = ""
@@ -102,9 +129,17 @@ class AuditState(BaseModel):
     attack_chains: Annotated[list[dict[str, Any]], operator.add] = []
     remediations: Annotated[list[dict[str, Any]], operator.add] = []
 
+    # --- ATTACK GRAPH outputs ---
+    attack_graph: dict[str, Any] = {}
+
+    # --- REMEDIATION outputs ---
+    remediation_plan: dict[str, Any] = {}
+    remediation_tasks: list[dict[str, Any]] = []
+
     # --- SCORING outputs ---
     scored_findings: Annotated[list[Finding], operator.add] = []
     risk_summary: dict[str, Any] = {}
+    confidence_summary: dict[str, Any] = {}
 
     # --- REPORTER outputs ---
     report_pdf_url: str = ""
