@@ -252,6 +252,14 @@ async def download_report(
     )
     if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
         file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
+
+        # If an HTML version exists, serve that instead of a simulated PDF
+        html_path = file_path.with_suffix(".html")
+        if file_path.suffix.lower() == ".pdf" and html_path.exists():
+            file_path = html_path
+            file_name = html_path.name
+            media_type = "text/html"
+
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Report file not found on disk")
 
