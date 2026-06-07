@@ -16,7 +16,6 @@ from backend.app.models.database import get_db
 from backend.app.models.user import User
 from backend.app.services.auth import (
     ACCESS_TOKEN_EXPIRE_SECONDS,
-    AUTH_COOKIE_NAME,
     create_access_token,
     create_oauth_state,
     encrypt_provider_token,
@@ -28,18 +27,19 @@ from backend.app.services.auth import (
     revoke_access_token,
     verify_oauth_state,
     verify_password,
+    check_login_lockout,
+    record_login_failure,
+    clear_login_failures,
 )
 from backend.app.services.security_log import record_security_event
 from backend.app.services.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-PRIVACY_POLICY_VERSION = "2026-06-06"
-TERMS_VERSION = "2026-06-06"
-GITHUB_OAUTH_SCOPES = ("repo", "workflow", "read:org", "user:email")
-LOGIN_FAILURE_WINDOW = timedelta(minutes=10)
-LOGIN_FAILURE_LIMIT = 5
-_login_failures: dict[str, deque[datetime]] = defaultdict(deque)
+PRIVACY_POLICY_VERSION = settings.PRIVACY_POLICY_VERSION
+TERMS_VERSION = settings.TERMS_VERSION
+GITHUB_OAUTH_SCOPES = tuple(settings.GITHUB_OAUTH_SCOPES)
+
 
 
 class LoginRequest(BaseModel):
@@ -165,31 +165,23 @@ def _login_rate_key(request: Request, username: str) -> str:
     return f"{_client_ip(request)}:{username.strip().lower()}"
 
 
-def _prune_login_failures(key: str) -> deque[datetime]:
-    now = datetime.now(timezone.utc)
-    attempts = _login_failures[key]
-    while attempts and now - attempts[0] > LOGIN_FAILURE_WINDOW:
-        attempts.popleft()
-    return attempts
-
-
-def _enforce_login_attempt_limit(request: Request, username: str) -> None:
-    key = _login_rate_key(request, username)
-    attempts = _prune_login_failures(key)
-    if len(attempts) >= LOGIN_FAILURE_LIMIT:
+def _enforce_login_attempt_limit(request: Request, username: str, db: Session) -> None:
+    ip = _client_ip(request)
+    if check_login_lockout(db, ip, username):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed login attempts. Please wait before trying again.",
         )
 
 
-def _record_login_failure(request: Request, username: str) -> None:
-    key = _login_rate_key(request, username)
-    _prune_login_failures(key).append(datetime.now(timezone.utc))
+def _record_login_failure(request: Request, username: str, db: Session) -> None:
+    ip = _client_ip(request)
+    record_login_failure(db, ip, username)
 
 
-def _clear_login_failures(request: Request, username: str) -> None:
-    _login_failures.pop(_login_rate_key(request, username), None)
+def _clear_login_failures(request: Request, username: str, db: Session) -> None:
+    ip = _client_ip(request)
+    clear_login_failures(db, ip, username)
 
 
 def _find_unique_user_by_normalized_email(
@@ -223,13 +215,16 @@ def _cookie_secure() -> bool:
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
+    cookie_secure = settings.AUTH_COOKIE_SECURE
+    if settings.DEBUG:
+        cookie_secure = _cookie_secure()
     response.set_cookie(
-        key=AUTH_COOKIE_NAME,
+        key=settings.AUTH_COOKIE_NAME,
         value=token,
         max_age=ACCESS_TOKEN_EXPIRE_SECONDS,
-        httponly=True,
-        secure=_cookie_secure(),
-        samesite="lax",
+        httponly=settings.AUTH_COOKIE_HTTPONLY,
+        secure=cookie_secure,
+        samesite=settings.AUTH_COOKIE_SAMESITE,  # type: ignore
         path="/",
     )
 
@@ -400,7 +395,13 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
     db.commit()
     db.refresh(new_user)
 
-    token = create_access_token(user_id=new_user.id, username=new_user.username)
+    token = create_access_token(
+        user_id=new_user.id,
+        username=new_user.username,
+        db=db,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     record_security_event(
         db,
@@ -443,11 +444,11 @@ async def login(request: Request, payload: LoginRequest, db: Session = Depends(g
     if not payload.password:
         raise HTTPException(status_code=400, detail="Workspace password is required.")
     _validate_privacy_consent(payload.privacy_policy_accepted, payload.privacy_policy_version)
-    _enforce_login_attempt_limit(request, username)
+    _enforce_login_attempt_limit(request, username, db)
 
     user = db.query(User).filter(User.username == username).first()
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
-        _record_login_failure(request, username)
+        _record_login_failure(request, username, db)
         record_security_event(
             db,
             action="auth.login.failed",
@@ -473,10 +474,16 @@ async def login(request: Request, payload: LoginRequest, db: Session = Depends(g
     )
     if password_needs_rehash(user.password_hash):
         user.password_hash = hash_password(payload.password)
-    _clear_login_failures(request, username)
+    _clear_login_failures(request, username, db)
     db.commit()
 
-    token = create_access_token(user_id=user.id, username=user.username)
+    token = create_access_token(
+        user_id=user.id,
+        username=user.username,
+        db=db,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     record_security_event(
         db,
@@ -518,7 +525,7 @@ async def logout(
     db: Session = Depends(get_db),
 ):
     user_id = str(token_payload.get("sub", ""))
-    if not revoke_access_token(token_payload):
+    if not revoke_access_token(token_payload, db=db):
         raise HTTPException(status_code=503, detail="Logout could not revoke the active session.")
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -534,7 +541,7 @@ async def logout(
         user_id=user_id,
         details={"source": "frontend"},
     )
-    response.delete_cookie(AUTH_COOKIE_NAME, path="/")
+    response.delete_cookie(settings.AUTH_COOKIE_NAME, path="/")
     return {"status": "logged_out"}
 
 
@@ -699,7 +706,13 @@ async def github_callback(
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(user_id=user.id, username=user.username)
+    token = create_access_token(
+        user_id=user.id,
+        username=user.username,
+        db=db,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     record_security_event(
         db,
@@ -858,7 +871,13 @@ async def google_callback(
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(user_id=user.id, username=user.username)
+    token = create_access_token(
+        user_id=user.id,
+        username=user.username,
+        db=db,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     record_security_event(
         db,

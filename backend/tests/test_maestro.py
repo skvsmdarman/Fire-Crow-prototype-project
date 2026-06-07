@@ -36,7 +36,7 @@ def test_maestro_default_path():
     assert final_state["static_findings"][0].title == "[SIMULATED] Outdated dependency package PyYAML"
     assert len(final_state["dynamic_findings"]) == 0
     assert len(final_state["exploit_proofs"]) == 0
-    assert "standard-repo_audit_" in final_state["report_pdf_url"]
+    assert final_state["report_pdf_url"].startswith("artifact://")
 
 
 def test_maestro_secrets_leak_path():
@@ -86,6 +86,21 @@ def test_maestro_vuln_exploit_path():
         status=JobStatus.RUNNING
     )
     db.add(job)
+    from backend.app.models.compliance import AuthorizationAttestation
+    db.add(
+        AuthorizationAttestation(
+            organization_id="default-org",
+            user_id="usr_tester",
+            repo_url_hash="some-hash",
+            repo_url_normalized="https://github.com/example/vulnerable-app",
+            repo_owner="example",
+            repo_name="vulnerable-app",
+            branch="main",
+            authorization_scope="full_active",
+            attestation_text_version="v1",
+            job_id="job-vuln"
+        )
+    )
     db.commit()
     db.close()
 

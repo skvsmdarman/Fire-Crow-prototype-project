@@ -2,43 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { motion } from "framer-motion";
-import PolicyLink from "../../components/PolicyLink";
-import {
-  getServerAuthSessionSnapshot,
-  getStoredAuthSessionSnapshot,
-  persistAuthSession,
-  subscribeToAuthSession
-} from "../../lib/authSession";
-import { API_BASE_URL, PRIVACY_POLICY_VERSION } from "../../lib/policy";
+import { useEffect, useRef, useState } from "react";
+import { motion as framerMotion } from "framer-motion";
+import PolicyLink from "../../features/legal/components/PolicyLink";
+import { useAuthSession } from "../../shared/hooks/useAuthSession";
+import { usePolicyContext } from "../../features/auth/hooks";
+import { loginUser, exchangeCode } from "../../features/auth/api";
 import { detectRegionFromTimezone } from "../../lib/policyData";
+import { API_BASE_URL } from "../../shared/api/client";
 import styles from "./page.module.css";
-import {
-  fadeInLeft,
-  fadeInRight
-} from "../../lib/animations";
+import { fadeInLeft, fadeInRight } from "../../lib/animations";
 
 const cx = (...args: (string | undefined | false)[]) => args.filter(Boolean).join(" ");
 
-interface PolicyContext {
-  privacy_policy_version: string;
-  providers: {
-    github: boolean;
-    google: boolean;
-    password: boolean;
-  };
-  terms_version: string;
-}
-
-interface AuthSession {
-  access_token: string;
-  user_id: string;
-  username: string;
-}
-
 export default function SignInPage() {
   const router = useRouter();
+  const authSession = useAuthSession();
+  const { activePrivacyVersion, loadingContext, providerAvailability } = usePolicyContext();
 
   // Form State
   const [workspace, setWorkspace] = useState("");
@@ -50,53 +30,11 @@ export default function SignInPage() {
   const [error, setError] = useState("");
   const handledExchangeCodeRef = useRef<string | null>(null);
 
-  // Policy Context
-  const [activePrivacyVersion, setActivePrivacyVersion] = useState(PRIVACY_POLICY_VERSION);
-  const [loadingContext, setLoadingContext] = useState(true);
-  const [providerAvailability, setProviderAvailability] = useState({
-    github: false,
-    google: false,
-    password: true,
-  });
-
-  // Fetch Policy and Provider Context
   useEffect(() => {
-    let active = true;
-
-    async function loadPolicyContext() {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/policy-context`);
-        if (!response.ok) throw new Error("Could not load policy configuration.");
-        const data = (await response.json()) as PolicyContext;
-
-        if (active) {
-          setActivePrivacyVersion(data.privacy_policy_version || PRIVACY_POLICY_VERSION);
-          setProviderAvailability(data.providers);
-        }
-      } catch (err) {
-        console.warn("Using default policy fallback versions:", err);
-      } finally {
-        if (active) setLoadingContext(false);
-      }
+    if (authSession.token && authSession.workspace) {
+      router.push(`/dashboard?workspace=${encodeURIComponent(authSession.workspace)}`);
     }
-
-    loadPolicyContext();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const browserSession = useSyncExternalStore(
-    subscribeToAuthSession,
-    getStoredAuthSessionSnapshot,
-    getServerAuthSessionSnapshot
-  );
-
-  useEffect(() => {
-    if (browserSession.hasConsoleSession && browserSession.workspace) {
-      router.push(`/dashboard?workspace=${encodeURIComponent(browserSession.workspace)}`);
-    }
-  }, [browserSession.hasConsoleSession, browserSession.workspace, router]);
+  }, [authSession.token, authSession.workspace, router]);
 
   const getDashboardRedirectUrl = (workspaceOverride?: string) => {
     const targetWorkspace = workspaceOverride?.trim() || workspace.trim() || "workspace";
@@ -119,28 +57,22 @@ export default function SignInPage() {
 
     async function finishOauthSignIn() {
       try {
-        const response = await fetch(`${API_BASE_URL}/auth/exchange`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
-          throw new Error(body?.detail || "Unable to finish sign-in.");
-        }
-
-        const session = (await response.json()) as AuthSession;
+        const session = await exchangeCode(code);
         if (!active) {
           return;
         }
-        persistAuthSession(session);
+        authSession.login({
+          access_token: session.access_token,
+          user_id: session.user_id,
+          username: session.username,
+        });
         router.replace(`/dashboard?workspace=${encodeURIComponent(session.username)}`);
       } catch (authError) {
+        const err = authError as { message?: string };
         if (!active) {
           return;
         }
-        const errMsg = authError instanceof Error ? authError.message : "";
-        setError(errMsg || "Unable to finish sign-in.");
+        setError(err.message || "Unable to finish sign-in.");
         if (typeof window !== "undefined") {
           const nextUrl = new URL(window.location.href);
           nextUrl.searchParams.delete("code");
@@ -158,7 +90,7 @@ export default function SignInPage() {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [router, authSession]);
 
   const oauthHref = (provider: "github" | "google") => {
     const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
@@ -194,29 +126,24 @@ export default function SignInPage() {
       const tz = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
       const reg = detectRegionFromTimezone(tz);
 
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password,
-          privacy_policy_accepted: true, // Returning users accept terms automatically on sign in click
-          privacy_policy_version: activePrivacyVersion,
-          username: normalizedWorkspace,
-          timezone: tz,
-          region: reg,
-        }),
+      const session = await loginUser({
+        password,
+        privacy_policy_accepted: true,
+        privacy_policy_version: activePrivacyVersion,
+        username: normalizedWorkspace,
+        timezone: tz,
+        region: reg,
       });
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.detail || "Unable to sign in.");
-      }
-
-      const session = (await response.json()) as AuthSession;
-      persistAuthSession(session);
+      authSession.login({
+        access_token: session.access_token,
+        user_id: session.user_id,
+        username: session.username,
+      });
       router.push(getDashboardRedirectUrl());
     } catch (authError) {
-      const errMsg = authError instanceof Error ? authError.message : "";
+      const err = authError as { message?: string };
+      const errMsg = err.message || "";
       if (errMsg.toLowerCase().includes("failed to fetch") || errMsg.toLowerCase().includes("fetch")) {
         setError("Could not connect to workspace services. Please try again later.");
       } else {
@@ -227,7 +154,7 @@ export default function SignInPage() {
     }
   };
 
-  if (browserSession.hasConsoleSession) {
+  if (authSession.token) {
     return (
       <main className={styles.loadingPage}>
         <div className={styles.loadingBackdrop} aria-hidden="true" />
@@ -251,7 +178,7 @@ export default function SignInPage() {
       <div className={styles.gridGlow} aria-hidden="true" />
 
       <div className={styles.centerContainer}>
-        <motion.div
+        <framerMotion.div
           variants={fadeInLeft}
           initial="hidden"
           animate="visible"
@@ -264,9 +191,9 @@ export default function SignInPage() {
               <small>Autonomous security audit</small>
             </span>
           </Link>
-        </motion.div>
+        </framerMotion.div>
 
-        <motion.section
+        <framerMotion.section
           variants={fadeInRight}
           initial="hidden"
           animate="visible"
@@ -284,7 +211,7 @@ export default function SignInPage() {
 
           <div className={styles.providerStack}>
             {providerAvailability.github ? (
-              <motion.a
+              <framerMotion.a
                 whileHover={{ scale: 1.01, borderColor: "rgba(255,255,255,0.18)" }}
                 whileTap={{ scale: 0.99 }}
                 href={oauthHref("github")}
@@ -298,11 +225,11 @@ export default function SignInPage() {
                 <span className={styles.providerCopy}>
                   <strong>Continue with GitHub</strong>
                 </span>
-              </motion.a>
+              </framerMotion.a>
             ) : null}
 
             {providerAvailability.google ? (
-              <motion.a
+              <framerMotion.a
                 whileHover={{ scale: 1.01, borderColor: "rgba(255,255,255,0.18)" }}
                 whileTap={{ scale: 0.99 }}
                 href={oauthHref("google")}
@@ -319,7 +246,7 @@ export default function SignInPage() {
                 <span className={styles.providerCopy}>
                   <strong>Continue with Google</strong>
                 </span>
-              </motion.a>
+              </framerMotion.a>
             ) : null}
           </div>
 
@@ -394,7 +321,7 @@ export default function SignInPage() {
               </div>
             )}
 
-            <motion.button
+            <framerMotion.button
               whileHover={{ scale: loading ? 1 : 1.01 }}
               whileTap={{ scale: loading ? 1 : 0.99 }}
               className={styles.submitButton}
@@ -403,7 +330,7 @@ export default function SignInPage() {
             >
               {loading && <span className={styles.submitSpinner} />}
               {loading ? "Signing in..." : "Sign in to console"}
-            </motion.button>
+            </framerMotion.button>
           </form>
 
           <footer className={styles.cardFootnote}>
@@ -425,7 +352,7 @@ export default function SignInPage() {
               </Link>
             </p>
           </footer>
-        </motion.section>
+        </framerMotion.section>
       </div>
     </main>
   );

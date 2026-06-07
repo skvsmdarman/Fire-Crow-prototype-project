@@ -264,6 +264,8 @@ def test_ai_analyzer_tries_next_model_after_timeout(monkeypatch):
 
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
     monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-test")
+    monkeypatch.setattr(settings, "GEMINI_ENABLE_FALLBACK_MODEL", True)
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "gemini-fallback")
     monkeypatch.setattr("backend.app.agents.ai_analyzer.urllib.request.urlopen", fake_urlopen)
 
     deduplicated, false_positives, attack_chains, remediations = run_ai_analyzer(

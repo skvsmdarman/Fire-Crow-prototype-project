@@ -1,289 +1,168 @@
-# FireCrow FCv1
+# Fire Crow
 
-FireCrow is an AI-powered security audit platform for repository intake, static analysis, sandboxed runtime probing, exploit validation, CVSS scoring, and report delivery. The project combines a FastAPI backend, a Next.js frontend, a resilient local launcher, and a smoke-test path that exercises the real orchestration flow end to end.
+Fire Crow is a repository-focused security audit prototype with a FastAPI backend, a Next.js frontend, and a LangGraph-based orchestration pipeline. In the current codebase, users authenticate, submit GitHub HTTPS repository URLs, stream audit logs over SSE, and download generated report artifacts. Core sources: `backend/app/main.py`, `backend/app/api/routes_auth.py`, `backend/app/api/routes_audit.py`, `backend/app/orchestrator/maestro.py`, `frontend/src/app/dashboard/page.tsx`.
 
-Built by Nova Devs.
+Fire Crow currently does not present itself honestly as a fully production-ready SaaS scanner. The code includes debug-only simulations, optional Docker-backed dynamic validation, optional Redis/Celery execution, optional object storage, and optional GitHub/Google/email integrations. Several frontend/legal strings still describe stronger compliance or product guarantees than the backend proves today. See [Known Limitations](docs/KNOWN_LIMITATIONS.md).
 
-## Why FireCrow
+## Current Status
 
-- Multi-stage audit orchestration: repository clone, SAST, sandbox, network scan, attack, exploit proofing, scoring, reporting, and cleanup.
-- Product-grade frontend: public landing page, sign-in flow, protected dashboard, and legal pages.
-- Local-first developer experience: dynamic port fallback, service reuse, SQLite-friendly setup, optional Redis/Celery, optional Docker sandboxing.
-- Verification built in: smoke testing and validation scripts are part of the repo, not tribal knowledge.
+- Prototype with real local auth, job persistence, log streaming, and report generation.
+- Local-first developer workflow with SQLite-friendly debug mode and a combined dev launcher.
+- Production hardening is partial, not complete. Production mode rejects weak secrets and SQLite, but many integrations remain optional or degraded. Sources: `backend/app/config.py`, `backend/app/models/database.py`, `backend/app/services/sandbox.py`.
 
-## Product Surfaces
+## What Fire Crow Does
 
-- `/`: public landing page for FireCrow FCv1
-- `/signin`: branded sign-in flow backed by the auth API
-- `/dashboard`: protected audit console
-- `/terms`: Terms and Conditions page
-- `/health`: backend health endpoint
-- `/api/v1/system/status`: readiness snapshot for the frontend and operator checks
+- Serves a web UI with landing, sign-in, sign-up, dashboard, legal, and offline pages from `frontend/src/app/*`.
+- Exposes auth, audit, system, storage, and health endpoints from `backend/app/api/*` and `backend/app/main.py`.
+- Runs a LangGraph pipeline that combines passive analysis stages and, when allowed, sandboxed active testing stages. Source: `backend/app/orchestrator/maestro.py`.
+- Persists jobs, findings, logs, artifacts, sessions, security logs, and compliance-oriented records in SQLAlchemy models under `backend/app/models/*`.
+- Generates HTML/PDF-style reports and stores them through the storage service. Sources: `backend/app/services/reporter.py`, `backend/app/services/storage.py`.
 
-## Architecture
+## What Fire Crow Does Not Do
 
-```mermaid
-flowchart LR
-    A["Landing / Sign-in / Dashboard"] --> B["Next.js 16 Frontend"]
-    B --> C["FastAPI API"]
-    C --> D["Auth + Job APIs"]
-    C --> E["SSE Log Stream"]
-    D --> F["Maestro Orchestrator"]
-    F --> G["RECON"]
-    F --> H["SAST"]
-    F --> I["SANDBOX"]
-    F --> J["NETWORK"]
-    F --> K["ATTACK"]
-    F --> L["EXPLOIT"]
-    F --> M["SCORING"]
-    F --> N["REPORTER"]
-    C --> O["SQLite / Postgres"]
-    F --> P["Local fallback or Celery worker"]
-```
+- It does not guarantee real scanner execution in every environment. Dependency, Semgrep, AI, GitHub, Google, email, and sandbox phases all have config-gated or debug fallback behavior. Sources: `backend/app/agents/dependency_scan.py`, `backend/app/agents/sast_semgrep.py`, `backend/app/agents/ai_analyzer.py`, `backend/app/agents/github_mcp.py`, `backend/app/agents/google_agent.py`, `backend/app/services/sandbox.py`.
+- It does not currently prove formal compliance programs such as SOC 2, ISO 27001, GDPR readiness, DPDP readiness, or HIPAA readiness in backend code.
+- It does not currently have a frontend audit submission flow that matches the backend attestation contract. The backend requires `attestation_accepted`, while the dashboard does not send it. Sources: `backend/app/schemas/audit_api.py`, `frontend/src/features/audits/api.ts`, `frontend/src/app/dashboard/page.tsx`.
 
-## Core Stack
+## Architecture Overview
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | Next.js 16, React 19, TypeScript |
-| Backend | FastAPI, SQLAlchemy, Pydantic Settings |
-| Orchestration | Maestro runtime, BackgroundTasks fallback, optional Celery |
-| Storage | SQLite for local work, PostgreSQL-ready config |
-| Streaming | Server-Sent Events for live agent logs |
-| Reports | Local report artifacts with optional object storage config |
-| Validation | Pytest, ESLint, Next build, Pyright, smoke script |
+- Frontend: Next.js App Router app in `frontend/src/app/*`.
+- Backend: FastAPI app in `backend/app/main.py`.
+- Orchestration: LangGraph graph in `backend/app/orchestrator/maestro.py`, runtime finalization in `backend/app/orchestrator/runtime.py`.
+- Storage: SQLAlchemy database models in `backend/app/models/*`, local artifact storage in `workspace/storage`, optional R2/S3-compatible object storage through `backend/app/services/storage.py`.
+- Background execution: Celery when Redis is reachable, otherwise FastAPI `BackgroundTasks`. Source: `backend/app/api/routes_audit.py`.
 
-## Agent Pipeline
+See [Architecture](docs/ARCHITECTURE.md) and [Orchestration Pipeline](docs/ORCHESTRATION_PIPELINE.md).
 
-FireCrow currently exposes these orchestration roles through the runtime and system-status surface:
+## Backend Overview
 
-- `MAESTRO`: orchestration and lifecycle control
-- `RECON`: repository clone and stack discovery
-- `SAST`: secrets and unsafe-code analysis
-- `SANDBOX`: Kali or simulated runtime provisioning
-- `NETWORK`: port and service discovery
-- `ATTACK`: active vulnerability scanning
-- `EXPLOIT`: proof generation
-- `SCORING`: CVSS prioritization
-- `REPORTER`: report generation
-- `GITHUB_MCP`: issue and PR generation support
-- `GOOGLE_AGENT`: downstream alerting and assessment support
+- Entry point: `backend/app/main.py`
+- Routes: `backend/app/api/routes_auth.py`, `routes_audit.py`, `routes_sse.py`, `routes_system.py`, `routes_storage.py`
+- Models: `backend/app/models/audit_job.py`, `user.py`, `compliance.py`, `security_log.py`
+- Services: auth, sandbox, storage, reporter, redaction, housekeeping, and supporting planning/graph services in `backend/app/services/*`
 
-## Quick Start
+## Frontend Overview
 
-### 1. Prerequisites
+- Landing page: `frontend/src/app/page.tsx`
+- Sign-in: `frontend/src/app/signin/page.tsx`
+- Sign-up: `frontend/src/app/signup/page.tsx`
+- Dashboard: `frontend/src/app/dashboard/page.tsx`
+- Auth/session storage: `frontend/src/lib/authSession.ts`, `frontend/src/shared/hooks/useAuthSession.ts`
+- API client: `frontend/src/shared/api/client.ts`
 
-- Windows PowerShell
-- Python 3.12 with a project virtual environment at `.venv`
-- Node.js and `npm`
-- Redis only if you want Celery locally
-- Docker only if you want a real sandbox instead of simulation
+See [Frontend Structure](docs/FRONTEND_STRUCTURE.md).
 
-### 2. Environment
+## Authentication Overview
 
-Backend configuration lives in `backend/.env.example`.
+- Password login and registration: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`
+- Session lookup: `GET /api/v1/auth/me`, `GET /api/v1/auth/session`
+- Logout and token revocation: `POST /api/v1/auth/logout`
+- Optional OAuth: GitHub and Google callback flows in `backend/app/api/routes_auth.py`
+- Tokens are JWT bearer tokens, also accepted from a cookie named by `AUTH_COOKIE_NAME`. Source: `backend/app/services/auth.py`
 
-```powershell
-Copy-Item backend/.env.example backend/.env.local
-```
+## Data And Storage Overview
 
-Key local-development defaults:
+- Jobs, findings, logs, artifacts, sessions, and compliance records are stored in the configured database. Sources: `backend/app/models/*`
+- Reports and large evidence artifacts are stored through `backend/app/services/storage.py`, with local filesystem fallback when object storage is unavailable.
+- Health probes also test local storage and optional object storage. Source: `backend/app/main.py`
 
-- `DEBUG=true`
-- `FRONTEND_URL=http://localhost:3000`
-- `DATABASE_URL=sqlite:///./firecrow.db`
-- `FIRE_CROW_MOCK_SANDBOX=true` for local sandbox simulation
+See [Data Flow And Storage](docs/DATA_FLOW_AND_STORAGE.md).
 
-The backend also reads `.env`, `backend/.env`, `.env.local`, and `backend/.env.local`, with later files taking precedence.
+## Local Setup
 
-Frontend configuration lives in `frontend/.env.example`.
+1. Create a Python virtual environment at `.venv` and install `backend/requirements.txt`.
+2. Install frontend dependencies in `frontend/`.
+3. Copy `backend/.env.example` to `backend/.env.local`.
+4. Copy `frontend/.env.example` to `frontend/.env.local` if you are not using the repo launcher.
+5. Run `npm run dev` from the repository root.
 
-```powershell
-Copy-Item frontend/.env.example frontend/.env.local
-```
+Detailed instructions: [Local Development](docs/LOCAL_DEVELOPMENT.md).
 
-Primary frontend setting:
-
-- `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
-
-### 3. Start the stack
-
-From the repository root:
+## Development Commands
 
 ```powershell
 npm run dev
-```
-
-That launcher will:
-
-- start the backend on the first free port at or after `8000`
-- start the frontend on the first free port at or after `3000`
-- reuse already healthy services instead of starting duplicates
-- inject the matching backend URL into the frontend process
-- start Celery only when Redis is reachable
-
-Frontend plus backend only:
-
-```powershell
 npm run dev:no-worker
-```
-
-Request specific starting ports:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 --skip-worker --backend-port 8010 --frontend-port 3001
-```
-
-### 4. Open the app
-
-Use the frontend URL printed by the launcher. The default target is usually:
-
-```text
-http://localhost:3000
-```
-
-## Authentication Model
-
-FireCrow currently supports database-backed local workspace authentication through the backend auth routes.
-
-- `POST /api/v1/auth/login`: creates a signed workspace session token
-- `POST /api/v1/auth/register`: creates a database-backed user/workspace
-- `GET /api/v1/auth/me`: validates the current session
-
-In debug mode, the backend can auto-create local users for fast testing. That keeps development friction low while preserving a real token-based API contract for the frontend.
-
-## Verification
-
-Run the live smoke test:
-
-```powershell
 npm run smoke
-```
-
-This checks:
-
-- landing page
-- sign-in page
-- terms page
-- backend health
-- auth login
-- auth session lookup
-- system readiness
-- audit submission
-- terminal job lifecycle
-- report generation
-- SSE completion events
-
-Run the broader validation suite:
-
-```powershell
 npm run validate
 ```
 
-That wrapper runs:
+Relevant scripts live in `package.json`, `scripts/dev.py`, `scripts/smoke.py`, and `scripts/validate.py`.
 
-- frontend lint
-- frontend production build
-- backend Pyright type-checking
-- backend pytest suite
+## Test And Validation Commands
 
-## Local Sandbox Behavior
+```powershell
+npm run validate
+.\.venv\Scripts\python.exe -m pytest backend/tests
+cd frontend; npm run lint
+cd frontend; npm run build
+```
 
-FireCrow can run in two useful local modes:
-
-- `simulation`: no live Docker dependency, best for fast testing and CI-like flows
-- `docker`: real sandbox provisioning when Docker is available and configured
-
-The backend reports the active mode from `/api/v1/system/status`, and the dashboard renders that state directly.
+See [Testing And Validation](docs/TESTING_AND_VALIDATION.md).
 
 ## Key API Endpoints
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /health` | backend health |
-| `POST /api/v1/auth/login` | sign in and issue token |
-| `POST /api/v1/auth/register` | create a local account |
-| `GET /api/v1/auth/me` | validate current token |
-| `GET /api/v1/system/status` | service, integration, and agent readiness |
-| `POST /api/v1/audit/submit` | create an audit job |
-| `GET /api/v1/audit/jobs` | list workspace jobs |
-| `GET /api/v1/audit/job/{job_id}` | retrieve job detail and findings |
-| `DELETE /api/v1/audit/job/{job_id}` | request cancellation |
-| `GET /api/v1/audit/{job_id}/stream` | SSE log stream |
+| Endpoint | Purpose | Source |
+| --- | --- | --- |
+| `GET /health` | basic API and DB probe | `backend/app/main.py` |
+| `GET /health/live` | liveness probe | `backend/app/main.py` |
+| `GET /health/ready` | readiness probe with DB and Redis check | `backend/app/main.py` |
+| `GET /health/deep` | deep probe with storage checks | `backend/app/main.py` |
+| `POST /api/v1/auth/login` | password login | `backend/app/api/routes_auth.py` |
+| `POST /api/v1/auth/register` | workspace registration | `backend/app/api/routes_auth.py` |
+| `GET /api/v1/system/status` | authenticated status payload | `backend/app/api/routes_system.py` |
+| `POST /api/v1/audit/submit` | create an audit job | `backend/app/api/routes_audit.py` |
+| `GET /api/v1/audit/{job_id}/stream` | SSE log stream | `backend/app/api/routes_sse.py` |
+
+Full route details: [API Reference](docs/API_REFERENCE.md).
 
 ## Repository Layout
 
 ```text
-Fire Crow/
-|- backend/
-|  |- app/
-|  |  |- api/
-|  |  |- agents/
-|  |  |- orchestrator/
-|  |  |- services/
-|  |  |- workers/
-|  |- tests/
-|- frontend/
-|  |- src/app/
-|  |  |- page.tsx
-|  |  |- signin/
-|  |  |- dashboard/
-|  |  |- terms/
-|- scripts/
-|  |- dev.py
-|  |- smoke.py
-|  |- validate.py
-|- workspace/
-|  |- reports/
+backend/
+  app/
+    api/
+    agents/
+    models/
+    orchestrator/
+    schemas/
+    services/
+    workers/
+  tests/
+frontend/
+  src/
+    app/
+    components/
+    features/
+    lib/
+    shared/
+scripts/
+workspace/
+docs/
 ```
 
-## Orchestration Pipeline & Reliability Audit
+## Security And Authorization Notice
 
-FireCrow employs a 7-stage orchestration pipeline built on LangGraph. Here is a summary of the stages, critical failure points, and resilience features:
+Fire Crow is written for authorization-only scanning. The backend records an authorization attestation on audit submission and the orchestrator only enables active stages when attestation, authorization scope, Docker availability, and target profile all line up. Sources: `backend/app/schemas/audit_api.py`, `backend/app/api/routes_audit.py`, `backend/app/orchestrator/scan_plan.py`.
 
-### 1. The 7 Orchestration Stages
-1. **RECON (`recon_node`)**: Clones the repository, detects tech stack (Python, NodeJS, Go, Java, Docker), and lists manifests.
-   - *Failure point*: Git clone failures or malicious repositories.
-   - *Mitigation*: Depth=1 clone, strict input validation (no command options), 500MB size limit, symlink escape checks, git hooks removal.
-2. **DEPENDENCY (`dependency_node`)**: Performs dependency vulnerability scanning using `osv-scanner` or `trivy`.
-   - *Failure point*: Missing scanner binaries.
-   - *Mitigation*: Falls back to simulated findings in debug mode, or returns `[]` in production, without crashing the job.
-3. **SAST & SEMGREP (`sast_node`, `semgrep_node`)**: Scans code files for secrets and unsafe patterns using regexes and Semgrep.
-   - *Failure point*: ReDoS hangs, missing Semgrep binary.
-   - *Mitigation*: Skips files >2MB, truncates lines >2048 chars, catches individual file errors, falls back gracefully.
-4. **SANDBOX (`sandbox_node`)**: Provisions private Docker network and target/testing containers.
-   - *Failure point*: Missing Docker daemon in production environments (e.g. Render).
-   - *Mitigation*: Explicit `FIRE_CROW_MOCK_SANDBOX=true` setting enables full simulation.
-5. **DYNAMIC DYNAMIC PROBING (`network_node`, `attack_node`, `exploit_node`)**: Performs port scan, dynamic attacks (sqlmap, nuclei), and exploit proofing.
-   - *Failure point*: Container exec errors.
-   - *Mitigation*: Commands run in sandboxed Kali container, are restricted by executable allowlists, and errors are handled per-command.
-6. **ANALYSIS (`ai_analyzer_node`, `scoring_node`)**: Runs LLM deduction, deduplicates findings, scores severities using CVSS.
-   - *Failure point*: Gemini API timeouts or rate limits.
-   - *Mitigation*: Iterates fallback models, falls back to simulated remediation without failing the job if all models fail.
-7. **DELIVERY & CLEANUP (`reporter_node`, `github_mcp_node`, `google_agent_node`, `cleanup_node`)**: Compiles PDF, uploads to R2, alerts workspace via email (Resend/Brevo/SMTP), creates GitHub issue/PR via GitMCP, tears down sandboxes.
+That said, the current frontend does not yet send the attestation fields required by the backend, so the current dashboard submission flow is out of sync with the real API contract.
 
-### 2. Critical Configuration & Crash Protections
+## Known Limitations
 
-- **R2 / S3 Endpoint Scheme**:
-  - *Issue*: `ValueError: Invalid endpoint: s3.us-east-005.backblazeb2.com` when endpoint has no protocol scheme.
-  - *Fix*: The system automatically prepends `https://` if `R2_ENDPOINT_URL` or `CLOUDFLARE_R2_ENDPOINT` is configured without a scheme.
-- **GitMCP Integration**:
-  - *Issue*: SSE remote server connection fails (`403 Forbidden`) when permissions are missing.
-  - *Fix*: Failing to connect to `gitmcp.io` is logged as a warning and falls back to direct GitHub REST API using `GITHUB_TOKEN`.
-- **E-mail Delivery & Port Blocking**:
-  - *Issue*: Render blocks outbound SMTP ports (25, 465, 587).
-  - *Fix*: Use `BREVO_API_KEY` (via Brevo HTTPS API) or `RESEND_API_KEY` to send emails over port 443.
-- **LangGraph State Reduction**:
-  - *Issue*: Incremental dictionary updates to `scanner_execution` overwritten by default LangGraph reducers.
-  - *Fix*: Custom `merge_dicts` reducer ensures compiled results from all scanners persist correctly.
+- Debug mode can simulate scanners and email/report paths instead of proving them.
+- The dashboard audit submission flow is currently out of sync with the backend schema.
+- The smoke script currently does not match the current auth and attestation requirements.
+- Legal/policy content in the frontend makes claims that are not fully backed by server-side implementation.
 
-## Development Notes
+See [Known Limitations](docs/KNOWN_LIMITATIONS.md), [Deployment Notes](docs/DEPLOYMENT_NOTES.md), and [Security Model](docs/SECURITY_MODEL.md).
 
-- The launcher is intentionally defensive: it avoids duplicate services and falls forward on busy ports.
-- The orchestration runtime owns terminal-state decisions, cancellation finalization, and cleanup.
-- The dashboard understands `completed`, `failed`, `cancelled`, and `partial` terminal states.
-- Local report files are generated in `workspace/reports`.
+## Documentation
 
-## Current Focus
+- [Documentation Index](docs/INDEX.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Backend Structure](docs/BACKEND_STRUCTURE.md)
+- [Orchestration Pipeline](docs/ORCHESTRATION_PIPELINE.md)
+- [API Reference](docs/API_REFERENCE.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Local Development](docs/LOCAL_DEVELOPMENT.md)
 
-FireCrow is already usable as a local full-stack security-audit workspace, and the repo is structured around making orchestration reliability testable. The next natural improvements are deeper auth UX, richer report delivery, and stronger production deployment scaffolding around the same API/runtime contracts.

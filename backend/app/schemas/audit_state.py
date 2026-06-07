@@ -163,6 +163,9 @@ class AuditState(BaseModel):
     retry_counts: Annotated[dict[str, int], merge_dicts] = {}
     scanner_execution: Annotated[dict[str, Any], merge_dicts] = {}
 
+    # --- Scan Plan ---
+    scan_plan: Optional[dict] = None
+
     # --- Resource Budget ---
     max_scan_duration_sec: int = 2700
     budget_remaining_usd: float = 5.0

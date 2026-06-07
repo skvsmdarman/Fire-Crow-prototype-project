@@ -5,7 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, Cpu, Layers, RefreshCw, Shield } from "lucide-react";
 
-import PolicyLink from "../components/PolicyLink";
+import PolicyLink from "../features/legal/components/PolicyLink";
 import Footer from "../components/Footer";
 import BrandLogo from "../components/BrandLogo";
 import { fadeInLeft, fadeInRight, fadeInUp, scaleUp, staggerContainer } from "../lib/animations";

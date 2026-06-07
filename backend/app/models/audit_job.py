@@ -17,6 +17,7 @@ class AuditJob(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     repo_url: Mapped[str] = mapped_column(String(1024), nullable=False)
     repo_branch: Mapped[str] = mapped_column(String(255), default="main")
     status: Mapped[JobStatus] = mapped_column(SQLEnum(JobStatus), default=JobStatus.QUEUED, nullable=False)
@@ -36,6 +37,9 @@ class AuditJob(Base):
     )
     logs: Mapped[list["AgentLog"]] = relationship(
         "AgentLog", back_populates="job", cascade="all, delete-orphan"
+    )
+    phase_ledger: Mapped[list["PhaseLedgerModel"]] = relationship(
+        "PhaseLedgerModel", back_populates="job", cascade="all, delete-orphan"
     )
 
 
@@ -95,3 +99,21 @@ class AuditArtifact(Base):
 
     # Relationships
     job: Mapped["AuditJob"] = relationship("AuditJob", back_populates="artifacts")
+
+
+class PhaseLedgerModel(Base):
+    __tablename__ = "phase_ledger"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_jobs.id"), nullable=False, index=True)
+    phase_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)  # completed, failed, skipped, cancelled
+    mode: Mapped[str] = mapped_column(String(50), nullable=False)  # real, simulated, degraded, skipped
+    duration_sec: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    job: Mapped["AuditJob"] = relationship("AuditJob", back_populates="phase_ledger")
+

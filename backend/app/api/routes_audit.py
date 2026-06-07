@@ -1,4 +1,5 @@
 import logging
+import re
 import socket
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +12,8 @@ from urllib.parse import unquote, urlparse
 
 from backend.app.api.audit_queries import get_owned_job_or_404
 from backend.app.config import WORKSPACE_DIR, settings
-from backend.app.models import get_db, AuditJob, FindingModel, AgentLog
+from backend.app.models import get_db, AuditJob, FindingModel, AgentLog, User, Membership
+from sqlalchemy import or_
 from backend.app.schemas import (
     JobDetailResponse,
     JobResponse,
@@ -28,7 +30,6 @@ from backend.app.workers.celery_app import run_audit_job_task, celery_app
 logger = logging.getLogger("firecrow.api.audit")
 router = APIRouter(prefix="/audit", tags=["Security Auditing"])
 
-MAX_ACTIVE_JOBS_PER_USER = 5
 REPORTS_DIR = WORKSPACE_DIR / "workspace" / "reports"
 
 
@@ -136,6 +137,25 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
     return any(hostname == allowed_host or hostname.endswith(f".{allowed_host}") for allowed_host in allowed_hosts)
 
 
+from backend.app.models import get_db, AuditJob, FindingModel, AgentLog, User, Membership, AuthorizationAttestation
+import hashlib
+
+def _sha256_hash(val: str | None) -> str | None:
+    if not val:
+        return None
+    return hashlib.sha256(val.encode("utf-8")).hexdigest()
+
+def _extract_repo_owner_name(url: str) -> tuple[str, str]:
+    match = re.match(r"^https://github\.com/([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)(\.git)?$", url)
+    if match:
+        owner = match.group(1)
+        name = match.group(2)
+        if name.endswith(".git"):
+            name = name[:-4]
+        return owner, name
+    return "unknown", "unknown"
+
+
 @router.post("/submit", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def submit_audit(
@@ -146,14 +166,19 @@ async def submit_audit(
     user_id: str = Depends(get_current_user)
 ):
     """Submit a security audit job for a remote repository. Dispatches Celery task or falls back to BackgroundTasks."""
-    if _active_job_count(db, user_id) >= MAX_ACTIVE_JOBS_PER_USER:
+    if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {MAX_ACTIVE_JOBS_PER_USER}.",
+            detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
         )
+
+    # Scoping job to user's tenant_id
+    user = db.query(User).filter(User.id == user_id).first()
+    tenant_id = user.tenant_id if user else None
 
     job = AuditJob(
         user_id=user_id,
+        tenant_id=tenant_id,
         repo_url=payload.repo_url,
         repo_branch=payload.repo_branch,
         status=JobStatus.QUEUED
@@ -161,6 +186,28 @@ async def submit_audit(
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    # Create authorization attestation record for compliance logging
+    owner, name = _extract_repo_owner_name(payload.repo_url)
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    attestation = AuthorizationAttestation(
+        organization_id=tenant_id or "default-tenant",
+        user_id=user_id,
+        repo_url_normalized=payload.repo_url,
+        repo_url_hash=hashlib.sha256(payload.repo_url.encode("utf-8")).hexdigest(),
+        repo_owner=owner,
+        repo_name=name,
+        branch=payload.repo_branch or "main",
+        authorization_scope=payload.authorization_scope,
+        attestation_text_version="v1",
+        ip_hash=_sha256_hash(client_ip),
+        user_agent_hash=_sha256_hash(user_agent),
+        job_id=job.id,
+    )
+    db.add(attestation)
+    db.commit()
 
     _dispatch_audit_job(
         background_tasks,
@@ -179,7 +226,26 @@ async def list_jobs(
     user_id: str = Depends(get_current_user)
 ):
     """Retrieve all jobs submitted by the current authenticated tenant (Tenant Isolation)."""
-    jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).order_by(AuditJob.created_at.desc()).all()
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return []
+
+    # Get all organization IDs from memberships
+    memberships = db.query(Membership).filter(Membership.user_id == user_id).all()
+    org_ids = [m.organization_id for m in memberships]
+    if user.tenant_id:
+        org_ids.append(user.tenant_id)
+
+    query = db.query(AuditJob)
+    if org_ids:
+        jobs = query.filter(
+            or_(
+                AuditJob.user_id == user_id,
+                AuditJob.tenant_id.in_(org_ids)
+            )
+        ).order_by(AuditJob.created_at.desc()).all()
+    else:
+        jobs = query.filter(AuditJob.user_id == user_id).order_by(AuditJob.created_at.desc()).all()
 
     return [build_job_response(job) for job in jobs]
 
@@ -233,7 +299,7 @@ async def cancel_job(
     return {"message": "Job cancellation request recorded successfully", "job_id": job_id}
 
 
-@router.get("/job/{job_id}/report", response_class=FileResponse)
+@router.get("/job/{job_id}/report")
 async def download_report(
     job_id: str,
     db: Session = Depends(get_db),
@@ -243,6 +309,32 @@ async def download_report(
     job = get_owned_job_or_404(db, job_id, user_id)
     if not job.report_pdf_url:
         raise HTTPException(status_code=404, detail="Report not ready or missing")
+
+    if job.report_pdf_url.startswith("artifact://"):
+        artifact_id = job.report_pdf_url.split("://")[1]
+        from backend.app.services.storage import storage_service
+        try:
+            if storage_service.is_s3_active():
+                presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)
+                return RedirectResponse(presigned_url)
+            else:
+                file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+                # If an HTML version exists, serve that instead of a simulated PDF
+                html_path = file_path.with_suffix(".html")
+                if file_path.suffix.lower() == ".pdf" and html_path.exists():
+                    file_path = html_path
+                    file_name = html_path.name
+                    media_type = "text/html"
+
+                if not file_path.exists():
+                    raise HTTPException(status_code=404, detail="Report file not found on disk")
+
+                return FileResponse(path=file_path, filename=file_name, media_type=media_type)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
+            raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
 
     parsed_report_url = urlparse(job.report_pdf_url)
     is_legacy_local_report = (

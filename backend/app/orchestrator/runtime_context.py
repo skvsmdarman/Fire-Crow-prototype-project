@@ -6,19 +6,20 @@ from typing import Any
 
 from backend.app.schemas import AuditState
 
-ADDITIVE_LIST_FIELDS = {
-    "phase_history",
-    "static_findings",
-    "secrets_detected",
-    "cve_matches",
-    "open_ports",
-    "api_endpoints",
-    "tls_issues",
-    "dynamic_findings",
-    "exploit_proofs",
-    "scored_findings",
-    "errors",
-}
+import operator
+from typing import get_args, get_origin, Annotated
+
+def _resolve_additive_fields() -> set[str]:
+    additive = set()
+    for name, field in AuditState.model_fields.items():
+        ann = field.annotation
+        if ann is not None and get_origin(ann) is Annotated:
+            for arg in get_args(ann)[1:]:
+                if arg is operator.add:
+                    additive.add(name)
+    return additive
+
+ADDITIVE_LIST_FIELDS = _resolve_additive_fields()
 
 
 class JobCancellationRequested(Exception):

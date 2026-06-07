@@ -1,3 +1,7 @@
+# Historical Note
+
+Prefer `README.md` and the files linked from `docs/INDEX.md` for the current repository source of truth. This file is planning/framework material.
+
 # Fire Crow v2 — Implementation Framework
 
 > Gap analysis, military-grade hardening plan, and agentic MCP integration roadmap.

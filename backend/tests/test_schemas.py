@@ -39,7 +39,12 @@ def test_finding_validation():
 
 
 def test_submit_job_request_normalizes_empty_branch():
-    request = SubmitJobRequest(repo_url="https://github.com/example/repo", repo_branch="  ")
+    request = SubmitJobRequest(
+        repo_url="https://github.com/example/repo",
+        repo_branch="  ",
+        attestation_accepted=True,
+        authorization_scope="authorized_representative"
+    )
 
     assert request.repo_branch == "main"
 
@@ -47,7 +52,12 @@ def test_submit_job_request_normalizes_empty_branch():
 @pytest.mark.parametrize("branch", ["../main", "/main", "feature//x", "feature.lock", "release@{1}", ".hidden"])
 def test_submit_job_request_rejects_unsafe_branch_refs(branch: str):
     with pytest.raises(ValidationError):
-        SubmitJobRequest(repo_url="https://github.com/example/repo", repo_branch=branch)
+        SubmitJobRequest(
+            repo_url="https://github.com/example/repo",
+            repo_branch=branch,
+            attestation_accepted=True,
+            authorization_scope="authorized_representative"
+        )
 
 
 def test_audit_state_dict_reducer():

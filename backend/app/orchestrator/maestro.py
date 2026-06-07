@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Literal, Sequence
 
@@ -32,7 +33,7 @@ from backend.app.agents.dependency_scan import run_dependency_scan
 from backend.app.agents.iac_scan import run_iac_scan
 from backend.app.agents.ai_analyzer import run_ai_analyzer
 from backend.app.agents.google_agent import run_google_agent
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal
+from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, PhaseLedgerModel, AuthorizationAttestation
 from backend.app.orchestrator.runtime_context import (
     JobCancellationRequested,
     apply_runtime_updates,
@@ -83,21 +84,92 @@ def log_agent_message(db: Session, job_id: str, agent_name: str, message: str, l
     db.commit()
 
 
+def _write_ledger_entry(
+    db: Session,
+    job_id: str,
+    phase_name: str,
+    status: str,
+    mode: str,
+    duration_sec: float | None = None,
+    error_message: str | None = None,
+    started_at: datetime | None = None,
+    ended_at: datetime | None = None,
+):
+    try:
+        ledger = PhaseLedgerModel(
+            job_id=job_id,
+            phase_name=phase_name,
+            status=status,
+            mode=mode,
+            duration_sec=duration_sec,
+            error_message=error_message,
+            started_at=started_at or utc_now(),
+            ended_at=ended_at,
+        )
+        db.add(ledger)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to write phase ledger entry for {phase_name}: {str(e)}")
+
+
 def persist_findings(db: Session, job_id: str, findings: Sequence[Finding]) -> None:
+    from backend.app.services.storage import storage_service
+    from backend.app.services.redaction import redact_text
+
+    # Retrieve job details for tenant scoping
+    job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
+    tenant_id = job.tenant_id if job and job.tenant_id else "default-tenant"
+    user_id = job.user_id if job else None
+
     for finding in findings:
+        # Redact secrets in description and remediation
+        redacted_desc = redact_text(finding.description or "")
+        redacted_remediation = redact_text(finding.remediation or "") if finding.remediation else None
+
+        # Redact secrets in evidence
+        raw_evidence = finding.evidence or ""
+        redacted_evidence = redact_text(raw_evidence) if raw_evidence else None
+
+        db_evidence = redacted_evidence
+        if redacted_evidence and len(redacted_evidence) > 1000:
+            try:
+                # Upload full redacted evidence as a private artifact
+                artifact = storage_service.upload_artifact(
+                    db=db,
+                    file_data=redacted_evidence.encode("utf-8"),
+                    organization_id=tenant_id,
+                    artifact_type="finding_evidence",
+                    file_name=f"finding-{finding.id}-evidence.txt",
+                    user_id=user_id,
+                    job_id=job_id,
+                    sensitivity_level="restricted",
+                )
+                db_evidence = f"{redacted_evidence[:1000]}\n\n[Full evidence stored securely as private artifact ID: {artifact.id}]"
+            except Exception as e:
+                logger.error(f"Failed to upload large evidence for finding {finding.id} to object storage: {str(e)}")
+                db_evidence = redacted_evidence[:1000] + "\n\n[Full evidence could not be uploaded; truncated for database safety]"
+
         db.add(
             FindingModel(
+                id=finding.id,
                 job_id=job_id,
                 agent_source=finding.agent_source,
                 title=finding.title,
-                description=finding.description,
+                description=redacted_desc,
                 severity=finding.severity,
                 cvss_vector=finding.cvss_vector,
                 cvss_score=finding.cvss_score,
-                evidence=finding.evidence,
-                remediation=finding.remediation,
+                evidence=db_evidence,
+                remediation=redacted_remediation,
                 cwe_id=finding.cwe_id,
                 owasp_category=finding.owasp_category,
+                confidence=finding.confidence,
+                scanner_name=finding.scanner_name,
+                scanner_mode=finding.scanner_mode,
+                file_path=finding.file_path,
+                line_number=finding.line_number,
+                route=finding.route,
+                metadata_json=finding.metadata_json,
             )
         )
     db.commit()
@@ -186,6 +258,71 @@ def execute_phase(
     started_at = utc_now()
     sync_runtime_state(state)
 
+    PHASE_TO_SCANNER_MAP = {
+        "recon": "recon",
+        "api_surface": "api_surface",
+        "secret_history": "secret_history",
+        "dependency_scan": "dependency",
+        "sbom_graph": "sbom_graph",
+        "iac_scan": "iac",
+        "cicd_scan": "cicd_scan",
+        "container_scan": "container_scan",
+        "sast": "sast",
+        "semgrep_scan": "semgrep",
+        "authz_idor": "authz_idor",
+        "sandbox": "sandbox",
+        "network": "network",
+        "attack": "attack",
+        "exploit": "exploit",
+    }
+
+    NON_CRITICAL_PHASES = {
+        "api_surface",
+        "secret_history",
+        "dependency_scan",
+        "sbom_graph",
+        "iac_scan",
+        "cicd_scan",
+        "container_scan",
+        "semgrep_scan",
+        "authz_idor",
+        "sandbox",
+        "network",
+        "attack",
+        "exploit",
+        "github_mcp",
+        "google_agent",
+    }
+
+    scanner_key = PHASE_TO_SCANNER_MAP.get(phase_name)
+
+    if state.scan_plan and scanner_key:
+        enabled_scanners = state.scan_plan.get("enabled_scanners", [])
+        if scanner_key not in enabled_scanners:
+            log_agent_message(db, state.job_id, agent_name, f"Skipping phase {phase_name} per ScanPlan.")
+            _write_ledger_entry(
+                db=db,
+                job_id=state.job_id,
+                phase_name=phase_name,
+                status="skipped",
+                mode="skipped",
+                duration_sec=0.0,
+                started_at=started_at,
+                ended_at=started_at,
+            )
+            updates = {
+                "scanner_execution": {
+                    scanner_key: {
+                        "status": "skipped",
+                        "mode": "skipped",
+                        "tool": "none"
+                    }
+                }
+            }
+            apply_runtime_updates(updates)
+            db.close()
+            return updates
+
     try:
         if check_cancel_before:
             check_cancel_requested(db, state.job_id, phase_name)
@@ -198,6 +335,21 @@ def execute_phase(
         if check_cancel_after:
             check_cancel_requested(db, state.job_id, phase_name)
 
+        ended_at = utc_now()
+        duration_sec = round((ended_at - started_at).total_seconds(), 3)
+
+        mode = "real"
+        scanner_exec = updates.get("scanner_execution", {})
+        if scanner_key and scanner_key in scanner_exec:
+            mode = scanner_exec[scanner_key].get("mode", "real")
+        elif scanner_exec:
+            for k, val in scanner_exec.items():
+                if isinstance(val, dict) and "mode" in val:
+                    mode = val["mode"]
+
+        if "example/" in state.repo_url:
+            mode = "simulated"
+
         history_list = updates.get("phase_history")
         if not history_list or not isinstance(history_list, list) or len(history_list) == 0:
             updates["phase_history"] = [build_phase_history_entry(phase_name, started_at, "completed")]
@@ -208,37 +360,96 @@ def execute_phase(
                     {
                         **first_entry,
                         "started_at": first_entry.get("started_at", started_at.isoformat()),
-                        "ended_at": first_entry.get("ended_at", utc_now_iso()),
-                        "duration_sec": first_entry.get(
-                            "duration_sec",
-                            round((utc_now() - started_at).total_seconds(), 3),
-                        ),
+                        "ended_at": first_entry.get("ended_at", ended_at.isoformat()),
+                        "duration_sec": first_entry.get("duration_sec", duration_sec),
                         "outcome": first_entry.get("outcome", "completed"),
                     }
                 ]
             else:
                 updates["phase_history"] = [build_phase_history_entry(phase_name, started_at, "completed")]
+        
         apply_runtime_updates({"phase_history": updates["phase_history"]})
         log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase completed.")
+
+        _write_ledger_entry(
+            db=db,
+            job_id=state.job_id,
+            phase_name=phase_name,
+            status="completed",
+            mode=mode,
+            duration_sec=duration_sec,
+            started_at=started_at,
+            ended_at=ended_at,
+        )
         return updates
     except JobCancellationRequested:
+        ended_at = utc_now()
+        duration_sec = round((ended_at - started_at).total_seconds(), 3)
         apply_runtime_updates(
             {
                 "current_phase": phase_name,
                 "phase_history": [build_phase_history_entry(phase_name, started_at, "cancelled")],
             }
         )
-        raise
-    except Exception as exc:
-        log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase failed.", "ERROR")
-        apply_runtime_updates(
-            {
-                "current_phase": phase_name,
-                "errors": [{"phase": phase_name, "message": "Phase failed during execution.", "timestamp": utc_now_iso()}],
-                "phase_history": [build_phase_history_entry(phase_name, started_at, "failed")],
-            }
+        _write_ledger_entry(
+            db=db,
+            job_id=state.job_id,
+            phase_name=phase_name,
+            status="cancelled",
+            mode="skipped",
+            duration_sec=duration_sec,
+            started_at=started_at,
+            ended_at=ended_at,
         )
         raise
+    except Exception as exc:
+        ended_at = utc_now()
+        duration_sec = round((ended_at - started_at).total_seconds(), 3)
+        error_msg = str(exc)
+        log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase failed: {error_msg}", "ERROR")
+        
+        if phase_name in NON_CRITICAL_PHASES:
+            updates = {
+                "current_phase": phase_name,
+                "errors": [{"phase": phase_name, "message": error_msg, "timestamp": ended_at.isoformat()}],
+                "phase_history": [build_phase_history_entry(phase_name, started_at, "failed")],
+                "status": JobStatus.PARTIAL,
+            }
+            apply_runtime_updates(updates)
+            
+            _write_ledger_entry(
+                db=db,
+                job_id=state.job_id,
+                phase_name=phase_name,
+                status="failed",
+                mode="degraded",
+                duration_sec=duration_sec,
+                error_message=error_msg,
+                started_at=started_at,
+                ended_at=ended_at,
+            )
+            db.close()
+            return updates
+        else:
+            apply_runtime_updates(
+                {
+                    "current_phase": phase_name,
+                    "errors": [{"phase": phase_name, "message": error_msg, "timestamp": ended_at.isoformat()}],
+                    "phase_history": [build_phase_history_entry(phase_name, started_at, "failed")],
+                }
+            )
+            _write_ledger_entry(
+                db=db,
+                job_id=state.job_id,
+                phase_name=phase_name,
+                status="failed",
+                mode="real",
+                duration_sec=duration_sec,
+                error_message=error_msg,
+                started_at=started_at,
+                ended_at=ended_at,
+            )
+            raise
     finally:
         db.close()
 
@@ -253,11 +464,30 @@ def recon_body(db: Session, state: AuditState) -> Dict[str, Any]:
     if recon_result.get("error"):
         raise ValueError(recon_result["error"])
 
+    # Query database for AuthorizationAttestation for current job
+    attestation = db.query(AuthorizationAttestation).filter(AuthorizationAttestation.job_id == state.job_id).first()
+    attestation_accepted = attestation is not None
+    authorization_scope = attestation.authorization_scope if attestation else "passive-only"
+
+    # Check docker availability
+    manager = SandboxManager()
+    docker_available = (manager.client is not None)
+
+    # Generate ScanPlan
+    from backend.app.orchestrator.scan_plan import generate_scan_plan
+    plan = generate_scan_plan(
+        clone_path=recon_result["clone_path"],
+        attestation_accepted=attestation_accepted,
+        authorization_scope=authorization_scope,
+        docker_available=docker_available
+    )
+
     updates = {
         "clone_path": recon_result["clone_path"],
         "tech_stack": recon_result["tech_stack"],
         "entry_points": recon_result["entry_points"],
         "dependency_manifests": recon_result["dependency_manifests"],
+        "scan_plan": plan.model_dump(),
         "scanner_execution": {
             "recon": {"status": "executed", "mode": "real" if "example/" not in state.repo_url else "simulated", "tool": "git"}
         },
@@ -267,7 +497,7 @@ def recon_body(db: Session, state: AuditState) -> Dict[str, Any]:
         db,
         state.job_id,
         "RECON",
-        f"Cloned repository. Tech stack detected: {recon_result['tech_stack']}",
+        f"Cloned repository. Tech stack detected: {recon_result['tech_stack']}. Scan plan resolved: {plan.execution_depth}",
     )
     return updates
 
@@ -342,12 +572,16 @@ def network_body(db: Session, state: AuditState) -> Dict[str, Any]:
     open_ports = run_network_scan(state.sandbox_container_id, state.sandbox_target_ip)
     log_agent_message(db, state.job_id, "NETWORK", f"Port scan completed. Active ports: {[p['port'] for p in open_ports]}")
 
-    if any("fastapi" in stack.lower() or "python" in stack.lower() for stack in state.tech_stack):
-        api_endpoints = ["/api/v1/profile", "/api/v1/users"]
-    elif any("node" in stack.lower() for stack in state.tech_stack):
-        api_endpoints = ["/api/profile", "/api/users"]
+    from backend.app.config import settings
+    if state.api_surface:
+        api_endpoints = [ep["path"] for ep in state.api_surface if ep.get("path")][:settings.API_DISCOVERY_LIMIT]
     else:
-        api_endpoints = ["/"]
+        if any("fastapi" in stack.lower() or "python" in stack.lower() for stack in state.tech_stack):
+            api_endpoints = ["/api/v1/profile", "/api/v1/users"]
+        elif any("node" in stack.lower() for stack in state.tech_stack):
+            api_endpoints = ["/api/profile", "/api/users"]
+        else:
+            api_endpoints = ["/"]
 
     return {
         "open_ports": open_ports,
@@ -502,14 +736,40 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     if not success:
         raise RuntimeError("Failed to compile report PDF.")
 
-    pdf_url = generator.upload_to_r2(pdf_path, state.job_id)
+    # Upload report as a private artifact
+    from backend.app.services.storage import storage_service
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
+    tenant_id = db_job.tenant_id if db_job and db_job.tenant_id else "default-tenant"
+    user_id = db_job.user_id if db_job else None
+
+    artifact = storage_service.upload_artifact(
+        db=db,
+        file_data=Path(pdf_path),
+        organization_id=tenant_id,
+        artifact_type="report_pdf",
+        file_name=pdf_filename,
+        user_id=user_id,
+        job_id=state.job_id,
+        sensitivity_level="restricted",
+    )
+    pdf_url = f"artifact://{artifact.id}"
+
     user_email = "audit-recipient@firecrow.dev"
     if db_job:
         from backend.app.models.user import User
         user = db.query(User).filter(User.id == db_job.user_id).first()
         if user and user.email:
             user_email = user.email
+
+    # Generate a presigned URL specifically for the email link (valid for 7 days)
+    email_url = pdf_url
+    if storage_service.is_s3_active():
+        try:
+            email_url = storage_service.get_presigned_url(db, artifact.id, user_id or "system", expires_in=604800)
+        except Exception:
+            email_url = f"/api/v1/audit/job/{state.job_id}/report"
+    else:
+        email_url = f"/api/v1/audit/job/{state.job_id}/report"
 
     counts = {
         Severity.CRITICAL: len([finding for finding in all_findings if finding.severity == Severity.CRITICAL]),
@@ -518,7 +778,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         Severity.LOW: len([finding for finding in all_findings if finding.severity == Severity.LOW]),
         Severity.INFO: len([finding for finding in all_findings if finding.severity == Severity.INFO]),
     }
-    generator.send_email_report(user_email, pdf_url, state.job_id, counts, repo_url=state.repo_url, pdf_path=pdf_path)
+    generator.send_email_report(user_email, email_url, state.job_id, counts, repo_url=state.repo_url, pdf_path=pdf_path)
     log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated.")
 
     return {
@@ -694,6 +954,11 @@ def cleanup_node(state: AuditState) -> Dict[str, Any]:
 
 
 def route_after_semgrep(state: AuditState) -> Literal["ai_analyzer", "sandbox"]:
+    if state.scan_plan:
+        enabled = state.scan_plan.get("enabled_scanners", [])
+        if "sandbox" not in enabled:
+            return "ai_analyzer"
+
     for finding in state.static_findings + state.semgrep_findings:
         if finding.severity == Severity.CRITICAL and "secret" in finding.title.lower():
             return "ai_analyzer"
@@ -701,6 +966,11 @@ def route_after_semgrep(state: AuditState) -> Literal["ai_analyzer", "sandbox"]:
 
 
 def route_after_attack(state: AuditState) -> Literal["exploit", "ai_analyzer"]:
+    if state.scan_plan:
+        enabled = state.scan_plan.get("enabled_scanners", [])
+        if "exploit" not in enabled:
+            return "ai_analyzer"
+
     if len(state.dynamic_findings) == 0:
         return "ai_analyzer"
     return "exploit"

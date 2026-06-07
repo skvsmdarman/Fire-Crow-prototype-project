@@ -113,7 +113,11 @@ def test_submit_audit_dispatches_celery_task(monkeypatch):
 
     response = client.post(
         "/api/v1/audit/submit",
-        json={"repo_url": "https://github.com/example/repo", "repo_branch": "main"},
+        json={
+            "repo_url": "https://github.com/example/repo",
+            "repo_branch": "main",
+            "attestation_accepted": True
+        },
         headers=headers,
     )
 
@@ -156,7 +160,11 @@ def test_submit_audit_enforces_active_job_limit(monkeypatch):
 
     response = client.post(
         "/api/v1/audit/submit",
-        json={"repo_url": "https://github.com/example/repo", "repo_branch": "main"},
+        json={
+            "repo_url": "https://github.com/example/repo",
+            "repo_branch": "main",
+            "attestation_accepted": True
+        },
         headers=headers,
     )
 

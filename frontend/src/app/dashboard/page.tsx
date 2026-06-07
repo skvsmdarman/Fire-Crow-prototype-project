@@ -26,75 +26,28 @@ import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import { useToast } from "../../components/ui/Toast";
 import { fadeIn, fadeInUp, scaleUp, staggerContainer, tabTransition } from "../../lib/animations";
-import { clearStoredAuthSession, getStoredAuthSession } from "../../lib/authSession";
-import AuditForm from "./components/AuditForm";
-import FindingsList from "./components/FindingsList";
-import JobList from "./components/JobList";
-import LogStream from "./components/LogStream";
-import MetricsRow from "./components/MetricsRow";
-import PipelineViz from "./components/PipelineViz";
-import Sidebar, { Section } from "./components/Sidebar";
+import { useAuthSession } from "../../shared/hooks/useAuthSession";
+import { useSSE } from "../../shared/hooks/useSSE";
+import {
+  submitAudit,
+  fetchJobs as apiFetchJobs,
+  fetchJobDetail as apiFetchJobDetail,
+  cancelJob as apiCancelJob,
+  fetchSystemStatus as apiFetchSystemStatus,
+} from "../../features/audits/api";
+import { Job, JobDetail, Finding, SystemStatus, Severity, JobStatus } from "../../features/audits/types";
+import Sidebar, { Section } from "../../features/audits/components/Sidebar";
+import MetricsRow from "../../features/audits/components/MetricsRow";
+import AuditForm from "../../features/audits/components/AuditForm";
+import JobList from "../../features/audits/components/JobList";
+import PipelineViz from "../../features/audits/components/PipelineViz";
+import LogStream from "../../features/audits/components/LogStream";
+import FindingsList from "../../features/findings/components/FindingsList";
+import { API_BASE_URL } from "../../shared/api/client";
+import { ENDPOINTS } from "../../shared/api/endpoints";
+import { formatDateTime, shortRepoName } from "../../shared/utils/format";
 import mobile from "./mobile.module.css";
 import styles from "./page.module.css";
-import { API_BASE_URL } from "../../lib/policy";
-
-type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
-type Severity = "critical" | "high" | "medium" | "low" | "info";
-
-interface Job {
-  id: string;
-  user_id: string;
-  repo_url: string;
-  repo_branch: string;
-  status: JobStatus;
-  created_at: string;
-  finished_at: string | null;
-  cancel_requested: boolean;
-  cancel_requested_at: string | null;
-  report_pdf_url: string | null;
-  error_message: string | null;
-}
-
-interface Finding {
-  id: string;
-  agent_source: string;
-  title: string;
-  description: string;
-  severity: Severity;
-  cvss_score: number | null;
-  cvss_vector: string | null;
-  evidence: string | null;
-  remediation: string | null;
-}
-
-interface JobDetail {
-  job: Job;
-  findings: Finding[];
-}
-
-interface LogLine {
-  id: number;
-  agent_name: string;
-  log_level: string;
-  message: string;
-  timestamp: string;
-}
-
-interface SystemAgent {
-  name: string;
-  role: string;
-  status: string;
-}
-
-interface SystemStatus {
-  api: string;
-  database: string;
-  debug: boolean;
-  sandbox_mode: "simulation" | "docker";
-  stats: { jobs: number; findings: number };
-  integrations: Record<string, boolean>;
-  agents: SystemAgent[];
-}
 
 const TERMINAL_STATUSES: JobStatus[] = ["completed", "failed", "cancelled", "partial"];
 const TABS: Section[] = ["home", "audits", "findings", "reports", "settings"];
@@ -105,28 +58,6 @@ const SECTION_TITLES: Record<Section, string> = {
   reports: "Reports",
   settings: "Settings",
 };
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
-
-function sanitizeRepoUrl(repoUrl: string): string {
-  return repoUrl.replace(/\/\/([^/@\s]+)@/, "//***@");
-}
-
-function shortRepoName(repoUrl: string): string {
-  return sanitizeRepoUrl(repoUrl).replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
-}
-
-function formatDateTime(value: string | null): string {
-  if (!value) return "Pending";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
 
 function statusLabel(job: Job): "queued" | "running" | "completed" | "failed" | "cancelled" | "partial" | "cancelling" {
   if (job.cancel_requested && !TERMINAL_STATUSES.includes(job.status)) return "cancelling";
@@ -161,31 +92,88 @@ function severityBreakdown(findings: Finding[]) {
 export default function Dashboard() {
   const router = useRouter();
   const { toast } = useToast();
+  const authSession = useAuthSession();
+
   const [activeSection, setActiveSection] = useState<Section>("home");
-  const [username, setUsername] = useState("");
-  const [token, setToken] = useState("");
-  const [userId, setUserId] = useState("");
-  const [authReady, setAuthReady] = useState(false);
-  const [submitError, setSubmitError] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [logs, setLogs] = useState<LogLine[]>([]);
-  const [streamActive, setStreamActive] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [systemError, setSystemError] = useState("");
   const [loadingSystem, setLoadingSystem] = useState(false);
-  const [reportError, setReportError] = useState("");
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
   const touchStartXRef = useRef<number | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    if (authSession.token === null) {
+      router.push("/signin");
+    } else if (authSession.token) {
+      const timer = setTimeout(() => {
+        setAuthReady(true);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [authSession.token, router]);
+
+  const fetchJobs = useCallback(async () => {
+    if (!authSession.token) return;
+    setLoadingJobs(true);
+    try {
+      const data = await apiFetchJobs();
+      setJobs(data);
+      setSelectedJobId((current) => current || data[0]?.id || null);
+    } catch (error) {
+      // apiClient handles unauthorized redirect automatically
+      console.error("Failed to fetch jobs:", error);
+    } finally {
+      setLoadingJobs(false);
+    }
+  }, [authSession.token]);
+
+  const fetchJobDetail = useCallback(
+    async (jobId: string) => {
+      if (!authSession.token) return;
+      setLoadingDetail(true);
+      try {
+        const detail = await apiFetchJobDetail(jobId);
+        setSelectedJobDetail(detail);
+      } catch (error) {
+        console.error("Failed to fetch job detail:", error);
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [authSession.token],
+  );
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) || selectedJobDetail?.job || null,
     [jobs, selectedJobDetail, selectedJobId],
   );
+
+  // Use hook-based SSE logs
+  const { logs, streamActive, startLogStream, stopLogStream } = useSSE({
+    token: authSession.token,
+    onJobStatusChange: useCallback(() => {
+      void fetchJobs();
+      if (selectedJobId) void fetchJobDetail(selectedJobId);
+    }, [fetchJobs, fetchJobDetail, selectedJobId]),
+  });
+
+  useEffect(() => {
+    if (!authSession.token || !selectedJobId || activeSection !== "audits") {
+      stopLogStream();
+      return;
+    }
+
+    void startLogStream(selectedJobId);
+    return stopLogStream;
+  }, [activeSection, selectedJobId, startLogStream, stopLogStream, authSession.token]);
 
   const findings = selectedJobDetail?.findings || [];
   const activeJobs = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
@@ -199,68 +187,31 @@ export default function Dashboard() {
   const severityCounts = severityBreakdown(findings);
   const recentJobs = jobs.slice(0, 4);
 
-  const handleUnauthorized = useCallback(() => {
-    clearStoredAuthSession();
-    const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
-    router.replace(`/signin${searchParamsString}`);
-    toast("Session expired. Please sign in again.", "error");
-  }, [router, toast]);
-
   const fetchSystemStatus = useCallback(async () => {
-    if (!token) return;
+    if (!authSession.token) return;
     setLoadingSystem(true);
     setSystemError("");
     try {
-      const response = await fetch(`${API_BASE_URL}/system/status`, { headers: { Authorization: `Bearer ${token}` } });
-      if (response.status === 401 || response.status === 403) return handleUnauthorized();
-      if (!response.ok) throw new Error("System status endpoint is unavailable.");
-      setSystemStatus((await response.json()) as SystemStatus);
-    } catch (error: unknown) {
-      setSystemError(getErrorMessage(error, "System status endpoint is unavailable."));
+      const status = await apiFetchSystemStatus();
+      setSystemStatus(status);
+    } catch (error) {
+      const err = error as { message?: string };
+      setSystemError(err.message || "System status endpoint is unavailable.");
     } finally {
       setLoadingSystem(false);
     }
-  }, [handleUnauthorized, token]);
-
-  const fetchJobs = useCallback(async () => {
-    if (!token) return;
-    setLoadingJobs(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/audit/jobs`, { headers: { Authorization: `Bearer ${token}` } });
-      if (response.status === 401 || response.status === 403) return handleUnauthorized();
-      if (response.ok) {
-        const data = (await response.json()) as Job[];
-        setJobs(data);
-        setSelectedJobId((current) => current || data[0]?.id || null);
-      }
-    } finally {
-      setLoadingJobs(false);
-    }
-  }, [handleUnauthorized, token]);
-
-  const fetchJobDetail = useCallback(
-    async (jobId: string) => {
-      if (!token) return;
-      setLoadingDetail(true);
-      try {
-        const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
-        if (response.status === 401 || response.status === 403) return handleUnauthorized();
-        if (response.ok) setSelectedJobDetail((await response.json()) as JobDetail);
-      } finally {
-        setLoadingDetail(false);
-      }
-    },
-    [handleUnauthorized, token],
-  );
+  }, [authSession.token]);
 
   const openReport = useCallback(
     async (jobId: string) => {
-      if (!token) return;
-      setReportError("");
+      if (!authSession.token) return;
+      setReportError(null);
       toast("Retrieving report PDF...", "info");
       try {
-        const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}/report`, { headers: { Authorization: `Bearer ${token}` } });
-        if (response.status === 401 || response.status === 403) return handleUnauthorized();
+        // Binary fetch bypasses request JSON parser
+        const response = await fetch(`${API_BASE_URL}${ENDPOINTS.audit.report(jobId)}`, {
+          headers: { Authorization: `Bearer ${authSession.token}` }
+        });
         if (!response.ok) {
           const errorBody = await response.json().catch(() => null);
           throw new Error(errorBody?.detail || "Unable to open this report.");
@@ -270,98 +221,34 @@ export default function Dashboard() {
         window.open(reportUrl, "_blank", "noopener,noreferrer");
         window.setTimeout(() => window.URL.revokeObjectURL(reportUrl), 60_000);
         toast("Report opened successfully.", "success");
-      } catch (error: unknown) {
-        const msg = getErrorMessage(error, "Unable to open this report.");
+      } catch (error) {
+        const err = error as { message?: string };
+        const msg = err.message || "Unable to open this report.";
         setReportError(msg);
         toast(msg, "error");
       }
     },
-    [handleUnauthorized, toast, token],
-  );
-
-  const stopLogStream = useCallback(() => {
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-    setStreamActive(false);
-  }, []);
-
-  const startLogStream = useCallback(
-    async (jobId: string) => {
-      if (!token) return;
-      stopLogStream();
-      setLogs([]);
-      setStreamActive(true);
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      try {
-        const response = await fetch(`${API_BASE_URL}/audit/${jobId}/stream`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        });
-        if (response.status === 401 || response.status === 403) return handleUnauthorized();
-        if (!response.body) throw new Error("Log stream unavailable.");
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-          for (const rawLine of lines) {
-            if (!rawLine.startsWith("data:")) continue;
-            const payload = rawLine.replace("data:", "").trim();
-            try {
-              const parsed = JSON.parse(payload);
-              if (parsed.message) setLogs((previous) => [...previous, parsed as LogLine]);
-              if (parsed.status) {
-                fetchJobs();
-                fetchJobDetail(jobId);
-              }
-            } catch {
-              // Ignore non-JSON stream fragments.
-            }
-          }
-        }
-      } catch (error: unknown) {
-        if (!(error instanceof Error) || error.name !== "AbortError") {
-          setLogs((previous) => [
-            ...previous,
-            { id: Date.now(), agent_name: "SYSTEM", log_level: "ERROR", message: getErrorMessage(error, "Log stream disconnected."), timestamp: new Date().toISOString() },
-          ]);
-        }
-      } finally {
-        setStreamActive(false);
-      }
-    },
-    [fetchJobDetail, fetchJobs, handleUnauthorized, stopLogStream, token],
+    [authSession.token, toast],
   );
 
   const handleLaunchScan = async (repoUrl: string, repoBranch: string) => {
-    if (!token) return setSubmitError("Connect a workspace before launching an audit.");
+    if (!authSession.token) return setSubmitError("Connect a workspace before launching an audit.");
     if (!repoUrl.trim()) return setSubmitError("Repository URL is required.");
     setSubmitting(true);
-    setSubmitError("");
+    setSubmitError(null);
     toast("Submitting repository intake request...", "info");
     try {
-      const response = await fetch(`${API_BASE_URL}/audit/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ repo_url: repoUrl.trim(), repo_branch: repoBranch.trim() || "main" }),
+      const job = await submitAudit({
+        repo_url: repoUrl.trim(),
+        repo_branch: repoBranch.trim() || "main"
       });
-      if (response.status === 401 || response.status === 403) return handleUnauthorized();
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.detail || "Unable to launch audit.");
-      }
-      const job = (await response.json()) as Job;
       setSelectedJobId(job.id);
       setActiveSection("audits");
       await fetchJobs();
       toast("Audit job successfully queued!", "success");
-    } catch (error: unknown) {
-      const msg = getErrorMessage(error, "Unable to launch audit.");
+    } catch (error) {
+      const err = error as { message?: string };
+      const msg = err.message || "Unable to launch audit.";
       setSubmitError(msg);
       toast(msg, "error");
     } finally {
@@ -370,92 +257,71 @@ export default function Dashboard() {
   };
 
   const cancelScan = async (jobId: string) => {
-    if (!token) return;
+    if (!authSession.token) return;
     toast("Requesting job cancellation...", "info");
-    const response = await fetch(`${API_BASE_URL}/audit/job/${jobId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
-    if (response.status === 401 || response.status === 403) return handleUnauthorized();
-    if (response.ok) {
-      fetchJobs();
-      fetchJobDetail(jobId);
+    try {
+      await apiCancelJob(jobId);
+      await fetchJobs();
+      await fetchJobDetail(jobId);
       toast("Cancellation request transmitted.", "success");
-    } else {
-      toast("Unable to cancel job.", "error");
+    } catch (error) {
+      const err = error as { message?: string };
+      toast(err.message || "Unable to cancel job.", "error");
     }
   };
 
-  const signOut = () => {
+  const handleSignOut = () => {
     toast("Signing out...", "info");
-    if (token) void fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => undefined);
-    stopLogStream();
-    clearStoredAuthSession();
+    authSession.logout();
     router.push("/signin");
   };
 
   useEffect(() => {
-    const { token: savedToken, userId: savedUserId, username: savedUsername } = getStoredAuthSession();
-    if (!savedToken || !savedUsername || !savedUserId) {
-      clearStoredAuthSession();
-      const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
-      router.replace(`/signin${searchParamsString}`);
-      return;
+    if (authSession.token) {
+      const timer = setTimeout(() => {
+        void fetchJobs();
+        void fetchSystemStatus();
+      }, 0);
+      return () => clearTimeout(timer);
     }
-    const validateToken = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${savedToken}` } });
-        if (response.status === 401 || response.status === 403) {
-          clearStoredAuthSession();
-          const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
-          router.replace(`/signin${searchParamsString}`);
-          return;
-        }
-        setToken(savedToken);
-        setUsername(savedUsername);
-        setUserId(savedUserId);
-        setAuthReady(true);
-      } catch {
-        clearStoredAuthSession();
-        const searchParamsString = typeof window !== "undefined" ? window.location.search : "";
-        router.replace(`/signin${searchParamsString}`);
-      }
-    };
-    void validateToken();
-  }, [router]);
-
-  useEffect(() => { if (token) fetchJobs(); }, [fetchJobs, token]);
-  useEffect(() => { if (token) fetchSystemStatus(); }, [fetchSystemStatus, token]);
-  useEffect(() => { if (selectedJobId && token) fetchJobDetail(selectedJobId); }, [fetchJobDetail, selectedJobId, token]);
-  useEffect(() => {
-    if (!token || !selectedJobId || activeSection !== "audits") {
-      stopLogStream();
-      return;
-    }
-
-    void startLogStream(selectedJobId);
-    return stopLogStream;
-  }, [activeSection, selectedJobId, startLogStream, stopLogStream, token]);
+  }, [fetchJobs, fetchSystemStatus, authSession.token]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !token || !authReady) return;
+    if (selectedJobId && authSession.token) {
+      const timer = setTimeout(() => {
+        void fetchJobDetail(selectedJobId);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [fetchJobDetail, selectedJobId, authSession.token]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !authSession.token) return;
     const urlParams = new URLSearchParams(window.location.search);
     const queryJobId = urlParams.get("job_id");
     if (queryJobId) {
-      setSelectedJobId(queryJobId);
-      setActiveSection("reports");
-      openReport(queryJobId);
+      const timer = setTimeout(() => {
+        setSelectedJobId(queryJobId);
+        setActiveSection("reports");
+        void openReport(queryJobId);
+      }, 0);
       // Clean up the URL to prevent double opening on refresh
       const url = new URL(window.location.href);
       url.searchParams.delete("job_id");
       window.history.replaceState({}, "", url.toString());
+      return () => clearTimeout(timer);
     }
-  }, [token, authReady, openReport]);
+  }, [authSession.token, openReport]);
+
   useEffect(() => {
-    if (!selectedJob || !token || (selectedJob.status !== "queued" && selectedJob.status !== "running")) return;
+    if (!selectedJob || !authSession.token || (selectedJob.status !== "queued" && selectedJob.status !== "running")) return;
     const interval = window.setInterval(() => {
-      fetchJobs();
-      fetchJobDetail(selectedJob.id);
+      void fetchJobs();
+      void fetchJobDetail(selectedJob.id);
     }, 3500);
     return () => window.clearInterval(interval);
-  }, [fetchJobDetail, fetchJobs, selectedJob, token]);
+  }, [fetchJobDetail, fetchJobs, selectedJob, authSession.token]);
+
   const onTouchStart = (event: React.TouchEvent) => { touchStartXRef.current = event.touches[0].clientX; };
   const onTouchEnd = (event: React.TouchEvent) => {
     if (touchStartXRef.current === null) return;
@@ -466,6 +332,7 @@ export default function Dashboard() {
     touchStartXRef.current = null;
   };
 
+  // If the session isn't loaded yet
   if (!authReady) {
     return (
       <main className="auth-shell">
@@ -483,7 +350,7 @@ export default function Dashboard() {
     <main className={styles.shell}>
       <div className="auth-glow-orb auth-glow-orb-1" style={{ opacity: 0.15 }} />
       <div className="auth-glow-orb auth-glow-orb-2" style={{ opacity: 0.15 }} />
-      <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} username={username} userId={userId} />
+      <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} username={authSession.workspace || ""} userId={authSession.userId || ""} />
 
       <motion.section variants={fadeIn} initial="hidden" animate="visible" className={styles.mainSurface} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <header className={styles.topbar}>
@@ -494,10 +361,10 @@ export default function Dashboard() {
           <div className={styles.workspaceSession}>
             <User size={13} className={styles.sessionIcon} />
             <div className={styles.sessionMeta}>
-              <strong>{username}</strong>
+              <strong>{authSession.workspace}</strong>
               <span>Signed in</span>
             </div>
-            <Button variant="ghost" size="sm" onClick={signOut} style={{ minHeight: "32px", fontSize: "11px", padding: "0 8px" }}><LogOut size={12} />Sign out</Button>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} style={{ minHeight: "32px", fontSize: "11px", padding: "0 8px" }}><LogOut size={12} />Sign out</Button>
           </div>
         </header>
 
@@ -610,7 +477,7 @@ export default function Dashboard() {
                             onClick={() => {
                               setSelectedJobId(job.id);
                               setActiveSection("audits");
-                              fetchJobDetail(job.id);
+                              void fetchJobDetail(job.id);
                             }}
                           >
                             <span>{formatDateTime(job.created_at)}</span>
@@ -629,7 +496,7 @@ export default function Dashboard() {
 
           {activeSection === "audits" && (
             <motion.div key="audits" initial="hidden" animate="visible" exit="exit" variants={staggerContainer}>
-              <div className={styles.workGrid}><motion.div variants={scaleUp}><AuditForm onSubmit={handleLaunchScan} submitting={submitting} submitError={submitError} /></motion.div><motion.div variants={scaleUp}><JobList jobs={jobs} selectedJobId={selectedJobId} loadingJobs={loadingJobs} onRefresh={fetchJobs} onJobSelect={(jobId) => { setSelectedJobId(jobId); fetchJobDetail(jobId); }} /></motion.div></div>
+              <div className={styles.workGrid}><motion.div variants={scaleUp}><AuditForm onSubmit={handleLaunchScan} submitting={submitting} submitError={submitError} /></motion.div><motion.div variants={scaleUp}><JobList jobs={jobs} selectedJobId={selectedJobId} loadingJobs={loadingJobs} onRefresh={fetchJobs} onJobSelect={(jobId) => { setSelectedJobId(jobId); void fetchJobDetail(jobId); }} /></motion.div></div>
               <div className={styles.detailGrid}><motion.div variants={scaleUp}><PipelineViz job={selectedJob} onOpenReport={openReport} onCancel={cancelScan} reportError={reportError} /></motion.div><motion.div variants={scaleUp}><Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Status</div><h2>{selectedJob ? statusLabel(selectedJob) : "No audit selected"}</h2></div><Badge variant="status" type={streamActive ? "running" : selectedJob ? statusLabel(selectedJob) : "queued"}>{streamActive ? "live logs" : selectedJob ? statusLabel(selectedJob) : "idle"}</Badge></div><p className={mobile.panelCopy}>{selectedJob ? "The selected audit controls the summary, report action, and log panel below." : "Choose an audit from the list to inspect its saved state."}</p></Card></motion.div></div>
               <motion.div variants={scaleUp}><LogStream logs={logs} streamActive={streamActive} hasSelection={Boolean(selectedJobId)} /></motion.div>
             </motion.div>
@@ -644,13 +511,13 @@ export default function Dashboard() {
 
           {activeSection === "reports" && (
             <motion.div key="reports" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
-              <Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Reports</div><h2>Audit reports</h2></div><Button variant="ghost" size="sm" onClick={fetchJobs} disabled={!token || loadingJobs}><RefreshCw className={loadingJobs ? styles.spin : ""} size={12} />Refresh</Button></div><div className={styles.reportList}>{reportError && <div className={styles.noticeError}>{reportError}</div>}{!token ? <div className={styles.emptyState}>Connect a workspace to view reports.</div> : reportJobs.length === 0 ? <div className={styles.emptyState}>No audit reports are available yet. Start an authorized audit to generate your first report.</div> : reportJobs.map((job) => <motion.article whileHover={{ scale: 1.01 }} className={styles.reportRow} key={job.id}><div><Badge variant="status" type={statusLabel(job)}>{statusLabel(job)}</Badge><h3>{shortRepoName(job.repo_url)}</h3><p>Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}</p></div>{job.report_pdf_url ? <Button variant="ghost" size="sm" onClick={() => openReport(job.id)}><FileText size={14} />Open report</Button> : <span className={styles.reportMissing}>No PDF artifact</span>}</motion.article>)}</div></Card>
+              <Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Reports</div><h2>Audit reports</h2></div><Button variant="ghost" size="sm" onClick={fetchJobs} disabled={!authSession.token || loadingJobs}><RefreshCw className={loadingJobs ? styles.spin : ""} size={12} />Refresh</Button></div><div className={styles.reportList}>{reportError && <div className={styles.noticeError}>{reportError}</div>}{!authSession.token ? <div className={styles.emptyState}>Connect a workspace to view reports.</div> : reportJobs.length === 0 ? <div className={styles.emptyState}>No audit reports are available yet. Start an authorized audit to generate your first report.</div> : reportJobs.map((job) => <motion.article whileHover={{ scale: 1.01 }} className={styles.reportRow} key={job.id}><div><Badge variant="status" type={statusLabel(job)}>{statusLabel(job)}</Badge><h3>{shortRepoName(job.repo_url)}</h3><p>Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}</p></div>{job.report_pdf_url ? <Button variant="ghost" size="sm" onClick={() => openReport(job.id)}><FileText size={14} />Open report</Button> : <span className={styles.reportMissing}>No PDF artifact</span>}</motion.article>)}</div></Card>
             </motion.div>
           )}
 
           {activeSection === "settings" && (
             <motion.div key="settings" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
-              <Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Settings</div><h2>Workspace settings</h2></div><Button variant="ghost" size="sm" onClick={fetchSystemStatus} disabled={loadingSystem}><RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />Refresh</Button></div>{systemError && <div className={styles.noticeError}>{systemError}</div>}<div className={styles.settingsGrid}><StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} icon={<Globe size={14} />} /><StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} icon={<Database size={14} />} /><StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Simulation"} tone="warn" icon={<HardDrive size={14} />} /><StatusCard label="Workspace" value={username || "Not connected"} tone={username ? "good" : "warn"} icon={<Fingerprint size={14} />} /></div><div className={styles.integrationList}>{Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => <motion.div whileHover={{ x: 2 }} className={styles.integrationRow} key={name}><span>{name.replaceAll("_", " ")}</span><strong className={enabled ? styles.integrationOn : styles.integrationOff}>{enabled ? "configured" : "not configured"}</strong></motion.div>)}<div className={styles.integrationRow}><span>PWA offline policy</span><strong className={styles.integrationOn}>private API data not cached</strong></div><div className={styles.integrationRow}><span>Install help</span><strong className={styles.integrationOn}>use browser install prompt when available</strong></div>{!systemStatus && !systemError && <div className={styles.emptyState}>System status has not loaded yet.</div>}</div><div className={mobile.settingsActions}><Button type="button" variant="danger" onClick={signOut}><LogOut size={14} />Logout</Button></div></Card>
+              <Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Settings</div><h2>Workspace settings</h2></div><Button variant="ghost" size="sm" onClick={fetchSystemStatus} disabled={loadingSystem}><RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />Refresh</Button></div>{systemError && <div className={styles.noticeError}>{systemError}</div>}<div className={styles.settingsGrid}><StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} icon={<Globe size={14} />} /><StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} icon={<Database size={14} />} /><StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Simulation"} tone="warn" icon={<HardDrive size={14} />} /><StatusCard label="Workspace" value={authSession.workspace || "Not connected"} tone={authSession.workspace ? "good" : "warn"} icon={<Fingerprint size={14} />} /></div><div className={styles.integrationList}>{Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => <motion.div whileHover={{ x: 2 }} className={styles.integrationRow} key={name}><span>{name.replaceAll("_", " ")}</span><strong className={enabled ? styles.integrationOn : styles.integrationOff}>{enabled ? "configured" : "not configured"}</strong></motion.div>)}<div className={styles.integrationRow}><span>PWA offline policy</span><strong className={styles.integrationOn}>private API data not cached</strong></div><div className={styles.integrationRow}><span>Install help</span><strong className={styles.integrationOn}>use browser install prompt when available</strong></div>{!systemStatus && !systemError && <div className={styles.emptyState}>System status has not loaded yet.</div>}</div><div className={mobile.settingsActions}><Button type="button" variant="danger" onClick={handleSignOut}><LogOut size={14} />Logout</Button></div></Card>
             </motion.div>
           )}
         </AnimatePresence>

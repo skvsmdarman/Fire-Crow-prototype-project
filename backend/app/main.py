@@ -16,7 +16,7 @@ from backend.app.services.limiter import limiter
 
 from backend.app.config import settings, WORKSPACE_DIR
 from backend.app.models.database import Base, engine, ensure_database_compatibility, get_db
-from backend.app.api import auth_router, audit_router, sse_router, system_router
+from backend.app.api import auth_router, audit_router, sse_router, system_router, storage_router
 from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.main")
@@ -42,23 +42,24 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Compatibility only. Production deployments should run Alembic migrations before startup.
-    if not settings.DEBUG:
-        logger.warning("Running metadata create_all compatibility check; configure Alembic migrations for production.")
-    Base.metadata.create_all(bind=engine)
-    ensure_database_compatibility()
-    
-    # Startup check for pending migration problems
-    try:
-        from backend.app.models.database import check_pending_migrations
-        if check_pending_migrations():
-            logger.warning(
-                "SECURITY WARNING: Pending database migrations detected. "
-                "Please run 'alembic upgrade head' to ensure database schema is up-to-date."
-            )
-    except Exception as e:
-        logger.error("Error running database migration startup check: %s", str(e))
-        
+    if settings.DEBUG:
+        Base.metadata.create_all(bind=engine)
+        ensure_database_compatibility()
+    else:
+        logger.warning("Running in non-debug/production mode; checking for pending migrations.")
+        try:
+            from backend.app.models.database import check_pending_migrations
+            if check_pending_migrations():
+                logger.error(
+                    "SECURITY CRITICAL: Pending database migrations detected. "
+                    "Startup blocked. Run 'alembic upgrade head' first."
+                )
+                raise RuntimeError("Pending database migrations on production startup.")
+        except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise e
+            logger.error("Error running database migration startup check: %s", str(e))
+
     # Run database storage housekeeping
     try:
         from backend.app.models.database import SessionLocal
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
             db.close()
     except Exception as e:
         logger.error("Error running database housekeeping on startup: %s", str(e))
-        
+
     yield
 
 
@@ -122,6 +123,25 @@ app.add_middleware(
 )
 
 @app.middleware("http")
+async def limit_request_body_size(request: Request, call_next):
+    content_length_header = request.headers.get("content-length")
+    if content_length_header:
+        try:
+            content_length = int(content_length_header)
+            if content_length > settings.MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Payload Too Large"},
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid Content-Length header"},
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     request.state.request_id = request_id
@@ -137,14 +157,26 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Content-Security-Policy"] = (
+
+    img_src_domains = "https://avatars.githubusercontent.com https://*.googleusercontent.com"
+    if settings.R2_ENDPOINT_URL:
+        r2_domain = settings.R2_ENDPOINT_URL
+        if "://" in r2_domain:
+            r2_domain = r2_domain.split("://")[1]
+        img_src_domains += f" https://{r2_domain}"
+
+    if settings.DEBUG:
+        img_src_domains += " https://*"
+
+    csp_header = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "style-src 'self' 'unsafe-inline'; "
-        "font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com; "
-        "img-src 'self' data: https://avatars.githubusercontent.com https://*.googleusercontent.com https://*; "
+        f"font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com; "
+        f"img-src 'self' data: {img_src_domains}; "
         "connect-src 'self' ws: wss: http: https:;"
     )
+    response.headers["Content-Security-Policy"] = csp_header
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
@@ -153,6 +185,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(sse_router, prefix="/api/v1")
 app.include_router(system_router, prefix="/api/v1")
+app.include_router(storage_router, prefix="/api/v1")
 
 # Ensure reports directory exists for authenticated downloads
 reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
@@ -162,7 +195,6 @@ os.makedirs(reports_dir, exist_ok=True)
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
     try:
-        # Verify database connection with a simple query
         from sqlalchemy import text
         db.execute(text("SELECT 1"))
         db_ok = True
@@ -174,6 +206,80 @@ async def health_check(db: Session = Depends(get_db)):
         "status": "up" if db_ok else "degraded",
         "database": "connected" if db_ok else "unavailable"
     }
+
+
+@app.get("/health/live")
+async def health_live():
+    return {"status": "live"}
+
+
+@app.get("/health/ready")
+async def health_ready(db: Session = Depends(get_db)):
+    db_ok = True
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+        logger.error("Readiness check database probe failed", exc_info=True)
+
+    redis_ok = True
+    try:
+        from backend.app.services.auth import _get_redis_client
+        client = _get_redis_client()
+        if client is not None:
+            client.ping()
+    except Exception:
+        redis_ok = False
+        logger.error("Readiness check Redis probe failed", exc_info=True)
+
+    if not db_ok or not redis_ok:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "database": "connected" if db_ok else "unavailable",
+                "cache": "connected" if redis_ok else "unavailable"
+            }
+        )
+    return {"status": "ready"}
+
+
+@app.get("/health/deep")
+async def health_deep(db: Session = Depends(get_db)):
+    db_ok = True
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+
+    storage_ok = True
+    try:
+        test_file = Path(WORKSPACE_DIR) / "workspace" / f".health_probe_{uuid.uuid4()}"
+        test_file.write_text("health_ok")
+        test_file.unlink()
+    except Exception:
+        storage_ok = False
+
+    s3_ok = True
+    from backend.app.services.storage import storage_service
+    if storage_service.s3_client is not None:
+        try:
+            storage_service.s3_client.list_buckets()
+        except Exception:
+            s3_ok = False
+
+    status_code = 200 if (db_ok and storage_ok and s3_ok) else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "healthy" if status_code == 200 else "unhealthy",
+            "database": "ok" if db_ok else "failed",
+            "local_storage": "ok" if storage_ok else "failed",
+            "object_storage": "ok" if s3_ok else ("failed" if storage_service.is_s3_active() else "disabled"),
+        }
+    )
 
 
 frontend_dist_dir = Path(WORKSPACE_DIR) / "frontend" / "out"

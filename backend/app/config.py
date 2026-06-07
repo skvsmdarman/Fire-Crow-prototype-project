@@ -18,6 +18,24 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = Field(default="http://localhost:3000", validation_alias="FRONTEND_URL")
     CORS_ORIGINS: str = Field(default="", validation_alias="CORS_ORIGINS")
 
+    # --- Security and Compliance Constants ---
+    PRIVACY_POLICY_VERSION: str = Field(default="2026-06-06", validation_alias="PRIVACY_POLICY_VERSION")
+    TERMS_VERSION: str = Field(default="2026-06-06", validation_alias="TERMS_VERSION")
+    GITHUB_OAUTH_SCOPES: list[str] = Field(
+        default=["repo", "workflow", "read:org", "user:email"],
+        validation_alias="GITHUB_OAUTH_SCOPES"
+    )
+    LOGIN_FAILURE_WINDOW_MINUTES: int = Field(default=10, validation_alias="LOGIN_FAILURE_WINDOW_MINUTES")
+    LOGIN_FAILURE_LIMIT: int = Field(default=5, validation_alias="LOGIN_FAILURE_LIMIT")
+    MAX_REQUEST_BODY_BYTES: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB
+    MAX_JSON_BODY_BYTES: int = Field(default=2 * 1024 * 1024, validation_alias="MAX_JSON_BODY_BYTES")  # 2MB
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60 * 24, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    AUTH_COOKIE_NAME: str = Field(default="fc_access_token", validation_alias="AUTH_COOKIE_NAME")
+    AUTH_COOKIE_SECURE: bool = Field(default=True, validation_alias="AUTH_COOKIE_SECURE")
+    AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
+    AUTH_COOKIE_SAMESITE: str = Field(default="lax", validation_alias="AUTH_COOKIE_SAMESITE")
+
+
     # --- Database & Cache ---
     DATABASE_URL: str = Field(
         default="postgresql://postgres:postgres@localhost:5432/firecrow",
@@ -66,10 +84,10 @@ class Settings(BaseSettings):
 
     # --- AI Models API Keys ---
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
-    GEMINI_MODEL: str = Field(default="gemini-3.5-flash", validation_alias="GEMINI_MODEL")
+    GEMINI_MODEL: str = Field(default="", validation_alias="GEMINI_MODEL")
 
     # --- Gemini Tuning ---
-    GEMINI_FALLBACK_MODEL: str = Field(default="gemini-1.5-flash", validation_alias="GEMINI_FALLBACK_MODEL")
+    GEMINI_FALLBACK_MODEL: str = Field(default="", validation_alias="GEMINI_FALLBACK_MODEL")
     GEMINI_ENABLE_FALLBACK_MODEL: bool = Field(default=True, validation_alias="GEMINI_ENABLE_FALLBACK_MODEL")
     GEMINI_MAX_ATTEMPTS: int = Field(default=3, validation_alias="GEMINI_MAX_ATTEMPTS")
     GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias="GEMINI_TIMEOUT_SECONDS")
@@ -77,6 +95,31 @@ class Settings(BaseSettings):
     GEMINI_MAX_PROMPT_CHARS: int = Field(default=100000, validation_alias="GEMINI_MAX_PROMPT_CHARS")
     GEMINI_DAILY_SOFT_LIMIT: int = Field(default=1000, validation_alias="GEMINI_DAILY_SOFT_LIMIT")
     GEMINI_MIN_SECONDS_BETWEEN_CALLS: int = Field(default=1, validation_alias="GEMINI_MIN_SECONDS_BETWEEN_CALLS")
+
+    # --- Orchestration Tunables ---
+    MAX_ACTIVE_JOBS_PER_USER: int = Field(default=5, validation_alias="MAX_ACTIVE_JOBS_PER_USER")
+    BROKER_CONNECTION_TIMEOUT: float = Field(default=0.5, validation_alias="BROKER_CONNECTION_TIMEOUT")
+    SSE_POLL_INTERVAL: float = Field(default=0.5, validation_alias="SSE_POLL_INTERVAL")
+    SSE_HEARTBEAT_INTERVAL: float = Field(default=15.0, validation_alias="SSE_HEARTBEAT_INTERVAL")
+    REPORT_PRESIGNED_TTL: int = Field(default=3600, validation_alias="REPORT_PRESIGNED_TTL")
+    REPORT_LOCAL_FALLBACK: bool = Field(default=True, validation_alias="REPORT_LOCAL_FALLBACK")
+    MAX_SCAN_DURATION: int = Field(default=2700, validation_alias="MAX_SCAN_DURATION")
+    DEFAULT_BUDGET_USD: float = Field(default=5.0, validation_alias="DEFAULT_BUDGET_USD")
+    SCANNER_COMMAND_TIMEOUT: int = Field(default=600, validation_alias="SCANNER_COMMAND_TIMEOUT")
+    SCANNER_OUTPUT_MAX_LENGTH: int = Field(default=50000, validation_alias="SCANNER_OUTPUT_MAX_LENGTH")
+    API_DISCOVERY_LIMIT: int = Field(default=50, validation_alias="API_DISCOVERY_LIMIT")
+    GEMINI_FINDINGS_CHUNK_SIZE: int = Field(default=50, validation_alias="GEMINI_FINDINGS_CHUNK_SIZE")
+
+    # --- Scoring Tunables ---
+    SCORING_CRITICAL: float = Field(default=9.8, validation_alias="SCORING_CRITICAL")
+    SCORING_HIGH: float = Field(default=8.5, validation_alias="SCORING_HIGH")
+    SCORING_MEDIUM: float = Field(default=5.5, validation_alias="SCORING_MEDIUM")
+    SCORING_LOW: float = Field(default=2.5, validation_alias="SCORING_LOW")
+    SCORING_INFO: float = Field(default=0.0, validation_alias="SCORING_INFO")
+
+    # --- Sandbox launch profiles config ---
+    SANDBOX_PYTHON_IMAGE: str = Field(default="python:3.12-alpine", validation_alias="SANDBOX_PYTHON_IMAGE")
+    SANDBOX_NODE_IMAGE: str = Field(default="node:20-alpine", validation_alias="SANDBOX_NODE_IMAGE")
 
     # --- Reporter Tuning ---
     REPORT_COMPACT_MODE: bool = Field(default=False, validation_alias="REPORT_COMPACT_MODE")

@@ -1,0 +1,98 @@
+# Deployment Notes
+
+These notes are based on `render.yaml`, `Dockerfile`, `backend/app/config.py`, `backend/app/models/database.py`, `backend/app/main.py`, `backend/app/services/sandbox.py`, and `backend/app/services/storage.py`.
+
+## Current Deploy Shape
+
+The repo contains a single-service Docker deployment path:
+
+- `Dockerfile` builds the frontend static export and the backend image.
+- `backend/app/main.py` mounts `frontend/out` if it exists.
+- `render.yaml` declares one Docker web service named `firecrow`.
+
+## Render Notes
+
+Current `render.yaml` only provisions:
+
+- `DATABASE_URL`
+- `DEBUG=false`
+- `SECRET_KEY`
+
+That is enough for a minimal boot, not for all optional features.
+
+## Production Database Requirements
+
+Source: `backend/app/config.py`, `backend/app/models/database.py`.
+
+- Production mode rejects SQLite.
+- If `DATABASE_URL` points at PostgreSQL and the connection fails in non-debug mode, startup fails.
+- In debug mode, failed PostgreSQL connection can fall back to local SQLite.
+
+## Migration Behavior
+
+Source: `backend/app/main.py`, `backend/app/models/database.py`, `backend/alembic/env.py`.
+
+- Debug startup runs `Base.metadata.create_all()` and `ensure_database_compatibility()`.
+- Non-debug startup checks for pending Alembic migrations and can block startup.
+- The compatibility helpers still auto-add some columns/tables outside Alembic in debug mode.
+
+Practical warning:
+
+- This repository still mixes migration-aware behavior with compatibility helpers. Treat schema changes carefully.
+
+## Redis / Celery
+
+- Redis is optional in the codebase.
+- Without Redis, audit execution falls back to in-process `BackgroundTasks`.
+- If you want worker isolation in production, you need a reachable Redis instance plus a Celery worker deployment.
+
+## Docker / Sandbox Limits
+
+Source: `backend/app/services/sandbox.py`.
+
+- Dynamic validation depends on Docker and on the scanner image.
+- Some platforms, especially restrictive hosted environments, may not support nested Docker use the way the active phases expect.
+- In debug mode the code can simulate sandbox behavior; in non-debug mode the sandbox is stricter.
+
+This means a hosted deployment can still serve the UI/API while never performing real active sandbox stages.
+
+## Object Storage
+
+- Reports and evidence can stay local if object storage is not configured.
+- For persistent multi-instance deployments, configure `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, and `R2_BUCKET_NAME`.
+- Legacy `CLOUDFLARE_R2_*` aliases are still honored in some services.
+
+## Email Providers
+
+- SMTP
+- Resend
+- Brevo
+
+If none are configured:
+
+- debug mode can write email HTML locally
+- non-debug mode does not use that local fallback
+
+## Static Frontend Serving
+
+The backend serves `frontend/out` only if the directory exists. The Dockerfile makes that true in the container image, but local source-only backend runs do not automatically build the frontend.
+
+## Render / Free-Tier Caveats
+
+The codebase itself does not encode Render pricing or sleep behavior, but current hosted caveats still apply operationally:
+
+- cold starts can affect startup probes
+- Redis and Docker-dependent active stages may not be present
+- filesystem-backed local artifact storage is not a strong persistence strategy for scaled or ephemeral instances
+
+## Production-Hardening Checklist
+
+- Use PostgreSQL, not SQLite.
+- Set a strong `SECRET_KEY` and preferably a separate `ENCRYPTION_KEY`.
+- Decide whether Redis/Celery is required or whether in-process execution is acceptable.
+- Decide whether object storage is required for report durability.
+- Decide whether email delivery is required and configure one provider.
+- Decide whether real sandboxed active testing is possible on the target host.
+- Run `alembic upgrade head` before non-debug startup when migrations exist.
+- Verify that frontend and backend audit-submit contracts match before relying on the dashboard UI.
+

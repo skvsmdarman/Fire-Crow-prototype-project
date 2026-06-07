@@ -1,3 +1,7 @@
+# Historical Note
+
+Prefer `docs/ARCHITECTURE.md` for the current architecture overview tied to the present codebase. This file is older design/reference material.
+
 # Fire Crow Application Architecture
 
 This document defines the technical constraints, folder hierarchy, state sync, and building rules for the Fire Crow project.

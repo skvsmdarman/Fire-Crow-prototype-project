@@ -77,6 +77,32 @@ class SandboxManager:
             },
         }
 
+    def _detect_launch_profile(self, clone_path: str) -> Tuple[str, str, int, str]:
+        """
+        Detects the profile of the cloned repository.
+        Returns: (profile_name, image_name, port, start_command)
+        """
+        if not clone_path or not os.path.exists(clone_path):
+            return "unsupported", "", 0, ""
+
+        # Node / Next.js
+        if os.path.exists(os.path.join(clone_path, "package.json")):
+            return "node", settings.SANDBOX_NODE_IMAGE, 3000, "npm run start"
+
+        # Python / Django / FastAPI / Flask
+        has_python = False
+        for filename in ("requirements.txt", "main.py", "app.py", "wsgi.py", "manage.py"):
+            if os.path.exists(os.path.join(clone_path, filename)):
+                has_python = True
+                break
+
+        if has_python:
+            if os.path.exists(os.path.join(clone_path, "manage.py")):
+                return "django", settings.SANDBOX_PYTHON_IMAGE, 8000, "python manage.py runserver 0.0.0.0:8000"
+            return "python", settings.SANDBOX_PYTHON_IMAGE, 8000, "python -m http.server 8000"
+
+        return "unsupported", "", 0, ""
+
     def provision_sandbox(
         self, 
         job_id: str, 
@@ -94,9 +120,15 @@ class SandboxManager:
 
         if self.mock_mode:
             logger.info(f"[SIMULATOR] Created virtual private bridge network '{net_name}'")
-            logger.info(f"[SIMULATOR] Deployed target application container '{target_cid}' with path '{clone_path}'")
+            profile_name, _, _, _ = self._detect_launch_profile(clone_path)
+            if profile_name == "unsupported":
+                logger.warning(f"[SIMULATOR] Unsupported repository tech stack; skipped target container run.")
+                target_cid_sim = ""
+            else:
+                logger.info(f"[SIMULATOR] Deployed target application container '{target_cid}' with path '{clone_path}' (profile: {profile_name})")
+                target_cid_sim = target_cid
             logger.info(f"[SIMULATOR] Deployed Kali pentest agent container '{kali_cid}' connected to private network.")
-            return True, net_name, target_cid, kali_cid, kali_ip
+            return True, net_name, target_cid_sim, kali_cid, kali_ip
 
         if not self.client:
             logger.error("Docker client not initialized. %s", self.unavailable_reason)
@@ -109,36 +141,42 @@ class SandboxManager:
             network = client.networks.create(net_name, driver="bridge")
 
             # 2. Start target application container
-            # For standard scans, we spin up a generic lightweight python/node container depending on tech stack,
-            # or build from the repository's Dockerfile if available.
             has_dockerfile = any("Dockerfile" in ep for ep in entry_points) and os.path.exists(os.path.join(clone_path, "Dockerfile"))
             
-            if has_dockerfile and self._allow_user_dockerfile_build():
-                logger.warning(
-                    "Building repository Dockerfile for job %s because FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD is enabled.",
-                    job_id,
-                )
-                image, _ = client.images.build(path=clone_path, tag=f"fc-target-img:{job_id}")
-                image_name = image.tags[0]
+            target_container_id_str = ""
+            profile_name, image_name, port, start_command = self._detect_launch_profile(clone_path)
+            
+            if profile_name == "unsupported":
+                logger.warning("Unsupported repository tech stack for active sandbox test; skipped target container run.")
             else:
-                if has_dockerfile:
-                    logger.info(
-                        "Repository Dockerfile detected for job %s but user Dockerfile builds are disabled; using controlled runtime image.",
+                if has_dockerfile and self._allow_user_dockerfile_build():
+                    logger.warning(
+                        "Building repository Dockerfile for job %s because FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD is enabled.",
                         job_id,
                     )
-                image_name = "python:3.12-alpine"  # lightweight default runtime
+                    image, _ = client.images.build(path=clone_path, tag=f"fc-target-img:{job_id}")
+                    image_name = image.tags[0]
+                    command = None
+                else:
+                    if has_dockerfile:
+                        logger.info(
+                            "Repository Dockerfile detected for job %s but user Dockerfile builds are disabled; using controlled runtime image.",
+                            job_id,
+                        )
+                    command = start_command
 
-            # Run target app container
-            target_container = client.containers.run(
-                image_name,
-                name=target_cid,
-                detach=True,
-                network=net_name,
-                command="python -m http.server 8000" if not (has_dockerfile and self._allow_user_dockerfile_build()) else None,
-                volumes={clone_path: {"bind": "/app", "mode": "ro"}},
-                working_dir="/app",
-                **self._container_security_options(job_id, "target"),
-            )
+                # Run target app container
+                target_container = client.containers.run(
+                    image_name,
+                    name=target_cid,
+                    detach=True,
+                    network=net_name,
+                    command=command,
+                    volumes={clone_path: {"bind": "/app", "mode": "ro"}},
+                    working_dir="/app",
+                    **self._container_security_options(job_id, "target"),
+                )
+                target_container_id_str = str(target_container.id or "")
 
             # 3. Start Kali pentest container
             # We use a custom slim Kali Linux image equipped with security audit tools (nmap, sqlmap, curl, etc.)
@@ -152,9 +190,6 @@ class SandboxManager:
                 **self._container_security_options(job_id, "scanner"),
             )
 
-            # Install core testing utilities in Kali if not pre-installed
-            # In production, we'd pre-build a 'firecrow/kali-scanner' image.
-            # Here we run basic setup commands inside Kali.
             logger.info(f"Docker sandbox successfully provisioned for job {job_id}.")
             
             # Inspect Kali container network settings to retrieve private IP address
@@ -162,7 +197,7 @@ class SandboxManager:
             net_settings = kali_container.attrs["NetworkSettings"]["Networks"].get(net_name, {})
             ip_address = net_settings.get("IPAddress", kali_ip)
 
-            return True, net_name, str(target_container.id or ""), str(kali_container.id or ""), str(ip_address or "")
+            return True, net_name, target_container_id_str, str(kali_container.id or ""), str(ip_address or "")
 
         except Exception as e:
             logger.exception("Failed to provision docker containers: %s", redact_text(str(e)))

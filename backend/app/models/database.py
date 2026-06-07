@@ -175,11 +175,84 @@ def _ensure_artifact_compatibility() -> None:
                 logger.warning("Could not create index on audit_artifacts.job_id", exc_info=True)
 
 
+def _ensure_compliance_compatibility() -> None:
+    if engine is None:
+        return
+    inspector = inspect(engine)
+    if inspector is None:
+        return
+
+    # 1. Check/add audit_jobs.tenant_id
+    if "audit_jobs" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("audit_jobs")}
+        if "tenant_id" not in columns:
+            with engine.begin() as conn:
+                conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN tenant_id VARCHAR(255)")
+
+    # 2. Create missing compliance tables
+    existing_tables = set(inspector.get_table_names())
+    new_tables = [
+        "organizations",
+        "memberships",
+        "data_processing_records",
+        "retention_policies",
+        "artifact_objects",
+        "compliance_events",
+        "privacy_requests",
+        "authorization_attestations",
+        "secret_redaction_events",
+    ]
+
+    # Import the compliance models here to make sure they are in metadata
+    from backend.app.models.compliance import (
+        Organization, Membership, DataProcessingRecord, RetentionPolicy,
+        ArtifactObject, ComplianceEvent, PrivacyRequest, AuthorizationAttestation,
+        SecretRedactionEvent
+    )
+
+    tables_to_create = []
+    for table_name in new_tables:
+        if table_name not in existing_tables:
+            table_obj = Base.metadata.tables.get(table_name)
+            if table_obj is not None:
+                tables_to_create.append(table_obj)
+
+    if tables_to_create:
+        logger.info("Creating missing compliance tables: %s", [t.name for t in tables_to_create])
+        Base.metadata.create_all(bind=engine, tables=tables_to_create)
+
+
+def _ensure_session_and_failure_compatibility() -> None:
+    if engine is None:
+        return
+    inspector = inspect(engine)
+    if inspector is None:
+        return
+    existing_tables = set(inspector.get_table_names())
+    tables_to_create = []
+
+    # Import models here to make sure they are in Base.metadata
+    from backend.app.models.user import LoginFailure, UserSession
+
+    for table_name in ["login_failures", "user_sessions"]:
+        if table_name not in existing_tables:
+            table_obj = Base.metadata.tables.get(table_name)
+            if table_obj is not None:
+                tables_to_create.append(table_obj)
+
+    if tables_to_create:
+        logger.info("Creating missing session/failure tables: %s", [t.name for t in tables_to_create])
+        Base.metadata.create_all(bind=engine, tables=tables_to_create)
+
+
 def ensure_database_compatibility() -> None:
     _ensure_audit_job_compatibility()
     _ensure_user_compatibility()
     _ensure_finding_compatibility()
     _ensure_artifact_compatibility()
+    _ensure_compliance_compatibility()
+    _ensure_session_and_failure_compatibility()
+
 
 
 def check_pending_migrations() -> bool:

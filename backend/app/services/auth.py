@@ -13,6 +13,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError, VerificationError
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+from backend.app.models.database import get_db
 
 from backend.app.config import settings
 from backend.app.services.crypto import crypto_manager
@@ -93,8 +95,18 @@ def _claims(expires_delta: timedelta) -> tuple[datetime, datetime, datetime, str
     return now, not_before, expire, str(uuid.uuid4())
 
 
-def create_access_token(user_id: str, username: Optional[str] = None) -> str:
-    now, not_before, expire, jti = _claims(timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+def create_access_token(
+    user_id: str,
+    username: Optional[str] = None,
+    *,
+    db: Optional[Session] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    token_family: Optional[str] = None,
+) -> str:
+    expire_minutes = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    now, not_before, expire, jti = _claims(timedelta(minutes=expire_minutes))
+    family = token_family or str(uuid.uuid4())
     to_encode = {
         "sub": user_id,
         "username": username,
@@ -104,8 +116,31 @@ def create_access_token(user_id: str, username: Optional[str] = None) -> str:
         "nbf": _timestamp(not_before),
         "exp": _timestamp(expire),
         "jti": jti,
+        "token_family": family,
     }
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+    if db is not None:
+        from backend.app.models.user import UserSession
+        ip_str = ip or "unknown"
+        ua_str = user_agent or "unknown"
+        ip_h = hashlib.sha256(ip_str.encode("utf-8")).hexdigest()
+        ua_h = hashlib.sha256(ua_str.encode("utf-8")).hexdigest()
+
+        session_obj = UserSession(
+            id=jti,
+            user_id=user_id,
+            token_family=family,
+            ip_hash=ip_h,
+            user_agent_hash=ua_h,
+            created_at=now,
+            expires_at=expire,
+            is_revoked=False,
+        )
+        db.add(session_obj)
+        db.commit()
+
+    return token
 
 
 def create_oauth_state(
@@ -131,7 +166,7 @@ def create_oauth_state(
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
-def is_token_revoked(payload: dict) -> bool:
+def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
     jti = payload.get("jti")
     if not jti:
         return True
@@ -150,10 +185,19 @@ def is_token_revoked(payload: dict) -> bool:
         return True
 
     _cleanup_memory_denylist()
-    return str(jti) in _revoked_jtis
+    if str(jti) in _revoked_jtis:
+        return True
+
+    if db is not None:
+        from backend.app.models.user import UserSession
+        sess = db.query(UserSession).filter(UserSession.id == jti).first()
+        if sess and sess.is_revoked:
+            return True
+
+    return False
 
 
-def revoke_access_token(payload: dict) -> bool:
+def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Optional[str] = None) -> bool:
     jti = payload.get("jti")
     exp = payload.get("exp")
     if not jti or not exp:
@@ -169,7 +213,6 @@ def revoke_access_token(payload: dict) -> bool:
     if client is not None:
         try:
             client.setex(_denylist_key(str(jti)), ttl, "1")
-            return True
         except Exception:
             logger.error("Failed to write token jti=%s to Redis denylist.", jti)
             if not settings.DEBUG and settings.REDIS_URL:
@@ -180,10 +223,19 @@ def revoke_access_token(payload: dict) -> bool:
 
     _revoked_jtis[str(jti)] = expires_at
     _cleanup_memory_denylist()
+
+    if db is not None:
+        from backend.app.models.user import UserSession
+        sess = db.query(UserSession).filter(UserSession.id == jti).first()
+        if sess:
+            sess.is_revoked = True
+            sess.revocation_reason = reason or "logout"
+            db.commit()
+
     return True
 
 
-def verify_access_token(token: str, *, check_revocation: bool = True) -> Optional[dict]:
+def verify_access_token(token: str, *, check_revocation: bool = True, db: Optional[Session] = None) -> Optional[dict]:
     try:
         payload = jwt.decode(
             token,
@@ -196,7 +248,7 @@ def verify_access_token(token: str, *, check_revocation: bool = True) -> Optiona
     except jwt.PyJWTError:
         return None
 
-    if check_revocation and is_token_revoked(payload):
+    if check_revocation and is_token_revoked(payload, db=db):
         return None
     return payload
 
@@ -214,12 +266,13 @@ def _extract_bearer_or_cookie_token(
 ) -> Optional[str]:
     if credentials and credentials.scheme.lower() == "bearer" and credentials.credentials:
         return credentials.credentials
-    return request.cookies.get(AUTH_COOKIE_NAME)
+    return request.cookies.get(settings.AUTH_COOKIE_NAME)
 
 
 def get_current_token_payload(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db),
 ) -> dict:
     token = _extract_bearer_or_cookie_token(request, credentials)
     if not token:
@@ -229,7 +282,7 @@ def get_current_token_payload(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = verify_access_token(token)
+    payload = verify_access_token(token, db=db)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -381,3 +434,100 @@ def verify_and_consume_exchange_code(code: str) -> Optional[dict]:
             "access_token": data["access_token"]
         }
     return None
+
+
+def hash_login_key(ip: str, username: str) -> str:
+    data = f"{settings.SECRET_KEY}:{ip}:{username.strip().lower()}"
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def record_login_failure(db: Session, ip: str, username: str) -> None:
+    key_hash = hash_login_key(ip, username)
+    now = datetime.now(timezone.utc)
+
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            redis_key = f"firecrow:login_failures:{key_hash}"
+            client.rpush(redis_key, now.isoformat())
+            client.expire(redis_key, settings.LOGIN_FAILURE_WINDOW_MINUTES * 60)
+            client.ltrim(redis_key, -settings.LOGIN_FAILURE_LIMIT, -1)
+            return
+        except Exception:
+            logger.error("Failed to write login failure key=%s to Redis.", key_hash)
+
+    from backend.app.models.user import LoginFailure
+    db.add(LoginFailure(id=str(uuid.uuid4()), key_hash=key_hash, attempted_at=now))
+    db.commit()
+
+
+def check_login_lockout(db: Session, ip: str, username: str) -> bool:
+    key_hash = hash_login_key(ip, username)
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(minutes=settings.LOGIN_FAILURE_WINDOW_MINUTES)
+
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            redis_key = f"firecrow:login_failures:{key_hash}"
+            timestamps = client.lrange(redis_key, 0, -1)
+            recent_attempts = []
+            for ts_val in timestamps:
+                ts_str = ts_val.decode("utf-8") if isinstance(ts_val, bytes) else ts_val
+                dt = datetime.fromisoformat(ts_str)
+                if dt >= window_start:
+                    recent_attempts.append(dt)
+            if len(recent_attempts) >= settings.LOGIN_FAILURE_LIMIT:
+                return True
+            return False
+        except Exception:
+            logger.error("Failed to read login failures key=%s from Redis.", key_hash)
+
+    from backend.app.models.user import LoginFailure
+    db.query(LoginFailure).filter(LoginFailure.attempted_at < window_start).delete()
+    db.commit()
+
+    recent_count = db.query(LoginFailure).filter(
+        LoginFailure.key_hash == key_hash,
+        LoginFailure.attempted_at >= window_start
+    ).count()
+
+    return recent_count >= settings.LOGIN_FAILURE_LIMIT
+
+
+def clear_login_failures(db: Session, ip: str, username: str) -> None:
+    key_hash = hash_login_key(ip, username)
+
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            redis_key = f"firecrow:login_failures:{key_hash}"
+            client.delete(redis_key)
+            return
+        except Exception:
+            logger.error("Failed to clear login failures key=%s in Redis.", key_hash)
+
+    from backend.app.models.user import LoginFailure
+    db.query(LoginFailure).filter(LoginFailure.key_hash == key_hash).delete()
+    db.commit()
+
+
+def revoke_session_family(db: Session, token_family: str, reason: str = "family_revocation") -> None:
+    from backend.app.models.user import UserSession
+    sessions = db.query(UserSession).filter(
+        UserSession.token_family == token_family,
+        UserSession.is_revoked == False
+    ).all()
+    for sess in sessions:
+        sess.is_revoked = True
+        sess.revocation_reason = reason
+        client = _get_redis_client()
+        if client is not None:
+            try:
+                ttl = max(int((sess.expires_at - datetime.now(timezone.utc)).total_seconds()), 1)
+                client.setex(_denylist_key(sess.id), ttl, "1")
+            except Exception:
+                pass
+        _revoked_jtis[sess.id] = sess.expires_at
+    db.commit()
+

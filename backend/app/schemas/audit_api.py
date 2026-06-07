@@ -13,6 +13,15 @@ if TYPE_CHECKING:
 class SubmitJobRequest(BaseModel):
     repo_url: str = Field(..., max_length=2048)
     repo_branch: Optional[str] = Field("main", max_length=255)
+    attestation_accepted: bool = Field(False, description="Confirm that you are authorized to run security audits on this repository.")
+    authorization_scope: str = Field("authorized_representative", max_length=255)
+
+    @field_validator("attestation_accepted")
+    @classmethod
+    def validate_attestation(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError("You must attest that you are authorized to run security audits on this repository.")
+        return v
 
     @field_validator("repo_url")
     @classmethod

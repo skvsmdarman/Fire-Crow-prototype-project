@@ -118,6 +118,21 @@ def test_execute_audit_job_cancels_during_attack_and_cleans_up(monkeypatch):
                 status=JobStatus.QUEUED,
             )
         )
+        from backend.app.models.compliance import AuthorizationAttestation
+        db.add(
+            AuthorizationAttestation(
+                organization_id="default-org",
+                user_id="usr_runtime",
+                repo_url_hash="some-hash",
+                repo_url_normalized="https://github.com/example/vulnerable-app",
+                repo_owner="example",
+                repo_name="vulnerable-app",
+                branch="main",
+                authorization_scope="full_active",
+                attestation_text_version="v1",
+                job_id="job-cancel-attack"
+            )
+        )
         db.commit()
     finally:
         db.close()
@@ -146,8 +161,8 @@ def test_execute_audit_job_cancels_during_attack_and_cleans_up(monkeypatch):
 def test_execute_audit_job_cleans_up_after_mid_pipeline_exception(monkeypatch):
     cleanup_calls = []
 
-    def failing_network_scan(*args, **kwargs):
-        raise RuntimeError("network scan exploded")
+    def failing_ai_analyzer(*args, **kwargs):
+        raise RuntimeError("ai analyzer exploded")
 
     def cleanup_spy(state):
         cleanup_calls.append((state.job_id, state.sandbox_container_id))
@@ -163,13 +178,36 @@ def test_execute_audit_job_cleans_up_after_mid_pipeline_exception(monkeypatch):
                 status=JobStatus.QUEUED,
             )
         )
+        from backend.app.models.compliance import AuthorizationAttestation
+        db.add(
+            AuthorizationAttestation(
+                organization_id="default-org",
+                user_id="usr_runtime",
+                repo_url_hash="some-hash",
+                repo_url_normalized="https://github.com/example/vulnerable-app",
+                repo_owner="example",
+                repo_name="vulnerable-app",
+                branch="main",
+                authorization_scope="full_active",
+                attestation_text_version="v1",
+                job_id="job-runtime-fail"
+            )
+        )
         db.commit()
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_network_scan", failing_network_scan)
+    monkeypatch.setattr("backend.app.orchestrator.maestro.run_ai_analyzer", failing_ai_analyzer)
+    monkeypatch.setattr("backend.app.orchestrator.maestro.run_sast", lambda *args, **kwargs: [])
     monkeypatch.setattr("backend.app.orchestrator.maestro.run_dependency_scan", lambda *args, **kwargs: [])
     monkeypatch.setattr("backend.app.orchestrator.maestro.run_semgrep_scan", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.orchestrator.maestro.run_iac_scan", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.agents.secret_history.scan_for_secrets", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.agents.authz_idor.analyze_authz", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.agents.container_scan.scan_dockerfiles", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.agents.cicd_scan.scan_cicd_files", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.orchestrator.maestro.run_dynamic_attack", lambda *args, **kwargs: [])
+    monkeypatch.setattr("backend.app.orchestrator.maestro.run_exploit_validation", lambda *args, **kwargs: [])
     monkeypatch.setattr("backend.app.orchestrator.runtime.cleanup_resources", cleanup_spy)
 
     final_state = execute_audit_job(
@@ -181,6 +219,7 @@ def test_execute_audit_job_cleans_up_after_mid_pipeline_exception(monkeypatch):
 
     db = SessionLocal()
     try:
+        from backend.app.models import FindingModel
         job = db.query(AuditJob).filter(AuditJob.id == "job-runtime-fail").first()
         assert final_state.status == JobStatus.FAILED
         assert job is not None

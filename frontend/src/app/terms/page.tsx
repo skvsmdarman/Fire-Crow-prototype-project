@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
 
-import PolicyLink from "../../components/PolicyLink";
-import PolicyPageTracker from "../../components/PolicyPageTracker";
+import PolicyLink from "../../features/legal/components/PolicyLink";
+import PolicyPageTracker from "../../features/legal/components/PolicyPageTracker";
 import Footer from "../../components/Footer";
 import { TERMS_VERSION } from "../../lib/policy";
 import {

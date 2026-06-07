@@ -1,3 +1,7 @@
+# Historical Note
+
+Prefer `docs/API_REFERENCE.md` for the current route documentation tied to the present codebase. This file is older design/reference material.
+
 # Fire Crow API Specification (The Contract)
 
 This document contains the strict contract definitions for all Fire Crow backend REST endpoints and event streams. Both frontend and backend components must conform to these definitions.

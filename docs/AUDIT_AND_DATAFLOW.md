@@ -1,3 +1,7 @@
+# Historical Note
+
+Prefer `docs/DATA_FLOW_AND_STORAGE.md` and `docs/ORCHESTRATION_PIPELINE.md` for current behavior. This file is older design/reference material.
+
 # Fire Crow — Complete Architecture Audit & Data Flow
 
 > Generated: 2026-06-05 · Covers backend, frontend, orchestrator, agents, services, models, and API surface.

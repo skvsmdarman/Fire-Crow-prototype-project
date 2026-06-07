@@ -1,3 +1,7 @@
+# Historical Note
+
+Prefer `docs/ORCHESTRATION_PIPELINE.md` and `docs/BACKEND_STRUCTURE.md` for the current agent and pipeline description. This file is older design/reference material.
+
 # Fire Crow Agent Instructions (Developer Guide)
 
 This document contains rules, patterns, and style conventions that all agent systems (such as Claude, Gemini, or other code agents) must follow when modifying this repository.
