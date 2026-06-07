@@ -31,6 +31,9 @@ class AuditJob(Base):
     findings: Mapped[list["FindingModel"]] = relationship(
         "FindingModel", back_populates="job", cascade="all, delete-orphan"
     )
+    artifacts: Mapped[list["AuditArtifact"]] = relationship(
+        "AuditArtifact", back_populates="job", cascade="all, delete-orphan"
+    )
     logs: Mapped[list["AgentLog"]] = relationship(
         "AgentLog", back_populates="job", cascade="all, delete-orphan"
     )
@@ -51,6 +54,14 @@ class FindingModel(Base):
     remediation: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cwe_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     owasp_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    confidence: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    scanner_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    scanner_mode: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    file_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    line_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    route: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    metadata_json: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
@@ -69,3 +80,18 @@ class AgentLog(Base):
 
     # Relationships
     job: Mapped["AuditJob"] = relationship("AuditJob", back_populates="logs")
+
+
+class AuditArtifact(Base):
+    __tablename__ = "audit_artifacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_jobs.id"), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    data_json: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    data_text: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    # Relationships
+    job: Mapped["AuditJob"] = relationship("AuditJob", back_populates="artifacts")
