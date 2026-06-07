@@ -9,7 +9,7 @@ export function usePolicyContext() {
   const [providerAvailability, setProviderAvailability] = useState({
     github: false,
     google: false,
-    password: true,
+    password: false,
   });
 
   useEffect(() => {

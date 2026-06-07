@@ -8,7 +8,6 @@ import PolicyLink from "../../components/PolicyLink";
 import {
   getServerAuthSessionSnapshot,
   getStoredAuthSessionSnapshot,
-  persistAuthSession,
   subscribeToAuthSession
 } from "../../lib/authSession";
 import { API_BASE_URL, PRIVACY_POLICY_VERSION } from "../../lib/policy";
@@ -21,23 +20,23 @@ import {
 
 const SIGNUP_PROMISES = [
   {
-    title: "Continuous SAST & Agent Audits",
-    body: "Deploy 6 offensive agents working concurrently to discover secrets, source leaks, and dependency flaws in real time.",
+    title: "GitHub-linked access",
+    body: "Use GitHub OAuth when you need repository-linked access and provider scopes for private code review flows.",
   },
   {
-    title: "Secure Workspace Sandboxing",
-    body: "Your source code is cloned into an isolated Kali Linux runtime environment with local auto-destruction after verification.",
+    title: "Google-backed access",
+    body: "Use Google OAuth for teams that want simple sign-in without managing separate FireCrow passwords.",
   },
   {
-    title: "Zero-Setup Report Generation",
-    body: "Receive direct, comprehensive PDF audit reports sent straight to your mailbox with no external account sign-ups required.",
+    title: "No workspace passwords",
+    body: "Workspace username and password registration has been removed from the product surface to avoid broken local-only login paths.",
   },
 ];
 
 const SIGNUP_METRICS = [
-  { value: "6", label: "Security agents" },
-  { value: "Sandbox", label: "Isolation" },
-  { value: "Neon", label: "Active logging" },
+  { value: "OAuth", label: "Only access path" },
+  { value: "2", label: "Providers" },
+  { value: "Live", label: "Session exchange" },
 ];
 
 const cx = (...args: (string | undefined | false)[]) => args.filter(Boolean).join(" ");
@@ -52,36 +51,18 @@ interface PolicyContext {
   terms_version: string;
 }
 
-interface AuthSession {
-  access_token: string;
-  user_id: string;
-  username: string;
-}
-
 export default function SignUpPage() {
   const router = useRouter();
 
-  // Form State
-  const [workspace, setWorkspace] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-
-  // Status State
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // Policy Context
   const [activePrivacyVersion, setActivePrivacyVersion] = useState(PRIVACY_POLICY_VERSION);
-  const [loadingContext, setLoadingContext] = useState(true);
   const [providerAvailability, setProviderAvailability] = useState({
     github: false,
     google: false,
-    password: true,
+    password: false,
   });
 
-  // Fetch Policy and Provider Context
   useEffect(() => {
     let active = true;
 
@@ -97,8 +78,6 @@ export default function SignUpPage() {
         }
       } catch (err) {
         console.warn("Using default policy fallback versions:", err);
-      } finally {
-        if (active) setLoadingContext(false);
       }
     }
 
@@ -119,11 +98,6 @@ export default function SignUpPage() {
       router.push(`/dashboard?workspace=${encodeURIComponent(browserSession.workspace)}`);
     }
   }, [browserSession.hasConsoleSession, browserSession.workspace, router]);
-
-  const getDashboardRedirectUrl = () => {
-    const targetWorkspace = workspace.trim() || "workspace";
-    return `/dashboard?workspace=${encodeURIComponent(targetWorkspace)}`;
-  };
 
   const oauthHref = (provider: "github" | "google") => {
     const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
@@ -147,75 +121,7 @@ export default function SignUpPage() {
     setError("");
   };
 
-  const submitRegister = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedWorkspace = workspace.trim();
-
-    if (!normalizedWorkspace) {
-      setError("Enter a workspace name.");
-      return;
-    }
-
-    if (email.trim() && !email.includes("@")) {
-      setError("Enter a valid work email address.");
-      return;
-    }
-
-    if (!password) {
-      setError("Create a password for the workspace.");
-      return;
-    }
-
-    if (password.length < 8) {
-      setError("Use a password with at least 8 characters.");
-      return;
-    }
-
-    if (!acceptedPrivacy) {
-      setError("Read and accept the Privacy Policy and Terms of Use before continuing.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const tz = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
-      const reg = detectRegionFromTimezone(tz);
-
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim() || null,
-          password,
-          privacy_policy_accepted: acceptedPrivacy,
-          privacy_policy_version: activePrivacyVersion,
-          username: normalizedWorkspace,
-          timezone: tz,
-          region: reg,
-        }),
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.detail || "Unable to create workspace.");
-      }
-
-      const session = (await response.json()) as AuthSession;
-      persistAuthSession(session);
-      router.push(getDashboardRedirectUrl());
-    } catch (authError) {
-      const errMsg = authError instanceof Error ? authError.message : "";
-      if (errMsg.toLowerCase().includes("failed to fetch") || errMsg.toLowerCase().includes("fetch")) {
-        setError("Could not connect to workspace services. Please try again later.");
-      } else {
-        setError(errMsg || "Unable to create workspace.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  const providerCount = Number(providerAvailability.github) + Number(providerAvailability.google);
 
   if (browserSession.hasConsoleSession) {
     return (
@@ -224,8 +130,8 @@ export default function SignUpPage() {
         <section className={styles.loadingCard}>
           <div className="auth-loading-spinner" />
           <p className={styles.eyebrow}>Session</p>
-          <h1 className={styles.loadingTitle}>Preparing Workspace</h1>
-          <p className={styles.loadingCopy}>Validating active session and provisioning security console environment...</p>
+          <h1 className={styles.loadingTitle}>Preparing Access</h1>
+          <p className={styles.loadingCopy}>Validating active session and loading your FireCrow dashboard...</p>
         </section>
       </main>
     );
@@ -256,15 +162,15 @@ export default function SignUpPage() {
           </Link>
 
           <div className={styles.sidebarIntro}>
-            <p className={styles.eyebrow}>Create workspace</p>
-            <h1 className={styles.sidebarTitle}>Start your first security review today.</h1>
+            <p className={styles.eyebrow}>Provider access</p>
+            <h1 className={styles.sidebarTitle}>Use GitHub or Google to enter FireCrow.</h1>
             <p className={styles.sidebarCopy}>
-              Configure your dedicated workspace credentials, invite collaborators, and orchestrate offensive scans on private or public repositories.
+              Password-based workspace registration has been removed. Choose an OAuth provider and continue into the dashboard with a provider-backed session.
             </p>
           </div>
 
           <section className={styles.sidebarPanel}>
-            <p className={styles.panelLabel}>Platform features</p>
+            <p className={styles.panelLabel}>Access model</p>
             <div className={styles.promiseList}>
               {SIGNUP_PROMISES.map((promise, index) => (
                 <motion.article
@@ -305,10 +211,10 @@ export default function SignUpPage() {
           <div className="auth-card-accent" style={{ background: "linear-gradient(90deg, #ff4d08, #ffbf47)" }} />
 
           <div className={styles.cardHeader}>
-            <p className={styles.eyebrow}>Registration</p>
-            <h2>Create your workspace</h2>
+            <p className={styles.eyebrow}>Continue</p>
+            <h2>Choose your sign-in provider</h2>
             <p>
-              Fill out the details below to create a secure, isolated console for security audits.
+              Accept the policy terms and continue with GitHub or Google. FireCrow will create or resume your account from that provider flow.
             </p>
           </div>
 
@@ -352,8 +258,8 @@ export default function SignUpPage() {
                   </svg>
                 </span>
                 <span className={styles.providerCopy}>
-                  <strong>Register with GitHub</strong>
-                  <span>Fast track workspace creation via OAuth profile link.</span>
+                  <strong>Continue with GitHub</strong>
+                  <span>Use your GitHub identity to enter FireCrow.</span>
                 </span>
               </motion.a>
             ) : null}
@@ -375,122 +281,29 @@ export default function SignUpPage() {
                   </svg>
                 </span>
                 <span className={styles.providerCopy}>
-                  <strong>Register with Google</strong>
-                  <span>Create space via Google OAuth workflow.</span>
+                  <strong>Continue with Google</strong>
+                  <span>Use your Google identity to enter FireCrow.</span>
                 </span>
               </motion.a>
             ) : null}
           </div>
 
-          <div className={styles.divider}>or register with credentials</div>
+          {providerCount === 0 ? (
+            <div className={styles.errorNotice} role="alert">
+              No OAuth providers are configured yet. Add GitHub and/or Google OAuth credentials in the backend environment before using this page.
+            </div>
+          ) : null}
 
-          <form className={styles.form} onSubmit={submitRegister}>
-            <label className={styles.field}>
-              <span>Workspace name</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-                    <path d="M16 3h-8l-2 4h12l-2-4z" />
-                  </svg>
-                </span>
-                <input
-                  value={workspace}
-                  onChange={(event) => {
-                    setWorkspace(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="your-security-team"
-                />
-              </div>
-              <p className={styles.fieldHint}>
-                Unique handle for your workspace console. Only alphanumeric characters allowed.
-              </p>
-            </label>
-
-            <label className={styles.field}>
-              <span>Work email</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="4" width="20" height="16" rx="2" />
-                    <path d="m22 7-10 6L2 7" />
-                  </svg>
-                </span>
-                <input
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="security@company.in"
-                  type="email"
-                />
-              </div>
-            </label>
-
-            <label className={styles.field}>
-              <span>Password</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                </span>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="Create a strong password"
-                />
-                <button
-                  type="button"
-                  className={styles.togglePassword}
-                  onClick={() => setShowPassword((current) => !current)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </label>
-
-            {error && (
-              <div className={styles.errorNotice} role="alert">
-                {error}
-              </div>
-            )}
-
-            <motion.button
-              whileHover={{ scale: loading ? 1 : 1.01 }}
-              whileTap={{ scale: loading ? 1 : 0.99 }}
-              className={styles.submitButton}
-              disabled={loading || loadingContext}
-              type="submit"
-            >
-              {loading && <span className={styles.submitSpinner} />}
-              {loading ? "Registering Workspace..." : "Create workspace"}
-            </motion.button>
-          </form>
+          {error && (
+            <div className={styles.errorNotice} role="alert">
+              {error}
+            </div>
+          )}
 
           <p className={styles.cardFootnote}>
-            Already have a workspace?{" "}
+            Already have access?{" "}
             <Link href="/signin" style={{ color: "#ff9c4a", fontWeight: "bold" }}>
-              Sign in
+              Sign in with OAuth
             </Link>
           </p>
         </motion.section>

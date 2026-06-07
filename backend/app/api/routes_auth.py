@@ -309,7 +309,7 @@ async def policy_context():
         "providers": {
             "github": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
             "google": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
-            "password": True,
+            "password": False,
         },
     }
 

@@ -7,7 +7,7 @@ import { motion as framerMotion } from "framer-motion";
 import PolicyLink from "../../features/legal/components/PolicyLink";
 import { useAuthSession } from "../../shared/hooks/useAuthSession";
 import { usePolicyContext } from "../../features/auth/hooks";
-import { loginUser, exchangeCode } from "../../features/auth/api";
+import { exchangeCode } from "../../features/auth/api";
 import { detectRegionFromTimezone } from "../../lib/policyData";
 import { API_BASE_URL } from "../../shared/api/client";
 import styles from "./page.module.css";
@@ -18,14 +18,8 @@ const cx = (...args: (string | undefined | false)[]) => args.filter(Boolean).joi
 export default function SignInPage() {
   const router = useRouter();
   const authSession = useAuthSession();
-  const { activePrivacyVersion, loadingContext, providerAvailability } = usePolicyContext();
+  const { activePrivacyVersion, providerAvailability } = usePolicyContext();
 
-  // Form State
-  const [workspace, setWorkspace] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-
-  // Status State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const handledExchangeCodeRef = useRef<string | null>(null);
@@ -35,11 +29,6 @@ export default function SignInPage() {
       router.push(`/dashboard?workspace=${encodeURIComponent(authSession.workspace)}`);
     }
   }, [authSession.token, authSession.workspace, router]);
-
-  const getDashboardRedirectUrl = (workspaceOverride?: string) => {
-    const targetWorkspace = workspaceOverride?.trim() || workspace.trim() || "workspace";
-    return `/dashboard?workspace=${encodeURIComponent(targetWorkspace)}`;
-  };
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -105,54 +94,7 @@ export default function SignInPage() {
     return url.toString().replace(base, "");
   };
 
-  const submitAuth = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedWorkspace = workspace.trim();
-
-    if (!normalizedWorkspace) {
-      setError("Enter your workspace name.");
-      return;
-    }
-
-    if (!password) {
-      setError("Enter your workspace password.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const tz = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
-      const reg = detectRegionFromTimezone(tz);
-
-      const session = await loginUser({
-        password,
-        privacy_policy_accepted: true,
-        privacy_policy_version: activePrivacyVersion,
-        username: normalizedWorkspace,
-        timezone: tz,
-        region: reg,
-      });
-
-      authSession.login({
-        access_token: session.access_token,
-        user_id: session.user_id,
-        username: session.username,
-      });
-      router.push(getDashboardRedirectUrl());
-    } catch (authError) {
-      const err = authError as { message?: string };
-      const errMsg = err.message || "";
-      if (errMsg.toLowerCase().includes("failed to fetch") || errMsg.toLowerCase().includes("fetch")) {
-        setError("Could not connect to workspace services. Please try again later.");
-      } else {
-        setError(errMsg || "Unable to sign in.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  const providerCount = Number(providerAvailability.github) + Number(providerAvailability.google);
 
   if (authSession.token) {
     return (
@@ -161,7 +103,7 @@ export default function SignInPage() {
         <section className={styles.loadingCard}>
           <div className="auth-loading-spinner" />
           <p className={styles.eyebrow}>Session</p>
-          <h1 className={styles.loadingTitle}>Validating workspace access</h1>
+          <h1 className={styles.loadingTitle}>Validating access</h1>
           <p className={styles.loadingCopy}>Checking your existing FireCrow token and preparing the console.</p>
         </section>
       </main>
@@ -202,10 +144,10 @@ export default function SignInPage() {
           <div className="auth-card-accent" />
 
           <div className={styles.cardHeader}>
-            <p className={styles.eyebrow}>Workspace access</p>
-            <h2>Open your workspace</h2>
+            <p className={styles.eyebrow}>Secure access</p>
+            <h2>Sign in with your provider</h2>
             <p>
-              Sign in with your credentials or GitHub access to audit private repositories and create remediation PRs.
+              FireCrow now uses OAuth-only access. Continue with GitHub or Google to open your dashboard.
             </p>
           </div>
 
@@ -250,88 +192,21 @@ export default function SignInPage() {
             ) : null}
           </div>
 
-          <div className={styles.divider}>or use credentials</div>
+          {providerCount === 0 ? (
+            <div className={styles.errorNotice} role="alert">
+              OAuth sign-in is not configured yet. Add GitHub and/or Google OAuth credentials in the backend environment before using this page.
+            </div>
+          ) : null}
 
-          <form className={styles.form} onSubmit={submitAuth}>
-            <label className={styles.field}>
-              <span>Workspace name</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-                    <path d="M16 3h-8l-2 4h12l-2-4z" />
-                  </svg>
-                </span>
-                <input
-                  autoComplete="username"
-                  value={workspace}
-                  onChange={(event) => {
-                    setWorkspace(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="your-security-team"
-                />
-              </div>
-            </label>
+          {error && (
+            <div className={styles.errorNotice} role="alert">
+              {error}
+            </div>
+          )}
 
-            <label className={styles.field}>
-              <span>Password</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                </span>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="Enter workspace password"
-                />
-                <button
-                  type="button"
-                  className={styles.togglePassword}
-                  onClick={() => setShowPassword((current) => !current)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </label>
-
-            {error && (
-              <div className={styles.errorNotice} role="alert">
-                {error}
-              </div>
-            )}
-
-            <framerMotion.button
-              whileHover={{ scale: loading ? 1 : 1.01 }}
-              whileTap={{ scale: loading ? 1 : 0.99 }}
-              className={styles.submitButton}
-              disabled={loading || loadingContext}
-              type="submit"
-            >
-              {loading && <span className={styles.submitSpinner} />}
-              {loading ? "Signing in..." : "Sign in to console"}
-            </framerMotion.button>
-          </form>
+          {loading ? (
+            <div className={styles.divider}>Finishing sign-in...</div>
+          ) : null}
 
           <footer className={styles.cardFootnote}>
             <p>
@@ -346,9 +221,9 @@ export default function SignInPage() {
               .
             </p>
             <p style={{ marginTop: "12px" }}>
-              New to FireCrow?{" "}
+              Need access?{" "}
               <Link href="/signup" style={{ color: "#5cc8ff", fontWeight: "bold" }}>
-                Create a workspace
+                Continue with OAuth
               </Link>
             </p>
           </footer>
