@@ -2,6 +2,7 @@ import os
 import re
 import logging
 import hashlib
+import uuid
 from typing import List
 from backend.app.config import settings
 from backend.app.schemas import Finding, Severity
@@ -60,7 +61,6 @@ UNSAFE_CODE_PATTERNS = [
 def scan_for_secrets(clone_path: str) -> List[Finding]:
     """Scans all text files in clone_path for credential leaks using regex signatures."""
     findings = []
-    finding_id_counter = 1
 
     for root, dirs, files in os.walk(clone_path):
         dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "venv", ".venv")]
@@ -94,7 +94,7 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                                 fingerprint = hashlib.sha256(matched_str.encode("utf-8")).hexdigest()[:12]
                                 
                                 findings.append(Finding(
-                                    id=f"sast-secret-{finding_id_counter}",
+                                    id=str(uuid.uuid4()),
                                     agent_source="SAST_SECRETS",
                                     title=f"Hardcoded Credential Leak ({name})",
                                     description=f"A hardcoded secret matching signature for {name} was found in `{rel_path}` at line {line_num}.",
@@ -106,7 +106,6 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                                     ),
                                     remediation="Remove hardcoded secrets immediately, revoke leaked key, and store keys securely in environment variables or vault."
                                 ))
-                                finding_id_counter += 1
             except Exception as e:
                 logger.warning(f"Failed to scan file {file_path} for secrets: {str(e)}")
 
@@ -116,7 +115,6 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
 def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
     """Scans all source code files for dangerous code syntax patterns."""
     findings = []
-    finding_id_counter = 1
 
     for root, dirs, files in os.walk(clone_path):
         dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "venv", ".venv")]
@@ -146,7 +144,7 @@ def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
                             if re.search(spec["pattern"], line_to_check):
                                 safe_snippet = redact_text(line_to_check.strip()[:150])
                                 findings.append(Finding(
-                                    id=f"sast-code-{finding_id_counter}",
+                                    id=str(uuid.uuid4()),
                                     agent_source="SAST_CODE_ANALYSIS",
                                     title=spec["title"],
                                     description=f"{spec['description']} Found in `{rel_path}` at line {line_num}.",
@@ -158,7 +156,6 @@ def scan_for_unsafe_code(clone_path: str) -> List[Finding]:
                                     ),
                                     remediation="Rewrite source code to avoid dynamic query/expression evaluation or command execution."
                                 ))
-                                finding_id_counter += 1
             except Exception as e:
                 logger.warning(f"Failed to scan file {file_path} for code issues: {str(e)}")
 
@@ -178,7 +175,7 @@ def run_sast(clone_path: str, repo_url: str) -> List[Finding]:
             logger.info("Skipping standard-repo simulated SAST fixture outside DEBUG mode.")
             return []
         return [Finding(
-            id="sast-mock-1",
+            id=str(uuid.uuid4()),
             agent_source="SAST",
             title="[SIMULATED] Outdated dependency package PyYAML",
             description="PyYAML version < 6.0 is vulnerable to arbitrary code execution (CVE-2020-1747)",
@@ -191,7 +188,7 @@ def run_sast(clone_path: str, repo_url: str) -> List[Finding]:
             logger.info("Skipping leaky-secrets-repo simulated SAST fixture outside DEBUG mode.")
             return []
         return [Finding(
-            id="sast-mock-2",
+            id=str(uuid.uuid4()),
             agent_source="SAST",
             title="[SIMULATED] Hardcoded GitHub OAuth Secret Leak",
             description="A raw GitHub client secret was found hardcoded in main.py",

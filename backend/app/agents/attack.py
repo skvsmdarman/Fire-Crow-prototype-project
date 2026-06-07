@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import List, Dict, Any
 from backend.app.schemas import Finding, Severity
 from backend.app.services.sandbox import SandboxManager
@@ -55,7 +56,7 @@ def run_dynamic_attack(
     
     if "is vulnerable" in output or "confirm" in output.lower() or "dbms" in output.lower():
         findings.append(Finding(
-            id="dyn-sqlmap-1",
+            id=str(uuid.uuid4()),
             agent_source="DYNAMIC_ATTACK_SQLMAP",
             title="[SIMULATED] SQL Injection in user profile parameters" if manager.mock_mode else "SQL Injection in user profile parameters",
             description=(
@@ -76,7 +77,7 @@ def run_dynamic_attack(
 
     if "critical" in output.lower() or "cve-" in output.lower():
         findings.append(Finding(
-            id="dyn-nuclei-1",
+            id=str(uuid.uuid4()),
             agent_source="DYNAMIC_ATTACK_NUCLEI",
             title="[SIMULATED] Outdated Web Component Vulnerability" if manager.mock_mode else "Outdated Web Component Vulnerability",
             description="Controlled sandbox validation detected a high-severity CVE signature on the generated sandbox target.",

@@ -330,7 +330,8 @@ def test_system_status_requires_auth_and_scopes_stats_to_current_user():
     finally:
         db.close()
 
-    unauthenticated = client.get("/api/v1/system/status")
+    unauthenticated_client = TestClient(app)
+    unauthenticated = unauthenticated_client.get("/api/v1/system/status")
     response = client.get("/api/v1/system/status", headers=headers)
 
     assert unauthenticated.status_code == 401

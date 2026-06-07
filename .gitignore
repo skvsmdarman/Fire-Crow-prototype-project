@@ -52,12 +52,8 @@ Thumbs.db
 *.sublime-workspace
 
 # App Workspace Run Outputs
-workspace/reports/
-workspace/scans/
-workspace/sent_emails/
-backend/workspace/reports/
-backend/workspace/scans/
-backend/workspace/sent_emails/
+workspace/
+backend/workspace/
 
 # System Logs & Diagnostic Outputs
 *.log
