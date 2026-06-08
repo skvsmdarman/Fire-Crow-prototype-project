@@ -62,15 +62,42 @@ async def stream_audit_logs(
                     .all()
                 )
 
+                # Map progress deterministically
+                def get_progress(status_val, current_agent):
+                    if status_val in ["completed"]: return 100
+                    if status_val in ["failed", "cancelled"]: return 100 # Frontend will handle state
+
+                    mapping = {
+                        "MAESTRO": 5,
+                        "RECON": 15,
+                        "SANDBOX": 25,
+                        "SAST": 40,
+                        "DEPENDENCY": 50,
+                        "IAC": 55,
+                        "ATTACK": 60,
+                        "API_SURFACE": 65,
+                        "AI_ANALYZER": 75,
+                        "REPORTER": 90,
+                        "STORAGE": 95
+                    }
+                    return mapping.get(current_agent, 50)
+
                 for log in new_logs:
+                    prog = get_progress(current_job.status.value, log.agent_name)
+
                     payload = {
                         "id": log.id,
                         "agent_name": log.agent_name,
                         "log_level": log.log_level,
                         "message": log.message,
-                        "timestamp": log.timestamp.isoformat()
+                        "timestamp": log.timestamp.isoformat(),
+                        "progress": prog,
+                        "stage": log.agent_name.lower()
                     }
-                    yield f"event: log\ndata: {json.dumps(payload)}\n\n"
+                    yield f"event: log
+data: {json.dumps(payload)}
+
+"
                     last_seen_log_id = log.id
 
                 if new_logs:

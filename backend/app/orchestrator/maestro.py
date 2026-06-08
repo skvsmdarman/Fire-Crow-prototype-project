@@ -913,20 +913,31 @@ def semgrep_node(state: AuditState) -> Dict[str, Any]:
     return execute_phase(state, phase_name="semgrep_scan", agent_name="SEMGREP", start_message="Running Semgrep...", body=semgrep_body)
 
 def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
-    dedup, fps, chains, rems = run_ai_analyzer(
-        state.static_findings,
-        state.dynamic_findings,
-        state.dependency_vulns,
-        state.iac_findings,
-        state.semgrep_findings
-    )
-    log_agent_message(db, state.job_id, "AI_ANALYZER", f"AI Analyzer complete. {len(dedup)} findings retained.")
-    return {
-        "deduplicated_findings": dedup,
-        "false_positives": fps,
-        "attack_chains": chains,
-        "remediations": rems
-    }
+    from backend.app.config import settings
+
+    if not settings.GEMINI_MODEL:
+        log_agent_message(db, state.job_id, "AI_ANALYZER", "AI model not configured. Routing to deterministic fallback.")
+        return generate_fallback_report(state)
+
+    try:
+        dedup, fps, chains, rems = run_ai_analyzer(
+            state.static_findings,
+            state.dynamic_findings,
+            state.dependency_vulns,
+            state.iac_findings,
+            state.semgrep_findings
+        )
+        log_agent_message(db, state.job_id, "AI_ANALYZER", f"AI Analyzer complete. {len(dedup)} findings retained.")
+        return {
+            "deduplicated_findings": dedup,
+            "false_positives": fps,
+            "attack_chains": chains,
+            "remediations": rems
+        }
+    except Exception as e:
+        logger.error(f"AI Analyzer failed: {str(e)}")
+        log_agent_message(db, state.job_id, "AI_ANALYZER", f"AI Analyzer failed. Routing to deterministic fallback.")
+        return generate_fallback_report(state)
 
 def ai_analyzer_node(state: AuditState) -> Dict[str, Any]:
     return execute_phase(state, phase_name="ai_analyzer", agent_name="AI_ANALYZER", start_message="AI brain analyzing...", body=ai_analyzer_body)

@@ -247,23 +247,12 @@ export default function Dashboard() {
     [authSession.token, isAuthenticated, toast],
   );
 
-  const handleLaunchScan = async (repoUrl: string, repoBranch: string) => {
-    if (!isAuthenticated) return setSubmitError("Connect a workspace before launching an audit.");
-    if (!repoUrl.trim()) return setSubmitError("Repository URL is required.");
-    setSubmitting(true);
-    setSubmitError(null);
-    toast("Submitting repository intake request...", "info");
-    try {
-      const job = await submitAudit({
-        repo_url: repoUrl.trim(),
-        repo_branch: repoBranch.trim() || "main"
-      });
-      setSelectedJobId(job.id);
-      setActiveSection("audits");
-      await fetchJobs();
-      toast("Audit job successfully queued!", "success");
-    } catch (error) {
-      const err = error as { message?: string };
+    const handleLaunchScan = async (repoUrl: string, repoBranch: string) => {
+    const job = await runAudit({ repo_url: repoUrl, repo_branch: repoBranch });
+    if (job) {
+      router.push(`/dashboard/audits/${job.id}`);
+    }
+  };
       const msg = err.message || "Unable to launch audit.";
       setSubmitError(msg);
       toast(msg, "error");

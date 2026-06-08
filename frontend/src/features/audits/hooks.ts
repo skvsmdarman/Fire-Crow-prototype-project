@@ -60,7 +60,8 @@ export function useAudits(token: string | null) {
         const job = await submitAudit(body);
         setSelectedJobId(job.id);
         await loadJobs();
-        toast("Audit job successfully queued!", "success");
+        toast("Audit job successfully queued! Redirecting to execution console...", "success");
+        // We will return the job so the component can redirect
         return job;
       } catch (err) {
         const error = err as { message?: string };
