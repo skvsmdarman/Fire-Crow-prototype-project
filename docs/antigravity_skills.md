@@ -60,3 +60,6 @@ For security tools and agentic orchestrators, adhere to the following principles
 * **Sandbox Enforcement**: Run user code/actions in highly constrained, read-only Docker environments (`cap_drop=['ALL']`, memory limits, low PIDs).
 * **AI Sanitization & Deduplication**: Use LLM analysis as a gatekeeper to cluster similar findings, identify false positives, determine CVSS scores, and generate drop-in PR fixes.
 * **Output Escaping**: Ensure that raw findings or source code injected into dynamic files (e.g. HTML, PDF) are fully escaped (e.g., using `html.escape()`) to prevent XSS.
+
+---
+*Documentation last updated: June 08, 2026*

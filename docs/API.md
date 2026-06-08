@@ -374,3 +374,6 @@ Retrieves current system details, database check, integrations and ready securit
   }
   ```
   *Note: `stats` are scoped to the authenticated workspace. The public `/health` endpoint remains available for uptime checks.*
+
+---
+*Documentation last updated: June 08, 2026*

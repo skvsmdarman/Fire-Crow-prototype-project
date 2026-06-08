@@ -66,3 +66,12 @@ logs/
 # Local Development & Codex Logs
 .codex*
 .eslintcache
+
+# Mock and Test Data Files
+__mocks__/
+mock_data/
+test_data/
+*.mock.ts
+*.mock.js
+*.mock.py
+test_*.db

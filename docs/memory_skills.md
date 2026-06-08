@@ -35,3 +35,6 @@ When KIs are insufficient or when specific past details are referenced:
   * **Diffs**: Display edits in diff blocks with standard `+` (additions) and `-` (deletions).
   * **File Links**: Link directly to files and line ranges (e.g., `[basename.py](file:///absolute/path/to/basename.py#L100-L150)`) without using backticks on the link text.
   * **Carousels**: Use four backticks with the `carousel` language identifier to group related images, diagrams, or code blocks sequentially.
+
+---
+*Documentation last updated: June 08, 2026*

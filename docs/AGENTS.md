@@ -80,3 +80,6 @@ If the global MCP tool is unavailable or inactive in the current execution conte
 npm run validate
 ```
 All checks (frontend lint, build, backend type-checking, and tests) must succeed before work is finalized.
+
+---
+*Documentation last updated: June 08, 2026*

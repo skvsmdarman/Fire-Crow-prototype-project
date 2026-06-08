@@ -27,3 +27,5 @@ This documentation set describes the repository as it exists in the current code
 
 Older markdown files in `docs/` still exist, but the files linked here are the intended up-to-date reference set for the current repository snapshot.
 
+---
+*Documentation last updated: June 08, 2026*

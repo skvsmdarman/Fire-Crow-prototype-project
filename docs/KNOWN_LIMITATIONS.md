@@ -43,3 +43,5 @@ This list only includes limitations verified in the current repository.
 - `backend/app/middleware/telemetry.py` exists but is not registered in the FastAPI app.
 - The current scoring stage uses simple severity-based CVSS assignment rather than scanner-native scoring inputs.
 
+---
+*Documentation last updated: June 08, 2026*

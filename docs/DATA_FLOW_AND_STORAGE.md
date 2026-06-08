@@ -163,3 +163,5 @@ Source paths: `backend/app/services/redaction.py`, `backend/app/services/securit
 - The reporter deletes the temporary local PDF/HTML after email dispatch, so local report inspection depends on the artifact copy, not the temporary file.
 - Legal-hold behavior exists only for artifact objects, not for every persisted record type.
 
+---
+*Documentation last updated: June 08, 2026*

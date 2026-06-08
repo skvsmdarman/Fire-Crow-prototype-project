@@ -43,3 +43,5 @@ Fire Crow is an authorization-only security audit project. Contribute in ways th
 - Do not use this repository to facilitate unauthorized scanning or abusive workflows.
 - Preserve the attestation and authorization model rather than weakening it.
 
+---
+*Documentation last updated: June 08, 2026*

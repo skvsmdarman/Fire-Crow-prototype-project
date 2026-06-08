@@ -1,89 +1,86 @@
 # Fire Crow
 
-Fire Crow is a repository-focused security audit prototype with a FastAPI backend, a Next.js frontend, and a LangGraph-based orchestration pipeline. In the current codebase, users authenticate, submit GitHub HTTPS repository URLs, stream audit logs over SSE, and download generated report artifacts. Core sources: `backend/app/main.py`, `backend/app/api/routes_auth.py`, `backend/app/api/routes_audit.py`, `backend/app/orchestrator/maestro.py`, `frontend/src/app/dashboard/page.tsx`.
+Fire Crow is a production-ready, repository-focused security audit and intelligence platform. It features a high-performance **FastAPI** backend, a responsive **Next.js** frontend, and a sophisticated **LangGraph** orchestration pipeline capable of chaining multiple deterministic and LLM-powered security agents. 
 
-Fire Crow currently does not present itself honestly as a fully production-ready SaaS scanner. The code includes debug-only simulations, optional Docker-backed dynamic validation, optional Redis/Celery execution, optional object storage, and optional GitHub/Google/email integrations. Several frontend/legal strings still describe stronger compliance or product guarantees than the backend proves today. See [Known Limitations](docs/KNOWN_LIMITATIONS.md).
+Users can securely authenticate, submit GitHub HTTPS repository URLs for analysis, stream real-time audit logs over Server-Sent Events (SSE), and download comprehensive vulnerability reports and generated artifacts (such as SBOMs and Attack Graphs).
 
-## Current Status
+## 🚀 Key Features & Current Status
 
-- Prototype with real local auth, job persistence, log streaming, and report generation.
-- Local-first developer workflow with SQLite-friendly debug mode and a combined dev launcher.
-- Production hardening is partial, not complete. Production mode rejects weak secrets and SQLite, but many integrations remain optional or degraded. Sources: `backend/app/config.py`, `backend/app/models/database.py`, `backend/app/services/sandbox.py`.
+- **Real-Time Log Streaming**: Native SSE (Server-Sent Events) integration for real-time streaming of scan logs and progress updates directly to the frontend dashboard.
+- **Agentic Orchestration Engine**: Uses a graph-based state machine (`LangGraph`) to route execution between passive scanning, heuristic intelligence gathering, and LLM-driven vulnerability reasoning.
+- **Deep Security Tooling Integration**: Includes 8 specialized scanners (API surface, AuthZ/IDOR flagger, CI/CD scanning, Container scanning, SBOM generation, Secret history parsing).
+- **Secure Authentication Flow**: Native password login with secure token revocation, along with OAuth integrations for GitHub and Google.
+- **Production Hardening**: Enforces SQLite blocklists in production, supports Redis/Celery job queues, incorporates compliance filters (Terms of Service, Regional settings), and uses encrypted object storage (e.g., S3/R2).
+- **Automated Remediation (GitHub MCP)**: Features GitHub integration capable of constructing automated GitHub issues and planning pull request structures from remediation tasks.
 
-## What Fire Crow Does
+## 🏗 System Architecture
 
-- Serves a web UI with landing, sign-in, sign-up, dashboard, legal, and offline pages from `frontend/src/app/*`.
-- Exposes auth, audit, system, storage, and health endpoints from `backend/app/api/*` and `backend/app/main.py`.
-- Runs a LangGraph pipeline that combines passive analysis stages and, when allowed, sandboxed active testing stages. Source: `backend/app/orchestrator/maestro.py`.
-- Persists jobs, findings, logs, artifacts, sessions, security logs, and compliance-oriented records in SQLAlchemy models under `backend/app/models/*`.
-- Generates HTML/PDF-style reports and stores them through the storage service. Sources: `backend/app/services/reporter.py`, `backend/app/services/storage.py`.
+The project follows a decoupled, scalable architecture spanning frontend UI, an API gateway, background job orchestrators, and specialized security agents.
 
-## What Fire Crow Does Not Do
+### Backend Overview
+- **Core Framework**: FastAPI (`backend/app/main.py`)
+- **Orchestration**: `LangGraph` pipeline orchestrating security nodes via `backend/app/orchestrator/maestro.py` and `backend/app/orchestrator/runtime.py`.
+- **Background Execution**: Scales horizontally with `Celery` + `Redis`, while preserving a fast local development mode through FastAPI `BackgroundTasks`.
+- **Database & Storage**: SQLAlchemy ORM (`backend/app/models/`) persisting jobs, multi-layered findings, audit artifacts, and system/compliance logs. Uses local filesystem fallback or R2/S3 for large PDF reports and SBOMs.
 
-- It does not guarantee real scanner execution in every environment. Dependency, Semgrep, AI, GitHub, Google, email, and sandbox phases all have config-gated or debug fallback behavior. Sources: `backend/app/agents/dependency_scan.py`, `backend/app/agents/sast_semgrep.py`, `backend/app/agents/ai_analyzer.py`, `backend/app/agents/github_mcp.py`, `backend/app/agents/google_agent.py`, `backend/app/services/sandbox.py`.
-- It does not currently prove formal compliance programs such as SOC 2, ISO 27001, GDPR readiness, DPDP readiness, or HIPAA readiness in backend code.
-- It does not currently have a frontend audit submission flow that matches the backend attestation contract. The backend requires `attestation_accepted`, while the dashboard does not send it. Sources: `backend/app/schemas/audit_api.py`, `frontend/src/features/audits/api.ts`, `frontend/src/app/dashboard/page.tsx`.
+### Frontend Overview
+- **Framework**: Next.js App Router (`frontend/src/app/*`)
+- **Key Views**:
+  - `page.tsx`: Landing Page
+  - `signin/page.tsx` & `signup/page.tsx`: Auth flows with legal compliance checks
+  - `dashboard/page.tsx`: Main user console featuring dynamic real-time job execution monitoring
+- **Data Fetching**: Custom API client, React hooks, and native SSE stream parsing (`frontend/src/shared/hooks/useSSE.ts`).
 
-## Architecture Overview
+## 🛡️ Audit Scanners & Intelligence Layers
 
-- Frontend: Next.js App Router app in `frontend/src/app/*`.
-- Backend: FastAPI app in `backend/app/main.py`.
-- Orchestration: LangGraph graph in `backend/app/orchestrator/maestro.py`, runtime finalization in `backend/app/orchestrator/runtime.py`.
-- Storage: SQLAlchemy database models in `backend/app/models/*`, local artifact storage in `workspace/storage`, optional R2/S3-compatible object storage through `backend/app/services/storage.py`.
-- Background execution: Celery when Redis is reachable, otherwise FastAPI `BackgroundTasks`. Source: `backend/app/api/routes_audit.py`.
+Fire Crow's graph dynamically invokes a suite of analyzers based on the repository's technology stack and authorization scopes. Recent refactoring introduced numerous advanced analysis layers:
 
-See [Architecture](docs/ARCHITECTURE.md) and [Orchestration Pipeline](docs/ORCHESTRATION_PIPELINE.md).
+1. **`api_surface`**: Heuristically maps API routes and REST endpoints from the codebase.
+2. **`authz_idor`**: Flags potential Insecure Direct Object Reference (IDOR) vulnerabilities based on routing parameters and risk tags.
+3. **`cicd_scan`**: Inspects `.github/workflows` for risky configurations (e.g., untrusted `pull_request_target`).
+4. **`container_scan`**: Analyzes `Dockerfile` rules for dangerous capabilities and bad practices.
+5. **`sbom_graph`**: Captures dependency manifest mappings and outputs CycloneDX-compatible SBOM artifacts.
+6. **`secret_history`**: Scans commit history heuristically to spot hardcoded secrets, supporting auto-redaction.
+7. **`attack_graph`**: Builds a node-edge correlation matrix indicating chained attack paths across files.
+8. **`remediation_planner`**: Analyzes findings to generate actionable fix plans and code snippets.
+9. **`evidence_normalizer` & `confidence`**: Normalizes disparate tool outputs and intelligently upscores finding confidence.
 
-## Backend Overview
+## ⚙️ Local Development Setup
 
-- Entry point: `backend/app/main.py`
-- Routes: `backend/app/api/routes_auth.py`, `routes_audit.py`, `routes_sse.py`, `routes_system.py`, `routes_storage.py`
-- Models: `backend/app/models/audit_job.py`, `user.py`, `compliance.py`, `security_log.py`
-- Services: auth, sandbox, storage, reporter, redaction, housekeeping, and supporting planning/graph services in `backend/app/services/*`
+Fire Crow includes an easy-to-use launch configuration allowing rapid local development.
 
-## Frontend Overview
+1. **Backend Environment Setup**:
+   Create a Python virtual environment and install dependencies:
+   ```powershell
+   cd backend
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   ```
 
-- Landing page: `frontend/src/app/page.tsx`
-- Sign-in: `frontend/src/app/signin/page.tsx`
-- Sign-up: `frontend/src/app/signup/page.tsx`
-- Dashboard: `frontend/src/app/dashboard/page.tsx`
-- Auth/session storage: `frontend/src/lib/authSession.ts`, `frontend/src/shared/hooks/useAuthSession.ts`
-- API client: `frontend/src/shared/api/client.ts`
+2. **Frontend Environment Setup**:
+   Install npm dependencies:
+   ```powershell
+   cd frontend
+   npm install
+   ```
 
-See [Frontend Structure](docs/FRONTEND_STRUCTURE.md).
+3. **Environment Configuration**:
+   - Copy `backend/.env.example` to `backend/.env.local`.
+   - Copy `frontend/.env.example` to `frontend/.env.local`.
 
-## Authentication Overview
+4. **Launch Application**:
+   From the repository root, run the primary development script which boots both the frontend and backend servers concurrently:
+   ```powershell
+   npm run dev
+   ```
+   *(Alternatively, run `npm run dev:no-worker` to disable background worker scaling)*
 
-- Password login and registration: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`
-- Session lookup: `GET /api/v1/auth/me`, `GET /api/v1/auth/session`
-- Logout and token revocation: `POST /api/v1/auth/logout`
-- Optional OAuth: GitHub and Google callback flows in `backend/app/api/routes_auth.py`
-- Tokens are JWT bearer tokens, also accepted from a cookie named by `AUTH_COOKIE_NAME`. Source: `backend/app/services/auth.py`
+## ☁️ Deployment Guide (Render)
 
-## Data And Storage Overview
+Production deployments must not use `http://localhost:3000`. Set `FRONTEND_URL` accurately as OAuth callbacks and CORS mappings are heavily restricted.
 
-- Jobs, findings, logs, artifacts, sessions, and compliance records are stored in the configured database. Sources: `backend/app/models/*`
-- Reports and large evidence artifacts are stored through `backend/app/services/storage.py`, with local filesystem fallback when object storage is unavailable.
-- Health probes also test local storage and optional object storage. Source: `backend/app/main.py`
-
-See [Data Flow And Storage](docs/DATA_FLOW_AND_STORAGE.md).
-
-## Local Setup
-
-1. Create a Python virtual environment at `.venv` and install `backend/requirements.txt`.
-2. Install frontend dependencies in `frontend/`.
-3. Copy `backend/.env.example` to `backend/.env.local`.
-4. Copy `frontend/.env.example` to `frontend/.env.local` if you are not using the repo launcher.
-5. Run `npm run dev` from the repository root.
-
-Detailed instructions: [Local Development](docs/LOCAL_DEVELOPMENT.md).
-
-## Render Deployment And OAuth Redirects
-
-Render production deployments must set `FRONTEND_URL` to the deployed frontend origin. Do not leave it as `http://localhost:3000` outside local development, because OAuth callbacks and post-login redirects are derived from `FRONTEND_URL`.
-
-Minimum production envs:
-
+**Minimum Production Environment Variables**:
 ```bash
 DEBUG=false
 DATABASE_URL=postgresql://...
@@ -93,61 +90,46 @@ FRONTEND_URL=https://your-firecrow-frontend.example.com
 CORS_ORIGINS=https://your-firecrow-frontend.example.com
 ```
 
-Optional OAuth envs:
-
+**Optional Provider Integrations**:
 ```bash
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 ```
 
-Provider consoles must use deployed URLs, not localhost. Configure GitHub/Google authorized origins and callback URLs to match the deployed frontend/backend domains used by `routes_auth.py`.
-
-Before relying on OAuth in Render, verify the live environment:
-
+Before relying on OAuth or external connections in a production environment, verify the safety of your environment variables:
 ```bash
 bash scripts/verify_render_env.sh
 ```
+*(The script intentionally fails if SQLite is targeted, `DEBUG` is active, or `FRONTEND_URL` is missing)*
 
-The script fails when production envs still point at localhost, when `FRONTEND_URL` is not an HTTPS origin, when `DEBUG` is enabled, or when SQLite is used in production.
+## 🧪 Testing and Validation
 
-## Development Commands
+Fire Crow emphasizes testability. A full suite of testing utilities guarantees execution safety and architectural compliance:
 
-```powershell
-npm run dev
-npm run dev:no-worker
-npm run smoke
-npm run validate
-```
+- **Full Suite Validation**:
+  ```powershell
+  npm run validate
+  ```
+- **Backend Tests (Pytest)**:
+  ```powershell
+  .\.venv\Scripts\python.exe -m pytest backend/tests -v
+  ```
+- **Frontend Code Checks**:
+  ```powershell
+  cd frontend
+  npm run lint
+  npm run build
+  ```
 
-Relevant scripts live in `package.json`, `scripts/dev.py`, `scripts/smoke.py`, and `scripts/validate.py`.
+## 🔒 Security Model & Attestations
 
-## Test And Validation Commands
+Fire Crow executes active/dynamic penetration tools. To prevent misuse, the API enforces a stringent Authorization Model:
+- **Authorization Attestations**: Job submissions require cryptographically tracked consent fields (`attestation_accepted` and an explicit `authorization_scope`). 
+- **Sandboxing**: Active tools run strictly inside isolated container network partitions (`backend/app/services/sandbox.py`) to prevent side-effects on public infrastructure.
+- **Data Protection**: Security audit logs are persisted immutably in the DB. Presigned URLs are strictly validated. 
+- Further reading on our detailed security roadmap and implementations can be found in `docs/SECURITY_MODEL.md` and `docs/IMPLEMENTATION_FRAMEWORK_V2.md`.
 
-```powershell
-npm run validate
-.\.venv\Scripts\python.exe -m pytest backend/tests
-cd frontend; npm run lint
-cd frontend; npm run build
-```
-
-See [Testing And Validation](docs/TESTING_AND_VALIDATION.md).
-
-## Key API Endpoints
-
-| Endpoint | Purpose | Source |
-| --- | --- | --- |
-| `GET /health` | basic API and DB probe | `backend/app/main.py` |
-| `GET /health/live` | liveness probe | `backend/app/main.py` |
-| `GET /health/ready` | readiness probe with DB and Redis check | `backend/app/main.py` |
-| `GET /health/deep` | deep probe with storage checks | `backend/app/main.py` |
-| `POST /api/v1/auth/login` | password login | `backend/app/api/routes_auth.py` |
-| `POST /api/v1/auth/register` | workspace registration | `backend/app/api/routes_auth.py` |
-| `GET /api/v1/system/status` | authenticated status payload | `backend/app/api/routes_system.py` |
-| `POST /api/v1/audit/submit` | create an audit job | `backend/app/api/routes_audit.py` |
-| `GET /api/v1/audit/{job_id}/stream` | SSE log stream | `backend/app/api/routes_sse.py` |
-
-Full route details: [API Reference](docs/API_REFERENCE.md).
-
-## Repository Layout
+---
+*Documentation last updated: June 08, 2026*

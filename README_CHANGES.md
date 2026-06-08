@@ -21,3 +21,6 @@
 ## Verification
 - Backend tests (`pytest backend/tests -v`) run clean at 100% pass rate.
 - Verified that `routes_sse.py` contains the required 15-second heartbeat loop logic.
+
+---
+*Documentation last updated: June 08, 2026*

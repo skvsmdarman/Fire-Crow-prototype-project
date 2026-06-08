@@ -196,3 +196,5 @@ Coverage themes:
 
 The backend test suite is real and currently wired through `pytest.ini` and the root validation script.
 
+---
+*Documentation last updated: June 08, 2026*

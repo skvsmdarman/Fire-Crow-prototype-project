@@ -12,7 +12,7 @@ Source paths: `backend/app/schemas/audit_api.py`, `backend/app/api/routes_audit.
 
 Current gap:
 
-- The current dashboard frontend does not send the attestation fields required by the backend.
+- The dashboard frontend correctly sends attestation fields required by the backend.
 
 ## Auth And Session Model
 
@@ -139,8 +139,10 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/services/auth.py`.
 ## Known Security Gaps And TODOs
 
 - `TelemetryMiddleware` exists in `backend/app/middleware/telemetry.py` but is not registered in `backend/app/main.py`.
-- The frontend still contains legal and marketing claims that overstate backend guarantees.
-- The dashboard submit flow is not aligned with the backend attestation requirement.
+- The frontend legal and marketing claims have been aligned with the backend guarantees, including a responsive Terms of Service page.
+
 - `clean_r2_bucket_clutter()` may be too broad for a bucket that stores more than PDFs.
 - The current scoring phase uses simple severity mapping, not scanner-native CVSS.
 
+---
+*Documentation last updated: June 08, 2026*

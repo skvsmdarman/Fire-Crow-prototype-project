@@ -520,3 +520,6 @@ These can be implemented immediately with minimal code changes:
 - [ ] **Clone size limit**: Check `du -s` after clone, reject if >500MB
 - [x] **HTML escape findings**: `html.escape()` all finding fields before reporter template
 - [ ] **Redis password**: Add `REDIS_PASSWORD` to config, use in connection URL
+
+---
+*Documentation last updated: June 08, 2026*

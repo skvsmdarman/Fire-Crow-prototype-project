@@ -90,3 +90,6 @@ If a fetch request returns a status `401` during active usage:
 * A notification banner warns the user of session expiration.
 * Local storage is cleaned automatically.
 * The application routes the user to `/signin` with an optional query parameter indicating the session expired.
+
+---
+*Documentation last updated: June 08, 2026*

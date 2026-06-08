@@ -108,3 +108,5 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/agents/github_mcp.p
 
 The code usually degrades gracefully in debug mode and more conservatively in non-debug mode.
 
+---
+*Documentation last updated: June 08, 2026*

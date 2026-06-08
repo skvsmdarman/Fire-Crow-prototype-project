@@ -99,3 +99,6 @@ The codebase itself does not encode Render pricing or sleep behavior, but curren
 - Decide whether real sandboxed active testing is possible on the target host.
 - If you override the Docker start command, keep `alembic -c backend/alembic.ini upgrade head` ahead of `uvicorn`.
 - Verify that frontend and backend audit-submit contracts match before relying on the dashboard UI.
+
+---
+*Documentation last updated: June 08, 2026*

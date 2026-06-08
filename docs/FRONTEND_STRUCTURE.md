@@ -180,3 +180,5 @@ Current behavior:
 - The dashboard expects fields like `sandbox_mode` and `integrations` even though `/system/status` only returns them for admin-like users.
 - Legal and signup copy overstates current backend guarantees.
 
+---
+*Documentation last updated: June 08, 2026*

@@ -81,3 +81,6 @@ This triggers:
 2. Next.js production compiler build (`npm run build` in frontend).
 3. Backend type safety check (`npx pyright`).
 4. Pytest suite testing (`pytest backend/tests/`).
+
+---
+*Documentation last updated: June 08, 2026*

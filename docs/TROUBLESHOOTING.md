@@ -171,3 +171,5 @@ Relevant sources:
 - `backend/app/main.py`
 - `backend/app/models/database.py`
 
+---
+*Documentation last updated: June 08, 2026*

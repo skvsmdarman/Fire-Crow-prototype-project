@@ -153,3 +153,6 @@ To ensure that the platform runs safely without consuming infinite resources, we
 2. **Subprocess Timeouts**: Every scanner CLI tool execution is wrapped in a hard timeout (maximum 5 minutes per tool) so scans cannot hang.
 3. **LLM Budget Ceiling**: We calculate API costs dynamically. If a job's LLM prompt usage exceeds $5.00, it halts and reports current findings.
 4. **Scans Rate Limit**: Users are restricted to a maximum of 5 concurrent active scans and 20 scans per day.
+
+---
+*Documentation last updated: June 08, 2026*

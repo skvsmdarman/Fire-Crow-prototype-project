@@ -106,3 +106,5 @@ The current CI runs:
 - Debug-mode scanner simulations mean passing tests do not prove all external scanners are installed.
 - Hosted deployment behavior for Docker-backed active stages is not fully covered by automated tests.
 
+---
+*Documentation last updated: June 08, 2026*

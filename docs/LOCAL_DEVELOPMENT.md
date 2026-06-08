@@ -147,3 +147,5 @@ Check:
 
 Current note: the shipped dashboard UI does not yet send the required attestation fields.
 
+---
+*Documentation last updated: June 08, 2026*

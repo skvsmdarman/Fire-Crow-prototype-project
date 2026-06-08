@@ -35,3 +35,5 @@ Replace that address with the real reporting channel before relying on this file
 - Do not submit exploit kits, malware payloads, or destructive automation as "tests."
 - Defensive proof-of-concept material should stay minimal, bounded, and safe to review.
 
+---
+*Documentation last updated: June 08, 2026*

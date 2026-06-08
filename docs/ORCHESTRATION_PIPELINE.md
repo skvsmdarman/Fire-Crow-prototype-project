@@ -219,3 +219,5 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 - `scheduler.py` is still placeholder infrastructure, not a real scheduled-audit subsystem.
 - The current scoring phase uses a simple severity-to-CVSS mapping rather than scanner-native scoring.
 
+---
+*Documentation last updated: June 08, 2026*

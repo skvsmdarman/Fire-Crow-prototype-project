@@ -276,3 +276,5 @@ These routes exist in the current backend, even though they are not used by the 
 
 Current caution: the route comment says "Admin/scoped," but the access check in `StorageService.verify_tenant_access()` is tenant/membership based and not explicitly admin-only.
 
+---
+*Documentation last updated: June 08, 2026*

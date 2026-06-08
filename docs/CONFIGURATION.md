@@ -172,3 +172,5 @@ If unset in the browser:
 - Production mode is intentionally stricter than debug mode.
 - Several config constants exist in code without matching entries in `.env.example`; those are now documented here but still worth adding to examples in a later change.
 
+---
+*Documentation last updated: June 08, 2026*
