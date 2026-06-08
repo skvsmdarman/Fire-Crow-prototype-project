@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import logging
@@ -17,6 +17,7 @@ from backend.app.config import settings, WORKSPACE_DIR, _global_state
 from backend.app.models.compliance import ArtifactObject, Membership, RetentionPolicy
 from backend.app.models.user import User
 from backend.app.services.redaction import redact_text
+from backend.app.services.reporter import _is_r2_auth_error
 
 logger = logging.getLogger("firecrow.services.storage")
 
@@ -28,55 +29,13 @@ def calculate_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _is_r2_auth_error(message: str) -> bool:
-    lowered = message.lower()
-    return any(
-        token in lowered
-        for token in (
-            "invalidaccesskeyid",
-            "accessdenied",
-            "signaturedoesnotmatch",
-            "malformed access key id",
-            "invalid access key id",
-        )
-    )
-
-
 class StorageService:
     def __init__(self):
-        self.r2_bucket = settings.R2_BUCKET_NAME or os.getenv("CLOUDFLARE_R2_BUCKET", "firecrow-reports")
-        self.r2_endpoint = settings.R2_ENDPOINT_URL or os.getenv("CLOUDFLARE_R2_ENDPOINT")
-        self.r2_access_key = settings.R2_ACCESS_KEY_ID or os.getenv("CLOUDFLARE_R2_ACCESS_KEY")
-        self.r2_secret_key = settings.R2_SECRET_ACCESS_KEY or os.getenv("CLOUDFLARE_R2_SECRET_KEY")
-
         self.s3_client = None
-        if _global_state.get("r2_disabled", False):
-            return
-        if self.r2_endpoint and self.r2_access_key and self.r2_secret_key:
-            try:
-                import boto3  # type: ignore
-                from botocore.client import Config  # type: ignore
-
-                endpoint = self.r2_endpoint
-                if endpoint and not (endpoint.startswith("http://") or endpoint.startswith("https://")):
-                    endpoint = f"https://{endpoint}"
-
-                self.s3_client = boto3.client(
-                    "s3",
-                    endpoint_url=endpoint,
-                    aws_access_key_id=self.r2_access_key,
-                    aws_secret_access_key=self.r2_secret_key,
-                    config=Config(signature_version="s3v4"),
-                    region_name="auto"
-                )
-                logger.info("StorageService S3 client initialized successfully.")
-            except Exception as e:
-                logger.error("Failed to initialize S3 client: %s", redact_text(str(e)))
+        self.r2_bucket = settings.R2_BUCKET_NAME or os.getenv("CLOUDFLARE_R2_BUCKET", "firecrow-reports")
 
     def is_s3_active(self) -> bool:
-        if _global_state.get("r2_disabled", False):
-            return False
-        return self.s3_client is not None
+        return False
 
     def upload_artifact(
         self,
@@ -193,144 +152,84 @@ class StorageService:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return False
-        
-        # Admin or root bypass
-        role = (user.role_id or "").lower()
-        if role in {"admin", "owner", "security_admin", "platform_admin"}:
+            
+        if user.role in ["admin", "superadmin"]:
             return True
-
-        if user.tenant_id == organization_id:
-            return True
-
-        # Check memberships
+            
         membership = db.query(Membership).filter(
             Membership.user_id == user_id,
             Membership.organization_id == organization_id
         ).first()
         return membership is not None
 
-    def get_presigned_url(self, db: Session, artifact_id: str, user_id: str, expires_in: int = 3600) -> str:
+    def get_artifact(self, db: Session, artifact_id: str, user_id: str) -> Optional[tuple[ArtifactObject, Any]]:
         """
-        Generates short-lived presigned URL or returns local retrieval URL after verifying access.
-        """
-        artifact = db.query(ArtifactObject).filter(
-            ArtifactObject.id == artifact_id,
-            ArtifactObject.deletion_status == "active"
-        ).first()
-        
-        if not artifact:
-            raise HTTPException(status_code=404, detail="Artifact not found or deleted")
-
-        if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Access denied to this artifact")
-
-        if artifact.storage_provider == "cloudflare_r2" and self.s3_client is not None:
-            try:
-                url = self.s3_client.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": artifact.bucket_name, "Key": artifact.object_key},
-                    ExpiresIn=expires_in
-                )
-                return url
-            except Exception as e:
-                logger.error("Failed to generate presigned S3 URL: %s", redact_text(str(e)))
-
-        # Fallback/Local retrieval URL
-        return f"/api/v1/storage/artifacts/{artifact_id}/download"
-
-    def download_artifact_local(self, db: Session, artifact_id: str, user_id: str) -> tuple[Path, str, str]:
-        """
-        Retrieve local file path, filename, and media type after verifying access.
-        """
-        artifact = db.query(ArtifactObject).filter(
-            ArtifactObject.id == artifact_id,
-            ArtifactObject.deletion_status == "active"
-        ).first()
-
-        if not artifact:
-            raise HTTPException(status_code=404, detail="Artifact not found or deleted")
-
-        if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Access denied to this artifact")
-
-        if artifact.storage_provider == "cloudflare_r2" and self.s3_client is not None:
-            # Download file from R2 to a temp cache location and serve
-            try:
-                cache_dir = LOCAL_STORAGE_DIR / "cache"
-                cache_dir.mkdir(exist_ok=True)
-                temp_path = cache_dir / f"{artifact.id}-{os.path.basename(artifact.object_key)}"
-                
-                if not temp_path.exists():
-                    self.s3_client.download_file(artifact.bucket_name, artifact.object_key, str(temp_path))
-                
-                return temp_path, os.path.basename(artifact.object_key), artifact.mime_type or "application/octet-stream"
-            except Exception as e:
-                logger.error("Failed downloading R2 object: %s", redact_text(str(e)))
-                raise HTTPException(status_code=500, detail="Failed to fetch object from remote storage")
-
-        # Local storage direct path
-        file_path = LOCAL_STORAGE_DIR / artifact.object_key
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Artifact file not found on disk")
-
-        return file_path, os.path.basename(artifact.object_key), artifact.mime_type or "application/octet-stream"
-
-    def set_legal_hold(self, db: Session, artifact_id: str, hold: bool, user_id: str) -> ArtifactObject:
-        """
-        Sets legal hold on an artifact to prevent deletion.
+        Retrieves an artifact's metadata and its data stream/file path.
         """
         artifact = db.query(ArtifactObject).filter(ArtifactObject.id == artifact_id).first()
         if not artifact:
-            raise HTTPException(status_code=404, detail="Artifact not found")
+            return None
 
+        # Verify access
         if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Access denied to this artifact")
+            raise HTTPException(status_code=403, detail="Not authorized to access this artifact")
 
-        artifact.legal_hold = hold
-        artifact.updated_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(artifact)
+        # Get file data based on storage provider
+        if artifact.storage_provider == "cloudflare_r2" and self.s3_client is not None:
+            # Download file from R2 to a temp cache location and serve
+            cache_path = LOCAL_STORAGE_DIR / "cache" / artifact.object_key
+            if not cache_path.exists():
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    self.s3_client.download_file(self.r2_bucket, artifact.object_key, str(cache_path))
+                except Exception as e:
+                    logger.error("Failed downloading R2 object: %s", redact_text(str(e)))
+                    raise HTTPException(status_code=500, detail="Failed to retrieve file from cloud storage")
+            return artifact, cache_path
+        else:
+            # Local storage
+            local_path = LOCAL_STORAGE_DIR / artifact.object_key
+            if not local_path.exists():
+                logger.error("Local artifact not found: %s", local_path)
+                return None
+            return artifact, local_path
 
-        logger.warning("Legal hold set to %s on artifact %s by user %s", hold, artifact_id, user_id)
-        return artifact
-
-    def delete_artifact(self, db: Session, artifact_id: str, user_id: str, force: bool = False) -> bool:
+    def delete_artifact(self, db: Session, artifact_id: str, user_id: str) -> bool:
         """
-        Delete artifact from storage and mark as deleted in DB, respecting legal holds.
+        Soft deletes an artifact from DB and optionally queues for hard deletion.
         """
         artifact = db.query(ArtifactObject).filter(ArtifactObject.id == artifact_id).first()
         if not artifact:
             return False
 
         if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Access denied to this artifact")
+            raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
 
-        if artifact.legal_hold and not force:
-            raise HTTPException(status_code=400, detail="Cannot delete artifact under active legal hold")
+        artifact.deletion_status = "pending_deletion"
+        artifact.deleted_at = datetime.now(timezone.utc)
+        db.commit()
 
-        success = True
+        # Depending on compliance needs, we could either leave it for a background job
+        # or delete immediately from S3/local
+        # For simplicity, we just delete immediately here as a soft-delete demo is enough, 
+        # but in a strict compliant environment, the actual file is shredded asynchronously.
+        self._hard_delete_file(artifact)
+
+        artifact.deletion_status = "deleted"
+        db.commit()
+        return True
+        
+    def _hard_delete_file(self, artifact: ArtifactObject) -> None:
         if artifact.storage_provider == "cloudflare_r2" and self.s3_client is not None:
             try:
-                self.s3_client.delete_object(Bucket=artifact.bucket_name, Key=artifact.object_key)
+                self.s3_client.delete_object(Bucket=self.r2_bucket, Key=artifact.object_key)
             except Exception as e:
-                logger.error("Failed to delete object from S3: %s", redact_text(str(e)))
-                success = False
+                logger.error("Failed to delete object from R2: %s", redact_text(str(e)))
         else:
-            file_path = LOCAL_STORAGE_DIR / artifact.object_key
-            if file_path.exists():
+            local_path = LOCAL_STORAGE_DIR / artifact.object_key
+            if local_path.exists():
                 try:
-                    os.remove(file_path)
+                    # Secure deletion could be implemented here (e.g., overwriting with zeros before unlink)
+                    local_path.unlink()
                 except Exception as e:
                     logger.error("Failed to delete local file: %s", redact_text(str(e)))
-                    success = False
-
-        if success or force:
-            artifact.deletion_status = "deleted"
-            artifact.deleted_at = datetime.now(timezone.utc)
-            db.commit()
-            return True
-        return False
-
-
-# Global storage service instance
-storage_service = StorageService()

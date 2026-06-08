@@ -90,14 +90,7 @@ Later files win.
 
 ### Object Storage
 
-| Variable | Required | Default | Purpose | Notes |
-| --- | --- | --- | --- | --- |
-| `R2_ACCESS_KEY_ID` | optional | empty string | object storage access key | sensitive; example present |
-| `R2_SECRET_ACCESS_KEY` | optional | empty string | object storage secret | sensitive; example present |
-| `R2_ENDPOINT_URL` | optional | empty string | object storage endpoint | example present |
-| `R2_BUCKET_NAME` | optional | `firecrow-reports` | object storage bucket | example present |
-| `REPORT_PRESIGNED_TTL` | optional | `3600` | presigned URL TTL | example missing |
-| `REPORT_LOCAL_FALLBACK` | optional | `true` | local fallback flag | defined in config; example missing |
+No external object storage is used. All reports and evidence artifacts are stored directly in Neon DB.
 
 ### AI Settings
 
@@ -115,6 +108,10 @@ Later files win.
 | `GEMINI_DAILY_SOFT_LIMIT` | optional | `1000` | quota guard constant | example missing |
 | `GEMINI_MIN_SECONDS_BETWEEN_CALLS` | optional | `1` | throttle constant | example missing |
 | `GEMINI_FINDINGS_CHUNK_SIZE` | optional | `50` | chunk size constant | example missing |
+| `LLM_CHAT_ASSISTANT` | optional | `false` | Enables interactive chat assistant | defaults to `false` |
+| `LLM_DASHBOARD_INSIGHT` | optional | `false` | Generates dashboard summary insights | defaults to `false` |
+| `LLM_ATTACK_CHAIN_NAMING` | optional | `false` | Generates names for attack chains | defaults to `false` |
+| `LLM_PR_DESCRIPTION` | optional | `false` | Generates pull request descriptions | defaults to `false` |
 
 ### Job, Budget, And Scoring Tunables
 
@@ -150,10 +147,6 @@ These are not part of `Settings`, but they are still checked directly in code an
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `RENDER_EXTERNAL_URL` | `backend/app/config.py` | fallback source for `FRONTEND_URL` |
-| `CLOUDFLARE_R2_BUCKET` | `backend/app/services/storage.py`, `reporter.py` | legacy bucket alias |
-| `CLOUDFLARE_R2_ENDPOINT` | `backend/app/services/storage.py`, `reporter.py` | legacy endpoint alias |
-| `CLOUDFLARE_R2_ACCESS_KEY` | `backend/app/services/storage.py`, `reporter.py` | legacy access-key alias |
-| `CLOUDFLARE_R2_SECRET_KEY` | `backend/app/services/storage.py`, `reporter.py` | legacy secret-key alias |
 
 ## Frontend Environment Variables
 

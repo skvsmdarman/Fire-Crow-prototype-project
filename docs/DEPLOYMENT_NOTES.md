@@ -61,10 +61,8 @@ This means a hosted deployment can still serve the UI/API while never performing
 
 ## Object Storage
 
-- Reports and evidence can stay local if object storage is not configured.
-- Completed jobs now keep a database-backed HTML snapshot of the generated report, so the authenticated report route can still return a report even if a local report file disappears after a redeploy.
-- For persistent multi-instance deployments, configure `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, and `R2_BUCKET_NAME`.
-- Legacy `CLOUDFLARE_R2_*` aliases are still honored in some services.
+- No external object storage required. All data lives in Neon DB.
+- Reports and evidence are stored as HTML/JSONB in the database.
 
 ## Email Providers
 
@@ -91,10 +89,10 @@ The codebase itself does not encode Render pricing or sleep behavior, but curren
 
 ## Production-Hardening Checklist
 
-- Use PostgreSQL, not SQLite.
+- Use PostgreSQL (Neon DB), not SQLite.
 - Set a strong `SECRET_KEY` and preferably a separate `ENCRYPTION_KEY`.
 - Decide whether Redis/Celery is required or whether in-process execution is acceptable.
-- Decide whether object storage is required for report durability.
+- Ensure Neon DB has appropriate backup policies, as all artifacts and reports are stored directly in the database.
 - Decide whether email delivery is required and configure one provider.
 - Decide whether real sandboxed active testing is possible on the target host.
 - If you override the Docker start command, keep `alembic -c backend/alembic.ini upgrade head` ahead of `uvicorn`.

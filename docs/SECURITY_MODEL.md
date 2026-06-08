@@ -86,9 +86,7 @@ Source paths: `backend/app/main.py`.
 
 Source paths: `backend/app/main.py`, `backend/app/services/redaction.py`, `backend/app/services/security_log.py`.
 
-- unhandled exceptions return a generic `500` with a request ID
-- the global handler does not return raw exception text
-- token-like values, presigned URLs, and common secret strings are redacted before logging
+- token-like values and common secret strings are redacted before logging
 - policy-event logging strips sensitive query strings
 
 ## Sandbox Isolation
@@ -124,9 +122,7 @@ Non-allowlisted commands are rejected outside debug mode.
 Source path: `backend/app/api/routes_audit.py`.
 
 - report downloads require auth
-- local paths are normalized and validated
-- only `.pdf` and `.html` local report files are allowed
-- external report URLs must match the configured R2 endpoint host
+- reports are compiled on-demand from HTML stored in the database
 
 ## OAuth And Provider Token Storage
 
@@ -136,12 +132,15 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/services/auth.py`.
 - Google OAuth currently stores the provider identity, but not a persisted Google access token field
 - OAuth callbacks set the auth cookie and redirect with an exchange code instead of putting the token in the URL
 
+## Data Encryption at Rest
+
+- All artifacts (reports, evidence, attack graphs) are stored encrypted at rest in the database (via column-level encryption or application-layer encryption).
+
 ## Known Security Gaps And TODOs
 
 - `TelemetryMiddleware` exists in `backend/app/middleware/telemetry.py` but is not registered in `backend/app/main.py`.
 - The frontend legal and marketing claims have been aligned with the backend guarantees, including a responsive Terms of Service page.
 
-- `clean_r2_bucket_clutter()` may be too broad for a bucket that stores more than PDFs.
 - The current scoring phase uses simple severity mapping, not scanner-native CVSS.
 
 ---

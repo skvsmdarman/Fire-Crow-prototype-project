@@ -183,11 +183,9 @@ This reference is derived from `backend/app/main.py`, `backend/app/api/routes_au
 - Auth required: yes
 - Request body: none
 - Response:
-  - direct file response
-  - redirect to presigned object URL
-  - redirect to an allowed external R2-hosted URL
+  - HTML content served directly from the database (`audit_reports` table) or compiled as HTML response.
 - Errors:
-  - `400` unsafe path or URL
+  - `400` unsafe path
   - `401` unauthenticated
   - `404` report missing
   - `500` storage retrieval failure
@@ -275,6 +273,72 @@ These routes exist in the current backend, even though they are not used by the 
 - Source: `backend/app/api/routes_storage.py`
 
 Current caution: the route comment says "Admin/scoped," but the access check in `StorageService.verify_tenant_access()` is tenant/membership based and not explicitly admin-only.
+
+## Chat Endpoints
+
+### `POST /api/v1/chat/ask`
+
+- Auth required: yes
+- Request body: `{ job_id: string, message: string }`
+- Response: `{ response: string, answer: string }` containing the AI assistant's reply.
+- Errors:
+  - `401` unauthenticated
+  - `404` job not found
+  - `503` Chat assistant is disabled (LLM feature flag not enabled)
+- Source: `backend/app/api/routes_chat.py`
+
+## Leaderboard Endpoints
+
+### `GET /api/v1/leaderboard`
+
+- Auth required: yes
+- Request body: none
+- Response: Array of objects representing the top 10 finished scan jobs by security score. Each object contains `repo_url`, `score`, `security_score`, `completed_at`, `finished_at`, and `critical_count`.
+- Errors:
+  - `401` unauthenticated
+- Source: `backend/app/api/routes_leaderboard.py`
+
+## Push Notification Endpoints
+
+### `GET /api/v1/push/vapid-public-key`
+
+- Auth required: no
+- Request body: none
+- Response: `{ public_key: string }`
+- Errors:
+  - `500` VAPID keys not generated
+- Source: `backend/app/api/routes_push.py`
+
+### `POST /api/v1/push/subscribe`
+
+- Auth required: yes
+- Request body: `{ endpoint: string, p256dh: string, auth: string }`
+- Response: `{ status: "subscribed" }`
+- Errors:
+  - `401` unauthenticated
+- Source: `backend/app/api/routes_push.py`
+
+## Additional Graph & Insight Endpoints
+
+### `GET /api/v1/audit/job/{job_id}/graph`
+
+- Auth required: yes
+- Request body: none
+- Response: JSON object representing the node-edge correlation matrix of the attack graph.
+- Errors:
+  - `401` unauthenticated
+  - `404` job not found, or attack graph not generated yet
+- Source: `backend/app/api/routes_audit.py`
+
+### `GET /api/v1/audit/job/{job_id}/insight`
+
+- Auth required: yes
+- Request body: none
+- Response: `{ insight: string, enabled: boolean }` where `insight` is a short summary of findings (max 15 words) if `LLM_DASHBOARD_INSIGHT` is enabled.
+- Errors:
+  - `401` unauthenticated
+  - `404` job not found
+- Source: `backend/app/api/routes_audit.py`
 
 ---
 *Documentation last updated: June 08, 2026*

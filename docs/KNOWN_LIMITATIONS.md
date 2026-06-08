@@ -23,8 +23,7 @@ This list only includes limitations verified in the current repository.
 
 ## Storage And Cleanup Risks
 
-- `ReportGenerator.clean_r2_bucket_clutter()` deletes every non-PDF object in the configured bucket, even though the system also stores non-PDF artifacts. Source: `backend/app/services/reporter.py`.
-- Local temporary report files are deleted after email dispatch, so durable access depends on the artifact copy. Source: `backend/app/services/reporter.py`.
+- Large binary artifacts (e.g., PDFs) are generated on‑demand and not persisted long‑term; reports are stored as HTML.
 
 ## Frontend Content Drift
 

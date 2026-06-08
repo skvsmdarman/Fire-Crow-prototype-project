@@ -723,14 +723,6 @@ class ReportGenerator:
                 )
             return f"/reports/{filename}"
 
-    def clean_r2_bucket_clutter(self) -> None:
-        """
-        Scans the Cloudflare R2 bucket and deletes any objects that are not PDFs (e.g. temporary logs, non-pdf artifacts)
-        to optimize storage.
-        """
-        logger.info("clean_r2_bucket_clutter is disabled to prevent cross-tenant data loss.")
-        return
-
 
     def send_email_report(
         self,

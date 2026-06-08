@@ -111,7 +111,7 @@ Source: phase bodies in `backend/app/orchestrator/maestro.py` plus helpers in `b
 | `scoring` | persisted findings | CVSS fields, risk summary |
 | `attack_graph` | routes plus selected findings | attack graph, attack chains |
 | `remediation_planner` | selected findings | remediation plan and remediation tasks |
-| `reporter` | reportable findings, scanner execution | report artifact URL, delivered flag, completed status |
+| `reporter` | reportable findings, scanner execution | report stored in audit_reports table, HTML snapshot, completed status |
 | `github_mcp` | findings, remediations, optional token | GitHub issue/PR metadata |
 | `google_agent` | findings, remediations, recipient email | PR risk report, email-delivery metadata |
 | `cleanup` | clone path, sandbox identifiers | no new business state, marks cleanup complete |
@@ -192,7 +192,6 @@ Source: `cleanup_resources()` in `backend/app/orchestrator/maestro.py` and final
 
 - Tries to remove the sandbox network, target container, and Kali container.
 - Deletes the cloned repository workspace.
-- Calls `ReportGenerator.clean_r2_bucket_clutter()`.
 - If the graph never reaches `cleanup`, `runtime.py` still forces cleanup in `finally`.
 
 ## Cancellation Behavior
@@ -215,7 +214,6 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 ## Known Risks And TODOs
 
 - The frontend submit flow does not currently provide the attestation fields required by the backend.
-- The report cleanup step can delete non-PDF R2 objects even though the system also stores non-PDF artifacts.
 - `scheduler.py` is still placeholder infrastructure, not a real scheduled-audit subsystem.
 - The current scoring phase uses a simple severity-to-CVSS mapping rather than scanner-native scoring.
 

@@ -10,7 +10,7 @@ Users can securely authenticate, submit GitHub HTTPS repository URLs for analysi
 - **Agentic Orchestration Engine**: Uses a graph-based state machine (`LangGraph`) to route execution between passive scanning, heuristic intelligence gathering, and LLM-driven vulnerability reasoning.
 - **Deep Security Tooling Integration**: Includes 8 specialized scanners (API surface, AuthZ/IDOR flagger, CI/CD scanning, Container scanning, SBOM generation, Secret history parsing).
 - **Secure Authentication Flow**: Native password login with secure token revocation, along with OAuth integrations for GitHub and Google.
-- **Production Hardening**: Enforces SQLite blocklists in production, supports Redis/Celery job queues, incorporates compliance filters (Terms of Service, Regional settings), and uses encrypted object storage (e.g., S3/R2).
+- **Production Hardening**: Enforces SQLite blocklists in production, supports Redis/Celery job queues, and incorporates compliance filters (Terms of Service, Regional settings).
 - **Automated Remediation (GitHub MCP)**: Features GitHub integration capable of constructing automated GitHub issues and planning pull request structures from remediation tasks.
 
 ## 🏗 System Architecture
@@ -21,7 +21,7 @@ The project follows a decoupled, scalable architecture spanning frontend UI, an 
 - **Core Framework**: FastAPI (`backend/app/main.py`)
 - **Orchestration**: `LangGraph` pipeline orchestrating security nodes via `backend/app/orchestrator/maestro.py` and `backend/app/orchestrator/runtime.py`.
 - **Background Execution**: Scales horizontally with `Celery` + `Redis`, while preserving a fast local development mode through FastAPI `BackgroundTasks`.
-- **Database & Storage**: SQLAlchemy ORM (`backend/app/models/`) persisting jobs, multi-layered findings, audit artifacts, and system/compliance logs. Uses local filesystem fallback or R2/S3 for large PDF reports and SBOMs.
+- **Database & Storage**: SQLAlchemy ORM (`backend/app/models/`) persisting jobs, multi-layered findings, audit artifacts, and system/compliance logs. All artifacts (reports, evidence, attack graphs) are stored in Neon PostgreSQL as TEXT/JSONB.
 
 ### Frontend Overview
 - **Framework**: Next.js App Router (`frontend/src/app/*`)
@@ -78,7 +78,7 @@ Fire Crow includes an easy-to-use launch configuration allowing rapid local deve
 
 ## ☁️ Deployment Guide (Render)
 
-Production deployments must not use `http://localhost:3000`. Set `FRONTEND_URL` accurately as OAuth callbacks and CORS mappings are heavily restricted.
+Production deployments must not use `http://localhost:3000`. Set `FRONTEND_URL` accurately as OAuth callbacks and CORS mappings are heavily restricted. The application is configured to deploy with Neon DB only (no external object storage required).
 
 **Minimum Production Environment Variables**:
 ```bash
@@ -88,6 +88,15 @@ SECRET_KEY=<long random secret>
 ENCRYPTION_KEY=<long random encryption key>
 FRONTEND_URL=https://your-firecrow-frontend.example.com
 CORS_ORIGINS=https://your-firecrow-frontend.example.com
+```
+
+**Feature Flags (LLM Support)**:
+```bash
+# Enable LLM feature flags (all default to false)
+LLM_CHAT_ASSISTANT=false       # Enables the interactive chat assistant
+LLM_DASHBOARD_INSIGHT=false    # Generates dashboard summary insights
+LLM_ATTACK_CHAIN_NAMING=false  # Generates natural names for attack graphs
+LLM_PR_DESCRIPTION=false       # Auto-generates PR description/summaries
 ```
 
 **Optional Provider Integrations**:
@@ -128,7 +137,7 @@ Fire Crow emphasizes testability. A full suite of testing utilities guarantees e
 Fire Crow executes active/dynamic penetration tools. To prevent misuse, the API enforces a stringent Authorization Model:
 - **Authorization Attestations**: Job submissions require cryptographically tracked consent fields (`attestation_accepted` and an explicit `authorization_scope`). 
 - **Sandboxing**: Active tools run strictly inside isolated container network partitions (`backend/app/services/sandbox.py`) to prevent side-effects on public infrastructure.
-- **Data Protection**: Security audit logs are persisted immutably in the DB. Presigned URLs are strictly validated. 
+- **Data Protection**: Security audit logs are persisted immutably in the DB.
 - Further reading on our detailed security roadmap and implementations can be found in `docs/SECURITY_MODEL.md` and `docs/IMPLEMENTATION_FRAMEWORK_V2.md`.
 
 ---
