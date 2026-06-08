@@ -47,7 +47,7 @@ export default function TermsPage() {
         </Link>
         <div className="public-nav-links">
           <Link href="/">Home</Link>
-          <PolicyLink href="/privacy-policy" policy="privacy_policy" source="terms_nav">
+          <PolicyLink href="/privacy" policy="privacy_policy" source="terms_nav">
             Privacy Policy
           </PolicyLink>
           <Link className="nav-cta" href="/signin">Sign in</Link>

@@ -3,7 +3,7 @@ export const ROUTES = {
   signin: "/signin",
   dashboard: "/dashboard",
   terms: "/terms",
-  privacy: "/privacy-policy",
+  privacy: "/privacy",
 };
 
 export function getDashboardUrl(workspaceName?: string): string {

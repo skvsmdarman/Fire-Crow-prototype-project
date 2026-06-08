@@ -68,7 +68,7 @@ export default function Footer() {
               </PolicyLink>
             </li>
             <li>
-              <PolicyLink href="/privacy-policy" policy="privacy_policy" source="footer_legal">
+              <PolicyLink href="/privacy" policy="privacy_policy" source="footer_legal">
                 Privacy Policy
               </PolicyLink>
             </li>
