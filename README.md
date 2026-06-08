@@ -166,3 +166,21 @@ See [Known Limitations](docs/KNOWN_LIMITATIONS.md), [Deployment Notes](docs/DEPL
 - [Configuration](docs/CONFIGURATION.md)
 - [Local Development](docs/LOCAL_DEVELOPMENT.md)
 
+
+### Deterministic Report Automation
+Fire Crow now includes a deterministic fallback reporting engine. If the `GEMINI_MODEL` fails or is not provided, the platform will automatically route to the fallback engine to generate the executive summary, remediation tasks, email notifications, and PR plans.
+Ensure `REPORT_LOCAL_FALLBACK` is set appropriately for your artifact persistence requirements.
+
+### Required Environment Variables
+Ensure the following variables are configured in your Render environment or `.env` file:
+```env
+REPORT_AUTOMATION_ENABLED=true
+REPORT_AUTOMATION_USE_LANGGRAPH=false
+REPORT_AUTOMATION_SEND_EMAIL=false
+REPORT_AUTOMATION_CREATE_PR=false
+REPORT_AUTOMATION_STORE_EMAIL_BODY=true
+REPORT_AUTOMATION_STORE_PR_PLAN=true
+REPORT_AUTOMATION_MAX_FINDINGS=50
+REPORT_AUTOMATION_MAX_EMAIL_CHARS=8000
+REPORT_AUTOMATION_MAX_PR_BODY_CHARS=12000
+```

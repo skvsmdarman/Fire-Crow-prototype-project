@@ -52,14 +52,20 @@ const PIPELINE = [
 ];
 
 const AGENTS = [
-  { id: "MAESTRO", role: "Coordinates audit jobs, status, and cleanup." },
-  { id: "RECON", role: "Builds repository and dependency context." },
-  { id: "SAST", role: "Flags secrets, sinks, and code-level risk." },
-  { id: "SANDBOX", role: "Maintains isolated validation boundaries." },
-  { id: "AUTH", role: "Reviews authentication and session behavior." },
-  { id: "API", role: "Reviews API security and configuration exposure." },
-  { id: "SCORING", role: "Ranks findings with severity context." },
-  { id: "REPORTER", role: "Packages reports and remediation handoff." },
+  { id: "Intake & Auth", role: "Validates repository connection and confirms authorized review boundary." },
+  { id: "Clone Layer", role: "Securely clones and isolates target repository code." },
+  { id: "Sandbox Layer", role: "Maintains secure isolated runtime boundaries." },
+  { id: "SAST Layer", role: "Flags secrets, sinks, and static code-level risk." },
+  { id: "Deps & IaC", role: "Analyzes dependency vulnerabilities and IaC misconfigurations." },
+  { id: "Runtime Probe", role: "Executes dynamic analysis and runtime validation." },
+  { id: "Evidence", role: "Normalizes findings and verifies artifact evidence." },
+  { id: "Deterministic Triage", role: "Filters false positives and groups vulnerabilities deterministically." },
+  { id: "AI Triage", role: "AI-assisted triage with safe deterministic fallback." },
+  { id: "Report Auto", role: "Generates founder-ready remediation reports." },
+  { id: "Email Dispatch", role: "Dispatches automated email notifications when configured." },
+  { id: "PR Automation", role: "Generates PR-ready remediation plans and creates PRs when configured." },
+  { id: "Storage Layer", role: "Safely persists audit artifacts to cloud or local storage." },
+  { id: "Observability", role: "Dashboard observability and execution history." },
 ];
 
 const CONSOLE_LINES = [
@@ -116,7 +122,7 @@ export default function LandingPage() {
           <motion.div variants={staggerContainer} initial="hidden" animate="visible" className={styles.heroCopy}>
             <motion.p variants={fadeInUp} className={styles.eyebrow}>Fire Crow</motion.p>
             <motion.h1 variants={fadeInUp} className={styles.heroTitle}>Agentic security audits for <span className="hero-gradient-text">modern SaaS teams.</span></motion.h1>
-            <motion.p variants={fadeInUp} className={styles.heroBody}>Run authorization-only audits, review evidence-backed findings, and generate founder-ready security reports.</motion.p>
+            <motion.p variants={fadeInUp} className={styles.heroBody}>Run authorization-only audits, review evidence-backed findings, and generate founder-ready security reports. With deterministic fallback and safe reporting automation.</motion.p>
             <motion.div variants={fadeInUp} className={styles.heroActions}>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><Link href={isLoggedIn ? "/dashboard" : "/signin"} className={cx(styles.primaryButton, "hero-primary-btn")}>Start Audit <ArrowRight size={16} className="hero-cta-arrow" /></Link></motion.div>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><Link href="/dashboard" className={styles.secondaryButton}>View Reports</Link></motion.div>

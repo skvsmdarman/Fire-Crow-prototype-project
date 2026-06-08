@@ -111,13 +111,22 @@ class StorageService:
                 )
                 storage_provider = "cloudflare_r2"
             except Exception as e:
-                logger.error("S3 upload failed, falling back to local storage: %s", redact_text(str(e)))
+                logger.error("S3 upload failed: %s", redact_text(str(e)))
+                from backend.app.config import settings
+                if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
+                    logger.info("Falling back to local storage")
+                    self._write_local_file(object_key, data)
+                    storage_provider = "local"
+                else:
+                    raise HTTPException(status_code=500, detail="Cloud storage upload failed and local fallback is disabled.")
+        else:
+            from backend.app.config import settings
+            if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
                 self._write_local_file(object_key, data)
                 storage_provider = "local"
-        else:
-            self._write_local_file(object_key, data)
-            storage_provider = "local"
-
+            else:
+                logger.error("Cloud storage not configured and local fallback is disabled.")
+                raise HTTPException(status_code=500, detail="Cloud storage not configured and local fallback is disabled.")
         # Save to DB
         artifact = ArtifactObject(
             id=unique_id,

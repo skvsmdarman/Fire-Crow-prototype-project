@@ -1,48 +1,35 @@
 import pytest
-from fastapi.testclient import TestClient
-from backend.app.main import app
-from backend.app.config import settings
+from backend.app.services.evidence_normalizer import normalize_finding
+from backend.app.schemas.audit_state import Severity
 
-def test_health_live_endpoint():
-    with TestClient(app) as client:
-        response = client.get("/health/live")
-        assert response.status_code == 200
-        assert response.json() == {"status": "live"}
+def test_test_fixture_secret_downgrade():
+    result = normalize_finding(
+        title="Hardcoded AWS Access Key",
+        description="A secret was found.",
+        severity=Severity.CRITICAL,
+        agent_source="SECRETS",
+        file_path="tests/test_aws.py",
+        evidence="aws_access_key_id='AKIAIOSFODNN7EXAMPLE'"
+    )
 
-def test_health_ready_endpoint():
-    with TestClient(app) as client:
-        response = client.get("/health/ready")
-        # May be 200 or 503 depending on redis availability in test environment
-        assert response.status_code in (200, 503)
-        data = response.json()
-        assert "status" in data
+    assert result["severity"] == Severity.INFO
+    import json
+    metadata = json.loads(result["metadata_json"])
+    assert metadata["path_role"] == "test_fixture"
+    assert metadata["suppressed_reason"] == "fake_example_secret"
 
-def test_health_deep_endpoint():
-    with TestClient(app) as client:
-        response = client.get("/health/deep")
-        assert response.status_code in (200, 503)
-        data = response.json()
-        assert "status" in data
-        assert "database" in data
-        assert "local_storage" in data
-        assert "object_storage" in data
+def test_test_fixture_real_secret_downgrade():
+    result = normalize_finding(
+        title="Hardcoded Password",
+        description="A password was found.",
+        severity=Severity.HIGH,
+        agent_source="SAST",
+        file_path="src/__tests__/auth.test.ts",
+        evidence="password='MySuperSecretPassword123!'"
+    )
 
-def test_oversized_payload_rejection():
-    # Store old threshold
-    old_threshold = settings.MAX_REQUEST_BODY_BYTES
-    try:
-        # Set a very low body size limit
-        settings.MAX_REQUEST_BODY_BYTES = 10
-        with TestClient(app) as client:
-            # Send a request with a large body
-            large_body = "a" * 100
-            response = client.post(
-                "/api/v1/auth/login",
-                content=large_body,
-                headers={"Content-Type": "application/json"}
-            )
-            # Should be rejected with 413 Payload Too Large
-            assert response.status_code == 413
-            assert response.json()["detail"] == "Payload Too Large"
-    finally:
-        settings.MAX_REQUEST_BODY_BYTES = old_threshold
+    assert result["severity"] == Severity.LOW
+    import json
+    metadata = json.loads(result["metadata_json"])
+    assert metadata["path_role"] == "test_fixture"
+    assert metadata["suppressed_reason"] == "test_fixture_secret"

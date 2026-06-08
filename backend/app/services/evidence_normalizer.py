@@ -3,6 +3,38 @@ import uuid
 from typing import Any, Dict, List, Optional
 from backend.app.schemas.audit_state import Finding, Severity
 
+
+def is_test_fixture_path(path: str) -> bool:
+    if not path:
+        return False
+    path = path.lower()
+    test_patterns = [
+        "tests/", "test/", "__tests__/", "spec/", "fixtures/",
+        "mocks/", "mock/", "examples/", "sample/"
+    ]
+    test_suffixes = [
+        "test_.py", "_test.py", ".spec.ts", ".test.ts",
+        ".spec.js", ".test.js"
+    ]
+    for pattern in test_patterns:
+        if pattern in path:
+            return True
+    for suffix in test_suffixes:
+        if path.endswith(suffix):
+            return True
+    return False
+
+def check_fake_markers(evidence: str) -> bool:
+    if not evidence:
+        return False
+    evidence = evidence.lower()
+    markers = ["example", "dummy", "fake", "test", "placeholder", "changeme", "sample", "mock"]
+    for marker in markers:
+        if marker in evidence:
+            return True
+    return False
+
+
 def redact_secret_string(value: str) -> str:
     """Basic redaction to prevent secret leakage in logs/db."""
     if not value:
@@ -31,7 +63,29 @@ def normalize_finding(
 ) -> Dict[str, Any]:
     """
     Produce a normalized dictionary representing a finding.
+    Applies test/fixture false-positive hygiene.
     """
+    import uuid
+    import json
+    is_test = is_test_fixture_path(file_path or "")
+    has_fake_markers = check_fake_markers(evidence or "")
+
+    if is_test:
+        if not metadata:
+            metadata = {}
+        metadata["path_role"] = "test_fixture"
+
+        # Downgrade secrets in test files
+        if agent_source in ["SECRETS", "SAST", "SEMGREP"]:
+            if has_fake_markers:
+                severity = Severity.INFO
+                confidence = "LOW"
+                metadata["suppressed_reason"] = "fake_example_secret"
+            elif severity in [Severity.CRITICAL, Severity.HIGH]:
+                severity = Severity.LOW
+                confidence = "LOW"
+                metadata["suppressed_reason"] = "test_fixture_secret"
+
     return {
         "id": str(uuid.uuid4()),
         "agent_source": agent_source,
@@ -50,6 +104,7 @@ def normalize_finding(
         "owasp_category": owasp_category,
         "metadata_json": json.dumps(metadata) if metadata else None
     }
+
 
 
 def to_finding_model(normalized: Dict[str, Any]) -> Finding:

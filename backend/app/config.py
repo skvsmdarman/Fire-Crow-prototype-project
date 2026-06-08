@@ -195,9 +195,9 @@ class Settings(BaseSettings):
                 raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
             if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):
                 raise ValueError("FIRE_CROW_SCANNER_IMAGE must be pinned in production and cannot use :latest.")
-
-        if not os.getenv("FRONTEND_URL") and os.getenv("RENDER_EXTERNAL_URL"):
-            object.__setattr__(self, "FRONTEND_URL", os.environ["RENDER_EXTERNAL_URL"])
+            if not getattr(self, "REPORT_LOCAL_FALLBACK", True):
+                if not self.R2_ACCESS_KEY_ID or not self.R2_SECRET_ACCESS_KEY or not self.R2_BUCKET_NAME or not self.R2_ENDPOINT_URL:
+                    raise ValueError("Cloud storage configuration is missing, but REPORT_LOCAL_FALLBACK is False.")
 
         # Inject REDIS_PASSWORD into REDIS_URL if provided
         if self.REDIS_PASSWORD:

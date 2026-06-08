@@ -576,3 +576,6 @@ DEBUG=false → PostgreSQL required, explicit user registration, Docker sandbox,
 | Cloudflare R2 | Report hosting | Authenticated local report download endpoint |
 | Resend | Email delivery | Skipped silently |
 | GitHub Token | Issue creation | Skipped with warning log |
+
+## Fallback Automation
+If the AI Analyzer fails or is not configured, the `ai_analyzer_body` routes to a deterministic fallback module (`fallback_writer.py`). This module guarantees that an executive summary, remediation tasks, email bodies, and PR remediation plans are generated even without AI assistance.
