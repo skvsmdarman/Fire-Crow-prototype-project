@@ -151,6 +151,11 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
 
 
 def _persisted_report_html_response(db: Session, job_id: str) -> HTMLResponse | None:
+    from backend.app.models.audit_job import AuditReport
+    report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
+    if report and report.html_content:
+        return HTMLResponse(content=report.html_content)
+
     artifact = (
         db.query(AuditArtifact)
         .filter(
@@ -330,11 +335,43 @@ async def cancel_job(
 @router.get("/job/{job_id}/report")
 async def download_report(
     job_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
     """Authenticated endpoint to download PDF reports."""
+    import os
     job = get_owned_job_or_404(db, job_id, user_id)
+
+    # 1. Try structured database report first (on-the-fly compiling)
+    from backend.app.models.audit_job import AuditReport
+    from backend.app.services.report_service import generate_temp_pdf_report
+    
+    report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
+    if report and report.html_content:
+        try:
+            pdf_path = generate_temp_pdf_report(report.html_content, job_id)
+            if os.path.exists(pdf_path):
+                # Cleanup task to delete temporary PDF file after serving
+                def cleanup_temp_pdf(path: str):
+                    try:
+                        if os.path.exists(path):
+                            os.remove(path)
+                            logger.info("Deleted temporary PDF report at %s", path)
+                    except Exception as e:
+                        logger.error("Failed to delete temporary PDF report: %s", str(e))
+                
+                background_tasks.add_task(cleanup_temp_pdf, pdf_path)
+                
+                return FileResponse(
+                    path=pdf_path,
+                    filename=f"fire_crow_report_{job_id}.pdf",
+                    media_type="application/pdf"
+                )
+        except Exception as e:
+            logger.error("Failed to generate on-the-fly PDF report: %s", redact_text(str(e)))
+
+    # 2. Legacy fallback
     if not job.report_pdf_url:
         raise HTTPException(status_code=404, detail="Report not ready or missing")
 
@@ -454,62 +491,78 @@ async def email_report(
             detail="Recipient email could not be determined. Please specify an email address.",
         )
 
-    # 3. Resolves the local file path for the PDF report
-    if not job.report_pdf_url:
-        raise HTTPException(status_code=404, detail="Report not ready or missing")
-
-    pdf_file_path = None
-    if job.report_pdf_url.startswith("artifact://"):
-        artifact_id = job.report_pdf_url.split("://")[1]
-        from backend.app.services.storage import storage_service
+    # 3. Resolves the report and generates a temporary PDF if structured DB report exists
+    from backend.app.models.audit_job import AuditReport
+    from backend.app.services.report_service import generate_temp_pdf_report
+    
+    report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
+    
+    temp_pdf_path = None
+    email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+    
+    if report and report.html_content:
         try:
-            file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
-            pdf_file_path = file_path
+            temp_pdf_path = generate_temp_pdf_report(report.html_content, job_id)
         except Exception as e:
-            logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
-            raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
+            logger.error("Failed to generate temporary PDF report for email: %s", redact_text(str(e)))
+            raise HTTPException(status_code=500, detail="Failed to prepare report attachment from database.")
     else:
-        parsed_report_url = urlparse(job.report_pdf_url)
-        is_legacy_local_report = (
-            parsed_report_url.scheme in {"http", "https"}
-            and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
-            and parsed_report_url.path.startswith("/reports/")
-        )
-        if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
-            file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
-            pdf_file_path = file_path
+        # Legacy fallback
+        if not job.report_pdf_url:
+            raise HTTPException(status_code=404, detail="Report not ready or missing")
 
-    if not pdf_file_path or not pdf_file_path.exists():
-        raise HTTPException(status_code=404, detail="PDF report file not found on disk")
+        pdf_file_path = None
+        if job.report_pdf_url.startswith("artifact://"):
+            artifact_id = job.report_pdf_url.split("://")[1]
+            from backend.app.services.storage import storage_service
+            try:
+                file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+                pdf_file_path = file_path
+            except Exception as e:
+                logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
+                raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
+        else:
+            parsed_report_url = urlparse(job.report_pdf_url)
+            is_legacy_local_report = (
+                parsed_report_url.scheme in {"http", "https"}
+                and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+                and parsed_report_url.path.startswith("/reports/")
+            )
+            if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
+                file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
+                pdf_file_path = file_path
 
-    # Make a copy of the PDF file to a temporary location so that send_email_report's finally block does not delete the original
-    reports_dir = WORKSPACE_DIR / "workspace" / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    temp_pdf_filename = f"temp_{job_id}_{pdf_file_path.name}"
-    temp_pdf_path = reports_dir / temp_pdf_filename
+        if not pdf_file_path or not pdf_file_path.exists():
+            raise HTTPException(status_code=404, detail="PDF report file not found on disk")
 
-    try:
-        shutil.copy2(pdf_file_path, temp_pdf_path)
-    except Exception as copy_err:
-        logger.error("Failed to copy PDF report to temporary location: %s", str(copy_err))
-        raise HTTPException(status_code=500, detail="Internal server error preparing report attachment")
+        # Make a copy of the PDF file to a temporary location so that send_email_report's finally block does not delete the original
+        reports_dir = WORKSPACE_DIR / "workspace" / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        temp_pdf_filename = f"temp_{job_id}_{pdf_file_path.name}"
+        temp_pdf_path = reports_dir / temp_pdf_filename
+
+        try:
+            shutil.copy2(pdf_file_path, temp_pdf_path)
+        except Exception as copy_err:
+            logger.error("Failed to copy PDF report to temporary location: %s", str(copy_err))
+            raise HTTPException(status_code=500, detail="Internal server error preparing report attachment")
+
+        # Generate presigned URL specifically for the email link if remote storage
+        email_url = job.report_pdf_url
+        if job.report_pdf_url.startswith("artifact://"):
+            artifact_id = job.report_pdf_url.split("://")[1]
+            from backend.app.services.storage import storage_service
+
+            if storage_service.is_s3_active():
+                try:
+                    email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)
+                except Exception:
+                    email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+            else:
+                email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
 
     # 4. Invokes the ReportGenerator service to send the email immediately
     generator = ReportGenerator()
-
-    # Generate presigned URL specifically for the email link (valid for 7 days) if remote storage
-    email_url = job.report_pdf_url
-    if job.report_pdf_url.startswith("artifact://"):
-        artifact_id = job.report_pdf_url.split("://")[1]
-        from backend.app.services.storage import storage_service
-
-        if storage_service.is_s3_active():
-            try:
-                email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)
-            except Exception:
-                email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
-        else:
-            email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
 
     success = generator.send_email_report(
         to_email=recipient,
@@ -517,7 +570,7 @@ async def email_report(
         job_id=job_id,
         counts=counts,
         repo_url=job.repo_url,
-        pdf_path=str(temp_pdf_path),
+        pdf_path=str(temp_pdf_path) if temp_pdf_path else None,
     )
 
     if not success:

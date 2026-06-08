@@ -66,6 +66,9 @@ class JobResponse(BaseModel):
     cancel_requested_at: Optional[str] = None
     report_pdf_url: Optional[str] = None
     error_message: Optional[str] = None
+    email_delivered: bool = False
+    github_issues_raised: bool = False
+    github_pr_created: bool = False
 
 
 class FindingResponse(BaseModel):
@@ -88,6 +91,29 @@ class JobDetailResponse(BaseModel):
 
 
 def build_job_response(job: AuditJob) -> JobResponse:
+    email_delivered = False
+    github_issues_raised = False
+    github_pr_created = False
+
+    # Check phase ledger for completion status
+    if job.phase_ledger:
+        for phase in job.phase_ledger:
+            if phase.phase_name == "reporter" and phase.status == "completed":
+                email_delivered = True
+            elif phase.phase_name == "github_mcp" and phase.status == "completed":
+                github_issues_raised = True
+
+    # Scan GITHUB_MCP agent logs for issue and PR creation details
+    if job.logs:
+        for log in job.logs:
+            if log.agent_name == "GITHUB_MCP":
+                msg = log.message or ""
+                if "Successfully created" in msg or "Simulated creation" in msg or "Successfully raised issue" in msg:
+                    if "PR" in msg or "Pull Request" in msg:
+                        github_pr_created = True
+                    if "issue" in msg or "Issue" in msg or "security issue" in msg:
+                        github_issues_raised = True
+
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
@@ -100,6 +126,9 @@ def build_job_response(job: AuditJob) -> JobResponse:
         cancel_requested_at=job.cancel_requested_at.isoformat() if job.cancel_requested_at else None,
         report_pdf_url=job.report_pdf_url,
         error_message=job.error_message,
+        email_delivered=email_delivered,
+        github_issues_raised=github_issues_raised,
+        github_pr_created=github_pr_created,
     )
 
 

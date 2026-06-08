@@ -13,6 +13,8 @@ import styles from "../../page.module.css";
 import { formatDateTime, shortRepoName } from "../../../../shared/utils/format";
 import { Download, AlertTriangle, PlayCircle, GitBranch, ArrowLeft } from "lucide-react";
 import LogStream from "../../../../features/audits/components/LogStream";
+import AuditVerificationCard from "../../../../features/audits/components/AuditVerificationCard";
+import { useToast } from "../../../../components/ui/Toast";
 
 export default function AuditRunPage() {
   const params = useParams();
@@ -31,6 +33,11 @@ export default function AuditRunPage() {
   const { logs, streamActive, startLogStream, stopLogStream } = useSSE({
     authenticated: !!session.token,
     token: session.token,
+    onJobStatusChange: () => {
+      if (jobId) {
+        void loadJobDetail(jobId);
+      }
+    }
   });
 
   useEffect(() => {
@@ -43,7 +50,35 @@ export default function AuditRunPage() {
     };
   }, [jobId, session.token, loadJobDetail, startLogStream, stopLogStream]);
 
+  const { toast } = useToast();
+  const prevStatusRef = React.useRef<string | null>(null);
   const job = selectedJobDetail?.job;
+
+  useEffect(() => {
+    if (job) {
+      const prevStatus = prevStatusRef.current;
+      if (prevStatus && prevStatus !== job.status) {
+        if (["completed", "partial"].includes(job.status)) {
+          const mailPart = job.email_delivered 
+            ? "Premium report sent to your mailbox." 
+            : "Email report skipped or failed.";
+          const issuePart = job.github_issues_raised 
+            ? "Vulnerability tracking issues raised on GitHub." 
+            : "GitHub tracking issues skipped or not raised.";
+          
+          if (job.status === "completed") {
+            toast(`Audit Job Completed! ${mailPart} ${issuePart}`, "success");
+          } else {
+            toast(`Audit Job completed partially! ${mailPart} ${issuePart}`, "info");
+          }
+        } else if (job.status === "failed") {
+          toast(`Audit Job Failed! Please review execution console logs.`, "error");
+        }
+      }
+      prevStatusRef.current = job.status;
+    }
+  }, [job, toast]);
+
   const isRunning = job ? ["queued", "running"].includes(job.status) : false;
 
   // Simple progress calculation based on logs
@@ -143,6 +178,10 @@ export default function AuditRunPage() {
               <div className={styles.noticeError} style={{ marginTop: "16px" }}>
                 {job.error_message}
               </div>
+            )}
+
+            {job && (
+              <AuditVerificationCard job={job} />
             )}
 
           </Card>

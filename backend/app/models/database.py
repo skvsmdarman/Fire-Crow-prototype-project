@@ -66,6 +66,8 @@ def _ensure_audit_job_compatibility() -> None:
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested BOOLEAN NOT NULL DEFAULT false")
         if "cancel_requested_at" not in columns:
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested_at TIMESTAMP")
+        if "report_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN report_id VARCHAR(36)")
 
 
 def _ensure_user_compatibility() -> None:
@@ -175,6 +177,30 @@ def _ensure_artifact_compatibility() -> None:
                 logger.warning("Could not create index on audit_artifacts.job_id", exc_info=True)
 
 
+def _ensure_audit_report_compatibility() -> None:
+    if engine is None:
+        return
+    inspector = inspect(engine)
+    if inspector is None:
+        return
+    if "audit_reports" not in inspector.get_table_names():
+        with engine.begin() as conn:
+            conn.exec_driver_sql("""
+                CREATE TABLE audit_reports (
+                    id VARCHAR(36) PRIMARY KEY,
+                    job_id VARCHAR(36) NOT NULL,
+                    html_content TEXT,
+                    markdown_content TEXT,
+                    created_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES audit_jobs(id)
+                )
+            """)
+            try:
+                conn.exec_driver_sql("CREATE INDEX ix_audit_reports_job_id ON audit_reports (job_id)")
+            except Exception:
+                logger.warning("Could not create index on audit_reports.job_id", exc_info=True)
+
+
 def _ensure_compliance_compatibility() -> None:
     if engine is None:
         return
@@ -250,6 +276,7 @@ def ensure_database_compatibility() -> None:
     _ensure_user_compatibility()
     _ensure_finding_compatibility()
     _ensure_artifact_compatibility()
+    _ensure_audit_report_compatibility()
     _ensure_compliance_compatibility()
     _ensure_session_and_failure_compatibility()
 

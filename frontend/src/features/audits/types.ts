@@ -13,6 +13,9 @@ export interface Job {
   cancel_requested_at: string | null;
   report_pdf_url: string | null;
   error_message: string | null;
+  email_delivered?: boolean;
+  github_issues_raised?: boolean;
+  github_pr_created?: boolean;
 }
 
 export interface Finding {

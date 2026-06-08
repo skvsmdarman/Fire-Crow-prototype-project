@@ -26,6 +26,7 @@ class AuditJob(Base):
     cancel_requested: Mapped[bool] = mapped_column(default=False, nullable=False)
     cancel_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     report_pdf_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    report_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relationships
@@ -41,6 +42,26 @@ class AuditJob(Base):
     phase_ledger: Mapped[list["PhaseLedgerModel"]] = relationship(
         "PhaseLedgerModel", back_populates="job", cascade="all, delete-orphan"
     )
+    report_rel: Mapped[Optional["AuditReport"]] = relationship(
+        "AuditReport",
+        primaryjoin="AuditJob.id == AuditReport.job_id",
+        uselist=False,
+        cascade="all, delete-orphan",
+        back_populates="job"
+    )
+
+
+class AuditReport(Base):
+    __tablename__ = "audit_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_jobs.id"), nullable=False, index=True)
+    html_content: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    markdown_content: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    # Relationships
+    job: Mapped["AuditJob"] = relationship("AuditJob", back_populates="report_rel", foreign_keys=[job_id])
 
 
 class FindingModel(Base):

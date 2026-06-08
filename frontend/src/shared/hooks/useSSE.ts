@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../api/client";
 
 export interface LogLine {
@@ -20,6 +20,11 @@ export function useSSE({ authenticated, token, onJobStatusChange, maxLogs = 500 
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [streamActive, setStreamActive] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const onJobStatusChangeRef = useRef(onJobStatusChange);
+  useEffect(() => {
+    onJobStatusChangeRef.current = onJobStatusChange;
+  }, [onJobStatusChange]);
 
   const stopLogStream = useCallback(() => {
     if (abortControllerRef.current) {
@@ -87,8 +92,8 @@ export function useSSE({ authenticated, token, onJobStatusChange, maxLogs = 500 
                   return updated;
                 });
               }
-              if (parsed.status && onJobStatusChange) {
-                onJobStatusChange();
+              if (parsed.status && onJobStatusChangeRef.current) {
+                onJobStatusChangeRef.current();
               }
             } catch {
               // Ignore non-JSON stream fragments
@@ -113,7 +118,7 @@ export function useSSE({ authenticated, token, onJobStatusChange, maxLogs = 500 
         setStreamActive(false);
       }
     },
-    [authenticated, token, stopLogStream, onJobStatusChange, maxLogs]
+    [authenticated, token, stopLogStream, maxLogs]
   );
 
   return {

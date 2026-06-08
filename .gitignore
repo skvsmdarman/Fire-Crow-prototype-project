@@ -62,3 +62,7 @@ logs/
 *.err
 /artifacts/*.out
 /artifacts/*.err
+
+# Local Development & Codex Logs
+.codex*
+.eslintcache

@@ -11,8 +11,10 @@ import { fetchSystemStatus as apiFetchSystemStatus } from "../../features/audits
 import { Job, JobDetail, Finding, SystemStatus } from "../../features/audits/types";
 import { formatDateTime, shortRepoName } from "../../shared/utils/format";
 import { API_BASE_URL, apiClient } from "../../shared/api/client";
+import AuditVerificationCard from "../../features/audits/components/AuditVerificationCard";
 import { ENDPOINTS } from "../../shared/api/endpoints";
 import { useToast } from "../../components/ui/Toast";
+import LogStream from "../../features/audits/components/LogStream";
 
 const theme = {
   bg: "var(--bg)",
@@ -123,6 +125,34 @@ export default function Dashboard() {
     loadJobDetail,
   } = useAudits(authSession.token);
 
+  const prevStatusesRef = React.useRef<Record<string, string>>({});
+  const { toast } = useToast();
+
+  useEffect(() => {
+    jobs.forEach((job) => {
+      const prevStatus = prevStatusesRef.current[job.id];
+      if (prevStatus && prevStatus !== job.status) {
+        if (["completed", "partial"].includes(job.status)) {
+          const mailPart = job.email_delivered 
+            ? "Premium report sent to your mailbox." 
+            : "Email report skipped or failed.";
+          const issuePart = job.github_issues_raised 
+            ? "Vulnerability tracking issues raised on GitHub." 
+            : "GitHub tracking issues skipped or not raised.";
+          
+          if (job.status === "completed") {
+            toast(`Audit Job Completed! ${mailPart} ${issuePart}`, "success");
+          } else {
+            toast(`Audit Job completed partially! ${mailPart} ${issuePart}`, "info");
+          }
+        } else if (job.status === "failed") {
+          toast(`Audit Job Failed! Please review operational console logs.`, "error");
+        }
+      }
+      prevStatusesRef.current[job.id] = job.status;
+    });
+  }, [jobs, toast]);
+
   const selectedJob = jobs.find(j => j.id === selectedJobId) || null;
   const findings = selectedJobDetail?.findings || [];
 
@@ -150,13 +180,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (selectedJob?.id) {
-      if (selectedJob.status === "running") {
-        void startLogStream(selectedJob.id);
-      } else {
-        stopLogStream();
-      }
+      void startLogStream(selectedJob.id);
+    } else {
+      stopLogStream();
     }
-  }, [selectedJob?.id, selectedJob?.status, startLogStream, stopLogStream]);
+  }, [selectedJob?.id, startLogStream, stopLogStream]);
 
   // Use a polling interval to update the job list when a job is actively running
   useEffect(() => {
@@ -441,19 +469,12 @@ function AuditsSection({ jobs, selected, onSelect, newUrl, setNewUrl, newBranch,
                   {selected.error_message}
                 </div>
               )}
+
+              <AuditVerificationCard job={selected} />
             </div>
 
             <div style={{ borderTop: `1px solid ${theme.border}`, padding: "14px 18px" }}>
-              <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Live logs / Events</div>
-              <div style={{ background: theme.bg, borderRadius: 6, padding: "12px 14px", maxHeight: 160, overflowY: "auto", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, lineHeight: 1.8 }}>
-                {logs.length > 0 ? logs.map(l => (
-                  <div key={l.id} style={{ display: "flex", gap: 6 }}>
-                    <span style={{ color: theme.muted }}>[{new Date(l.timestamp).toLocaleTimeString()}]</span>
-                    <span style={{ color: l.log_level === "ERROR" ? theme.red : theme.text }}>{l.message}</span>
-                  </div>
-                )) : <div style={{ color: theme.muted }}>No live logs available.</div>}
-                {streamActive && <div style={{ color: theme.blue }}>● Streaming live logs...</div>}
-              </div>
+              <LogStream logs={logs as unknown as LogLine[]} streamActive={streamActive} hasSelection={!!selected} />
             </div>
           </div>
         )}

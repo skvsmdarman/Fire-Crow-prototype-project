@@ -41,7 +41,7 @@ from backend.app.orchestrator.runtime_context import (
     sync_runtime_state,
 )
 from backend.app.schemas import AuditState, Finding, JobStatus, Severity
-from backend.app.config import WORKSPACE_DIR
+from backend.app.config import WORKSPACE_DIR, settings
 from backend.app.services.reporter import ReportGenerator, get_clean_repo_name
 from backend.app.services.sandbox import SandboxManager
 from backend.app.services.redaction import redact_text
@@ -715,55 +715,40 @@ def scoring_node(state: AuditState) -> Dict[str, Any]:
 def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     all_findings = get_reportable_findings(state)
 
-    repo_name = get_clean_repo_name(state.repo_url)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    pdf_filename = f"{repo_name}_audit_{timestamp}.pdf"
-
-    reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
-    os.makedirs(reports_dir, exist_ok=True)
-    pdf_path = os.path.join(reports_dir, pdf_filename)
-
-    generator = ReportGenerator()
-    html_content = generator.generate_html_report(
+    # 1. Store structured report directly in Neon/PostgreSQL
+    from backend.app.services.report_service import create_report_in_db, generate_temp_pdf_report
+    db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
+    
+    report = create_report_in_db(
+        db=db,
         job_id=state.job_id,
         repo_url=state.repo_url,
         branch=state.repo_branch,
         findings=all_findings,
-        scanner_execution=state.scanner_execution,
+        scanner_execution=state.scanner_execution
     )
 
+    # Legacy fallback: also create the html artifact if needed
+    repo_name = get_clean_repo_name(state.repo_url)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pdf_filename = f"{repo_name}_audit_{timestamp}.pdf"
+    
     db.add(
         AuditArtifact(
             job_id=state.job_id,
             artifact_type="report_html",
             name=pdf_filename.replace(".pdf", ".html"),
-            data_text=html_content,
+            data_text=report.html_content or "",
         )
     )
     db.commit()
 
-    success = generator.compile_pdf(html_content, pdf_path)
-    if not success:
-        raise RuntimeError("Failed to compile report PDF.")
+    # 2. Compile temporary PDF ONLY if email delivery with attachment is enabled
+    pdf_path = None
+    if settings.REPORT_EMAIL_ATTACH_PDF:
+        pdf_path = generate_temp_pdf_report(report.html_content or "", state.job_id)
 
-    # Upload report as a private artifact
-    from backend.app.services.storage import storage_service
-    db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
-    tenant_id = db_job.tenant_id if db_job and db_job.tenant_id else "default-tenant"
-    user_id = db_job.user_id if db_job else None
-
-    artifact = storage_service.upload_artifact(
-        db=db,
-        file_data=Path(pdf_path),
-        organization_id=tenant_id,
-        artifact_type="report_pdf",
-        file_name=pdf_filename,
-        user_id=user_id,
-        job_id=state.job_id,
-        sensitivity_level="restricted",
-    )
-    pdf_url = f"artifact://{artifact.id}"
-
+    # 3. Determine recipient email
     user_email = ""
     if state.custom_email:
         user_email = state.custom_email
@@ -776,15 +761,8 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     if not user_email:
         user_email = "audit-recipient@firecrow.dev"
 
-    # Generate a presigned URL specifically for the email link (valid for 7 days)
-    email_url = pdf_url
-    if storage_service.is_s3_active():
-        try:
-            email_url = storage_service.get_presigned_url(db, artifact.id, user_id or "system", expires_in=604800)
-        except Exception:
-            email_url = f"/api/v1/audit/job/{state.job_id}/report"
-    else:
-        email_url = f"/api/v1/audit/job/{state.job_id}/report"
+    # 4. Target link in the email goes directly to the web dashboard
+    email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={state.job_id}"
 
     counts = {
         Severity.CRITICAL: len([finding for finding in all_findings if finding.severity == Severity.CRITICAL]),
@@ -793,11 +771,20 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         Severity.LOW: len([finding for finding in all_findings if finding.severity == Severity.LOW]),
         Severity.INFO: len([finding for finding in all_findings if finding.severity == Severity.INFO]),
     }
-    generator.send_email_report(user_email, email_url, state.job_id, counts, repo_url=state.repo_url, pdf_path=pdf_path)
+    
+    generator = ReportGenerator()
+    generator.send_email_report(
+        to_email=user_email,
+        report_url=email_url,
+        job_id=state.job_id,
+        counts=counts,
+        repo_url=state.repo_url,
+        pdf_path=pdf_path
+    )
     log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated.")
 
     return {
-        "report_pdf_url": pdf_url,
+        "report_pdf_url": f"/api/v1/audit/job/{state.job_id}/report",
         "report_delivered": True,
         "status": JobStatus.COMPLETED,
     }

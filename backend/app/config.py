@@ -124,13 +124,18 @@ class Settings(BaseSettings):
     SANDBOX_NODE_IMAGE: str = Field(default="node:20-alpine", validation_alias="SANDBOX_NODE_IMAGE")
 
     # --- Reporter Tuning ---
-    REPORT_COMPACT_MODE: bool = Field(default=False, validation_alias="REPORT_COMPACT_MODE")
+    REPORT_COMPACT_MODE: bool = Field(default=True, validation_alias="REPORT_COMPACT_MODE")
     REPORT_MAX_PAGES: int = Field(default=50, validation_alias="REPORT_MAX_PAGES")
     REPORT_MAX_FINDINGS_IN_PDF: int = Field(default=100, validation_alias="REPORT_MAX_FINDINGS_IN_PDF")
     REPORT_MAX_EVIDENCE_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_EVIDENCE_CHARS")
     REPORT_MAX_REMEDIATION_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_REMEDIATION_CHARS")
     REPORT_INCLUDE_DETAILED_FINDINGS: bool = Field(default=True, validation_alias="REPORT_INCLUDE_DETAILED_FINDINGS")
     REPORT_STORE_FULL_ARTIFACT_JSON: bool = Field(default=True, validation_alias="REPORT_STORE_FULL_ARTIFACT_JSON")
+    REPORT_STORE_HTML_IN_DB: bool = Field(default=True, validation_alias="REPORT_STORE_HTML_IN_DB")
+    REPORT_STORE_MARKDOWN_IN_DB: bool = Field(default=True, validation_alias="REPORT_STORE_MARKDOWN_IN_DB")
+    REPORT_EMAIL_ATTACH_PDF: bool = Field(default=True, validation_alias="REPORT_EMAIL_ATTACH_PDF")
+    REPORT_TEMP_DIR: str = Field(default="", validation_alias="REPORT_TEMP_DIR")
+    REPORT_DELETE_TEMP_PDF: bool = Field(default=True, validation_alias="REPORT_DELETE_TEMP_PDF")
     OPENAI_API_KEY: str = Field(default="", validation_alias="OPENAI_API_KEY")
 
     model_config = SettingsConfigDict(
