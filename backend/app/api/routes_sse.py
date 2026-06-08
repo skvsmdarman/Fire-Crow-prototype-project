@@ -94,10 +94,7 @@ async def stream_audit_logs(
                         "progress": prog,
                         "stage": log.agent_name.lower()
                     }
-                    yield f"event: log
-data: {json.dumps(payload)}
-
-"
+                    yield f"event: log\ndata: {json.dumps(payload)}\n\n"
                     last_seen_log_id = log.id
 
                 if new_logs:

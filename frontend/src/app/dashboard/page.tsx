@@ -27,9 +27,9 @@ import Card from "../../components/ui/Card";
 import { useToast } from "../../components/ui/Toast";
 import { fadeIn, fadeInUp, scaleUp, staggerContainer, tabTransition } from "../../lib/animations";
 import { useAuthSession } from "../../shared/hooks/useAuthSession";
+import useAudits from "../../features/audits/hooks";
 import { useSSE } from "../../shared/hooks/useSSE";
 import {
-  submitAudit,
   fetchJobs as apiFetchJobs,
   fetchJobDetail as apiFetchJobDetail,
   cancelJob as apiCancelJob,
@@ -96,9 +96,7 @@ export default function Dashboard() {
   const validateSession = authSession.validateSession;
 
   const [activeSection, setActiveSection] = useState<Section>("home");
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
+      const [jobs, setJobs] = useState<Job[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
@@ -110,6 +108,7 @@ export default function Dashboard() {
   const touchStartXRef = useRef<number | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const isAuthenticated = authSession.hasDashboardSession;
+  const { runAudit } = useAudits(authSession.token);
 
   useEffect(() => {
     let active = true;
@@ -251,13 +250,6 @@ export default function Dashboard() {
     const job = await runAudit({ repo_url: repoUrl, repo_branch: repoBranch });
     if (job) {
       router.push(`/dashboard/audits/${job.id}`);
-    }
-  };
-      const msg = err.message || "Unable to launch audit.";
-      setSubmitError(msg);
-      toast(msg, "error");
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -415,7 +407,7 @@ export default function Dashboard() {
                       </div>
                       <div className={mobile.quickActionGrid}>
                         <Button type="button" variant="primary" onClick={() => setActiveSection("audits")}><PlusCircle size={14} />New audit</Button>
-                        <Button type="button" variant="ghost" disabled={!selectedJob || submitting} onClick={() => selectedJob && handleLaunchScan(selectedJob.repo_url, selectedJob.repo_branch)}><Play size={14} />Re-run</Button>
+                        <Button type="button" variant="ghost" disabled={!selectedJob} onClick={() => selectedJob && handleLaunchScan(selectedJob.repo_url, selectedJob.repo_branch)}><Play size={14} />Re-run</Button>
                         <Button type="button" variant="ghost" onClick={() => setActiveSection("findings")}><Search size={14} />Findings</Button>
                         <Button type="button" variant="ghost" disabled={!latestReportJob} onClick={() => latestReportJob && openReport(latestReportJob.id)}><Download size={14} />Report</Button>
                       </div>
@@ -501,7 +493,7 @@ export default function Dashboard() {
 
           {activeSection === "audits" && (
             <motion.div key="audits" initial="hidden" animate="visible" exit="exit" variants={staggerContainer}>
-              <div className={styles.workGrid}><motion.div variants={scaleUp}><AuditForm onSubmit={handleLaunchScan} submitting={submitting} submitError={submitError} /></motion.div><motion.div variants={scaleUp}><JobList jobs={jobs} selectedJobId={selectedJobId} loadingJobs={loadingJobs} onRefresh={fetchJobs} onJobSelect={(jobId) => { setSelectedJobId(jobId); void fetchJobDetail(jobId); }} /></motion.div></div>
+              <div className={styles.workGrid}><motion.div variants={scaleUp}><AuditForm onSubmit={handleLaunchScan} submitting={false} submitError={null} /></motion.div><motion.div variants={scaleUp}><JobList jobs={jobs} selectedJobId={selectedJobId} loadingJobs={loadingJobs} onRefresh={fetchJobs} onJobSelect={(jobId) => { setSelectedJobId(jobId); void fetchJobDetail(jobId); }} /></motion.div></div>
               <div className={styles.detailGrid}><motion.div variants={scaleUp}><PipelineViz job={selectedJob} onOpenReport={openReport} onCancel={cancelScan} reportError={reportError} /></motion.div><motion.div variants={scaleUp}><Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Status</div><h2>{selectedJob ? statusLabel(selectedJob) : "No audit selected"}</h2></div><Badge variant="status" type={streamActive ? "running" : selectedJob ? statusLabel(selectedJob) : "queued"}>{streamActive ? "live logs" : selectedJob ? statusLabel(selectedJob) : "idle"}</Badge></div><p className={mobile.panelCopy}>{selectedJob ? "The selected audit controls the summary, report action, and log panel below." : "Choose an audit from the list to inspect its saved state."}</p></Card></motion.div></div>
               <motion.div variants={scaleUp}><LogStream logs={logs} streamActive={streamActive} hasSelection={Boolean(selectedJobId)} /></motion.div>
             </motion.div>

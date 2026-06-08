@@ -913,6 +913,7 @@ def semgrep_node(state: AuditState) -> Dict[str, Any]:
     return execute_phase(state, phase_name="semgrep_scan", agent_name="SEMGREP", start_message="Running Semgrep...", body=semgrep_body)
 
 def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
+    from backend.app.reporting.fallback_writer import generate_fallback_report
     from backend.app.config import settings
 
     if not settings.GEMINI_MODEL:
