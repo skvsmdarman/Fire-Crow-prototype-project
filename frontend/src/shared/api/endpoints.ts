@@ -18,5 +18,7 @@ export const ENDPOINTS = {
   },
   system: {
     status: "/system/status",
+    dbStats: "/system/database/stats",
+    dbHousekeeping: "/system/database/housekeeping",
   },
 };

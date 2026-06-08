@@ -108,10 +108,12 @@ export function persistAuthSession(session: AuthSessionPayload): void {
     return;
   }
 
-  if (session.access_token) {
-    window.localStorage.setItem("fc_token", session.access_token);
-  } else {
-    window.localStorage.removeItem("fc_token");
+  if (session.access_token !== undefined) {
+    if (session.access_token) {
+      window.localStorage.setItem("fc_token", session.access_token);
+    } else {
+      window.localStorage.removeItem("fc_token");
+    }
   }
   window.localStorage.setItem("fc_user_id", session.user_id);
   window.localStorage.setItem("fc_username", session.username);

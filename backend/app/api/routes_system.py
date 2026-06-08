@@ -1,12 +1,24 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import os
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.config import settings
-from backend.app.models import AuditJob, FindingModel, User, get_db
+from backend.app.models import (
+    AuditJob,
+    FindingModel,
+    User,
+    get_db,
+    AgentLog,
+    AuditArtifact,
+    ComplianceEvent,
+    UserSession,
+    SecurityLog,
+)
 from backend.app.services.auth import get_current_user
+from backend.app.services.housekeeping import run_housekeeping
 
 
 router = APIRouter(prefix="/system", tags=["System"])
@@ -15,6 +27,19 @@ router = APIRouter(prefix="/system", tags=["System"])
 def _is_admin(user: User | None) -> bool:
     role = (user.role_id or "").lower() if user else ""
     return role in {"admin", "owner", "security_admin", "platform_admin"}
+
+
+async def require_admin(
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not _is_admin(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrative privileges required to access database management.",
+        )
+    return user
 
 
 @router.get("/status")
@@ -83,3 +108,72 @@ async def system_status(
         }
 
     return payload
+
+
+@router.get("/database/stats")
+async def get_database_stats(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """Retrieve detailed database metrics, table row counts, and storage metrics for admin dashboard."""
+    dialect = db.bind.dialect.name if db.bind else "unknown"
+    db_size = None
+
+    if "postgresql" in settings.DATABASE_URL:
+        try:
+            db_size = db.execute(text("SELECT pg_database_size(current_database())")).scalar()
+        except Exception:
+            pass
+    else:
+        try:
+            db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+            if os.path.exists(db_path):
+                db_size = os.path.getsize(db_path)
+            else:
+                db_size = 0
+        except Exception:
+            pass
+
+    def get_count(model) -> int:
+        try:
+            return db.query(model).count()
+        except Exception:
+            db.rollback()
+            return 0
+
+    from backend.app.models.database import check_pending_migrations
+    pending_migrations = check_pending_migrations()
+
+    row_counts = {
+        "users": get_count(User),
+        "audit_jobs": get_count(AuditJob),
+        "findings": get_count(FindingModel),
+        "agent_logs": get_count(AgentLog),
+        "audit_artifacts": get_count(AuditArtifact),
+        "compliance_events": get_count(ComplianceEvent),
+        "user_sessions": get_count(UserSession),
+        "security_logs": get_count(SecurityLog),
+    }
+
+    return {
+        "dialect": dialect,
+        "db_size_bytes": db_size,
+        "row_counts": row_counts,
+        "pending_migrations": pending_migrations,
+    }
+
+
+@router.post("/database/housekeeping")
+async def trigger_database_housekeeping(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """Manually trigger database housekeeping / storage pruning on demand."""
+    try:
+        counts = run_housekeeping(db)
+        return {"status": "success", "counts": counts}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database housekeeping failed: {str(e)}",
+        )

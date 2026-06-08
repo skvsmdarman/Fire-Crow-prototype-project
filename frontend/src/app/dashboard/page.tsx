@@ -10,8 +10,9 @@ import useAudits from "../../features/audits/hooks";
 import { fetchSystemStatus as apiFetchSystemStatus } from "../../features/audits/api";
 import { Job, JobDetail, Finding, SystemStatus } from "../../features/audits/types";
 import { formatDateTime, shortRepoName } from "../../shared/utils/format";
-import { API_BASE_URL } from "../../shared/api/client";
+import { API_BASE_URL, apiClient } from "../../shared/api/client";
 import { ENDPOINTS } from "../../shared/api/endpoints";
+import { useToast } from "../../components/ui/Toast";
 
 const theme = {
   bg: "var(--bg)",
@@ -567,12 +568,81 @@ function ReportsSection({ jobs, openReportUrl }: { jobs: Job[]; openReportUrl: (
   );
 }
 
+interface DbStats {
+  dialect: string;
+  db_size_bytes: number | null;
+  row_counts: Record<string, number>;
+  pending_migrations: boolean;
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return "Unknown";
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
 function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }) {
+  const { toast } = useToast();
+  const [dbStats, setDbStats] = useState<DbStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [pruning, setPruning] = useState(false);
+
+  const isAdmin = Boolean(systemStatus?.integrations);
+
+  const fetchDbStats = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadingStats(true);
+    try {
+      const stats = await apiClient.get<DbStats>(ENDPOINTS.system.dbStats);
+      setDbStats(stats);
+    } catch (err: unknown) {
+      console.error("Failed to fetch database stats:", err);
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchDbStats();
+    }
+  }, [isAdmin, fetchDbStats]);
+
+  const handleHousekeeping = async () => {
+    if (pruning) return;
+    setPruning(true);
+    toast("Initiating database housekeeping and storage pruning...", "info");
+    try {
+      const res = await apiClient.post<{ status: string; counts: Record<string, number> }>(
+        ENDPOINTS.system.dbHousekeeping
+      );
+      if (res.status === "success") {
+        const counts = res.counts;
+        const summary = `Housekeeping completed. Pruned: ${counts.pruned_logs} logs, ${counts.pruned_artifacts} artifacts. Deleted: ${counts.deleted_jobs_expiry} expired jobs, ${counts.deleted_jobs_overflow} overflow jobs.`;
+        toast(summary, "success");
+        fetchDbStats();
+      } else {
+        toast("Housekeeping reported non-success status.", "error");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to execute database housekeeping.";
+      toast(msg, "error");
+    } finally {
+      setPruning(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader kicker="Configuration" title="Settings" />
-      <div style={{ padding: "24px 32px" }}>
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 640 }}>
+      <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 640 }}>
+        
+        {/* System Status */}
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
           <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500 }}>System status</div>
           {[
             ["API", systemStatus ? systemStatus.api : "checking", systemStatus?.api === "online" ? theme.green : theme.amber],
@@ -586,15 +656,120 @@ function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }
           ))}
         </div>
 
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 640, marginTop: 16 }}>
+        {/* Integrations */}
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
           <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500 }}>Integrations</div>
-          {systemStatus ? Object.entries(systemStatus.integrations || {}).map(([l, on]) => (
-            <div key={l} style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 13, color: theme.text }}>{l.replace("_", " ")}</span>
-              <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: on ? theme.green : theme.amber }}>{on ? "configured" : "not configured"}</span>
-            </div>
-          )) : <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Loading integrations...</div>}
+          {!systemStatus ? (
+            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Loading integrations...</div>
+          ) : !systemStatus.integrations ? (
+            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Only accessible to administrators.</div>
+          ) : (
+            Object.entries(systemStatus.integrations).map(([l, on]) => (
+              <div key={l} style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, color: theme.text }}>{l.replace("_", " ")}</span>
+                <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: on ? theme.green : theme.amber }}>{on ? "configured" : "not configured"}</span>
+              </div>
+            ))
+          )}
         </div>
+
+        {/* Admin Database Management */}
+        {isAdmin && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 8, color: theme.text, display: "flex", alignItems: "center", gap: 8 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22c5.523 0 10-2.239 10-5V7c0-2.761-4.477-5-10-5S2 4.239 2 7v10c0 2.761 4.477 5 10 5z"/><path d="M22 7c0 2.761-4.477 5-10 5S2 12 2 7"/><path d="M2 12c0 2.761 4.477 5 10 5s10-2.239 10-5"/></svg>
+              Database Control Panel
+            </div>
+
+            {/* Quick Metrics */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="mono" style={{ fontSize: 9, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Engine Dialect</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: theme.text, textTransform: "capitalize" }}>{dbStats?.dialect || (loadingStats ? "..." : "Unknown")}</span>
+              </div>
+              <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="mono" style={{ fontSize: 9, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Database Size</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{dbStats ? formatBytes(dbStats.db_size_bytes) : (loadingStats ? "..." : "Unknown")}</span>
+              </div>
+              <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="mono" style={{ fontSize: 9, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Migration State</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: dbStats?.pending_migrations ? theme.red : theme.green }}>
+                  {dbStats ? (dbStats.pending_migrations ? "Pending Update" : "Up-to-Date") : (loadingStats ? "..." : "Unknown")}
+                </span>
+              </div>
+            </div>
+
+            {/* Detailed Row Counts */}
+            <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${theme.border}`, fontSize: 13, fontWeight: 500, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Table Registry Metrics</span>
+                {loadingStats && <span style={{ fontSize: 11, color: theme.muted }}>Refreshing...</span>}
+              </div>
+              {dbStats?.row_counts ? (
+                Object.entries(dbStats.row_counts).map(([tbl, cnt]) => (
+                  <div key={tbl} style={{ padding: "10px 16px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", transition: "background 0.2s" }}
+                       onMouseEnter={e => e.currentTarget.style.background = "#141414"}
+                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span className="mono" style={{ fontSize: 11, color: theme.muted }}>{tbl}</span>
+                    <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: theme.text, background: "#1f1f1f", padding: "2px 8px", borderRadius: 4 }}>{cnt}</span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: "16px", color: theme.muted, fontSize: 12, textAlign: "center" }}>
+                  {loadingStats ? "Loading table stats..." : "No registry data loaded."}
+                </div>
+              )}
+            </div>
+
+            {/* Housekeeping Action */}
+            <div style={{ background: theme.surface, border: `1px solid ${theme.orangeBorder}30`, borderRadius: 8, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <span className="mono" style={{ fontSize: 9, color: theme.orange, textTransform: "uppercase", letterSpacing: "0.1em" }}>Storage Optimization</span>
+                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>Prune Database Records</div>
+                <div style={{ fontSize: 12, color: theme.muted, marginTop: 4, lineHeight: 1.5 }}>
+                  Detailed agent logs and raw artifacts older than 7 days, as well as entire audit jobs older than 30 days, will be pruned. Keeps maximum of 20 jobs per user.
+                </div>
+              </div>
+              <div>
+                <button
+                  onClick={handleHousekeeping}
+                  disabled={pruning}
+                  style={{
+                    padding: "8px 16px",
+                    background: pruning ? "transparent" : theme.orange,
+                    color: pruning ? theme.muted : "#160800",
+                    border: `1px solid ${pruning ? theme.border : theme.orange}`,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: pruning ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={e => {
+                    if (!pruning) {
+                      e.currentTarget.style.filter = "brightness(1.1)";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!pruning) {
+                      e.currentTarget.style.filter = "none";
+                      e.currentTarget.style.transform = "none";
+                    }
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: pruning ? "spin 1.5s linear infinite" : "none" }}>
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                  </svg>
+                  {pruning ? "Executing Pruning Pipeline..." : "Run Database Housekeeping"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
