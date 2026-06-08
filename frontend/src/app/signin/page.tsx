@@ -3,12 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { motion as framerMotion } from "framer-motion";
-import PolicyLink from "../../features/legal/components/PolicyLink";
 import { useAuthSession } from "../../shared/hooks/useAuthSession";
 import { usePolicyContext } from "../../features/auth/hooks";
 import { exchangeCode } from "../../features/auth/api";
 import { detectRegionFromTimezone } from "../../lib/policyData";
-import { API_BASE_URL } from "../../shared/api/client";
+import { buildApiUrl, isAbsoluteUrl } from "../../shared/api/baseUrl";
 
 const theme = {
   bg: "var(--bg)",
@@ -109,8 +108,10 @@ export default function SignInPage() {
   }, [login, router]);
 
   const oauthHref = (provider: "github" | "google") => {
-    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
-    const url = new URL(`${API_BASE_URL}/auth/${provider}`, base);
+    const authUrl = buildApiUrl(`/auth/${provider}`);
+    const url = isAbsoluteUrl(authUrl)
+      ? new URL(authUrl)
+      : new URL(authUrl, typeof window !== "undefined" ? window.location.origin : "https://firecrow.invalid");
     url.searchParams.set("privacy_policy_accepted", "true");
     url.searchParams.set("privacy_policy_version", activePrivacyVersion);
     if (typeof window !== "undefined") {
@@ -118,7 +119,7 @@ export default function SignInPage() {
       url.searchParams.set("timezone", tz);
       url.searchParams.set("region", detectRegionFromTimezone(tz));
     }
-    return url.toString().replace(base, "");
+    return isAbsoluteUrl(authUrl) ? url.toString() : `${url.pathname}${url.search}`;
   };
 
   const providerCount = Number(providerAvailability.github) + Number(providerAvailability.google);

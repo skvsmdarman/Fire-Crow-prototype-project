@@ -231,8 +231,21 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-def _frontend_signin_url() -> str:
-    return f"{settings.FRONTEND_URL.rstrip('/')}/signin"
+def _request_origin(request: Request) -> str:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    forwarded_host = request.headers.get("x-forwarded-host", "")
+    scheme = forwarded_proto.split(",", 1)[0].strip() or request.url.scheme
+    host = forwarded_host.split(",", 1)[0].strip() or request.headers.get("host") or request.url.netloc
+    return f"{scheme}://{host}".rstrip("/")
+
+
+def _frontend_signin_url(request: Request | None = None) -> str:
+    frontend_base_url = settings.FRONTEND_URL.rstrip("/")
+    if frontend_base_url:
+        return f"{frontend_base_url}/signin"
+    if request is None:
+        return "/signin"
+    return f"{_request_origin(request)}/signin"
 
 
 def _parse_scope_string(scope_string: Optional[str]) -> list[str]:
@@ -760,7 +773,7 @@ async def github_callback(
     )
 
     code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-    response = RedirectResponse(f"{_frontend_signin_url()}?code={code}")
+    response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
     _set_session_cookie(response, token)
     return response
 
@@ -923,6 +936,6 @@ async def google_callback(
     )
 
     code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-    response = RedirectResponse(f"{_frontend_signin_url()}?code={code}")
+    response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
     _set_session_cookie(response, token)
     return response

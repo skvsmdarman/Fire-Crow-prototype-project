@@ -329,6 +329,59 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
         db.close()
 
 
+def test_github_oauth_callback_uses_request_origin_when_frontend_url_missing(monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload: Any, status_code: int = 200, headers: dict[str, str] | None = None):
+            self._payload = payload
+            self.status_code = status_code
+            self.headers = headers or {}
+
+        def json(self):
+            return self._payload
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse({"access_token": "github-oauth-token", "scope": "repo,workflow,read:org,user:email"})
+
+        async def get(self, url, *args, **kwargs):
+            if url.endswith("/user"):
+                return FakeResponse(
+                    {"id": 456, "login": "originfallback", "email": "originfallback@example.com"},
+                    headers={"X-OAuth-Scopes": "repo,workflow,read:org,user:email"},
+                )
+            return FakeResponse([])
+
+    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
+    monkeypatch.setattr(settings, "FRONTEND_URL", "")
+    monkeypatch.setattr(settings, "DEBUG", True)
+
+    state = client.get(
+        "/api/v1/auth/github",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    ).headers["location"].split("state=", 1)[1].split("&", 1)[0]
+
+    response = client.get(
+        "/api/v1/auth/github/callback",
+        params={"code": "oauth-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert response.headers["location"].startswith("http://testserver/signin?code=")
+    assert "localhost" not in response.headers["location"]
+
+
 def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     class FakeResponse:
         def __init__(self, payload: dict, status_code: int = 200):

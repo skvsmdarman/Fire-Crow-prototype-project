@@ -1,23 +1,8 @@
 import { APIError } from "./errors";
 import { clearStoredAuthSession } from "../../lib/authSession";
+import { buildApiUrl } from "./baseUrl";
 
-const getApiBaseUrl = (): string => {
-  if (typeof window !== "undefined") {
-    if (process.env.NEXT_PUBLIC_API_URL) {
-      return process.env.NEXT_PUBLIC_API_URL;
-    }
-    const { hostname, port, protocol } = window.location;
-    if (hostname === "localhost" && port === "3000") {
-      return `${protocol}//localhost:8000/api/v1`;
-    }
-    if (hostname === "127.0.0.1" && port === "3000") {
-      return `${protocol}//127.0.0.1:8000/api/v1`;
-    }
-  }
-  return process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-};
-
-export const API_BASE_URL = getApiBaseUrl();
+export { API_BASE_URL } from "./baseUrl";
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string>;
@@ -26,7 +11,7 @@ interface FetchOptions extends RequestInit {
 export async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { params, headers, ...rest } = options;
 
-  let url = `${API_BASE_URL}${path}`;
+  let url = buildApiUrl(path);
   if (params) {
     const searchParams = new URLSearchParams(params);
     url += `?${searchParams.toString()}`;

@@ -1,20 +1,4 @@
-const getApiBaseUrl = () => {
-  if (typeof window !== "undefined") {
-    if (process.env.NEXT_PUBLIC_API_URL) {
-      return process.env.NEXT_PUBLIC_API_URL;
-    }
-    const { hostname, port, protocol } = window.location;
-    if (hostname === "localhost" && port === "3000") {
-      return `${protocol}//localhost:8000/api/v1`;
-    }
-    if (hostname === "127.0.0.1" && port === "3000") {
-      return `${protocol}//127.0.0.1:8000/api/v1`;
-    }
-  }
-  return process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-};
-
-export const API_BASE_URL = getApiBaseUrl();
+import { buildApiUrl } from "../shared/api/baseUrl";
 export const PRIVACY_POLICY_VERSION = "2026-06-06";
 export const TERMS_VERSION = "2026-06-06";
 
@@ -42,7 +26,7 @@ export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  await fetch(`${API_BASE_URL}/auth/policy-events`, {
+  await fetch(buildApiUrl("/auth/policy-events"), {
     method: "POST",
     credentials: "include",
     headers,

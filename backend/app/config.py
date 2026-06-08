@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False, validation_alias="DEBUG")
     SECRET_KEY: str = Field(default="", validation_alias="SECRET_KEY")
     ENCRYPTION_KEY: str = Field(default="", validation_alias="ENCRYPTION_KEY")
-    FRONTEND_URL: str = Field(default="http://localhost:3000", validation_alias="FRONTEND_URL")
+    FRONTEND_URL: str = Field(default="", validation_alias="FRONTEND_URL")
     CORS_ORIGINS: str = Field(default="", validation_alias="CORS_ORIGINS")
 
     # --- Security and Compliance Constants ---
