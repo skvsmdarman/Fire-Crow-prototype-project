@@ -340,12 +340,15 @@ def execute_phase(
 
         mode = "real"
         scanner_exec = updates.get("scanner_execution", {})
-        if scanner_key and scanner_key in scanner_exec:
-            mode = scanner_exec[scanner_key].get("mode", "real")
-        elif scanner_exec:
-            for k, val in scanner_exec.items():
+        if isinstance(scanner_exec, dict):
+            if scanner_key and scanner_key in scanner_exec:
+                val = scanner_exec[scanner_key]
                 if isinstance(val, dict) and "mode" in val:
                     mode = val["mode"]
+            elif scanner_exec:
+                for k, val in scanner_exec.items():
+                    if isinstance(val, dict) and "mode" in val:
+                        mode = val["mode"]
 
         if "example/" in state.repo_url:
             mode = "simulated"
@@ -692,6 +695,12 @@ def scoring_body(db: Session, state: AuditState) -> Dict[str, Any]:
         )
         total_score += score
 
+    score_penalty = sum(f.cvss_score for f in scored_findings if f.cvss_score)
+    security_score = max(0.0, 100.0 - score_penalty)
+    job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
+    if job:
+        job.security_score = security_score
+
     db.commit()
     risk_summary = {
         "cve_count": len(scored_findings),
@@ -773,7 +782,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     }
     
     generator = ReportGenerator()
-    generator.send_email_report(
+    success = generator.send_email_report(
         to_email=user_email,
         report_url=email_url,
         job_id=state.job_id,
@@ -781,7 +790,11 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         repo_url=state.repo_url,
         pdf_path=pdf_path
     )
-    log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated.")
+    if not success:
+        logger.error(f"Failed to deliver report to {user_email}")
+        log_agent_message(db, state.job_id, "REPORTER", f"Warning: Failed to deliver email report to {user_email}.")
+    else:
+        log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated and emailed.")
 
     return {
         "report_pdf_url": f"/api/v1/audit/job/{state.job_id}/report",
@@ -906,11 +919,6 @@ def semgrep_node(state: AuditState) -> Dict[str, Any]:
 
 def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
     from backend.app.reporting.fallback_writer import generate_fallback_report
-    from backend.app.config import settings
-
-    if not settings.GEMINI_MODEL:
-        log_agent_message(db, state.job_id, "AI_ANALYZER", "AI model not configured. Routing to deterministic fallback.")
-        return generate_fallback_report(state)
 
     try:
         dedup, fps, chains, rems = run_ai_analyzer(
@@ -920,7 +928,12 @@ def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
             state.iac_findings,
             state.semgrep_findings
         )
-        log_agent_message(db, state.job_id, "AI_ANALYZER", f"AI Analyzer complete. {len(dedup)} findings retained.")
+        log_agent_message(
+            db,
+            state.job_id,
+            "AI_ANALYZER",
+            f"Deterministic analyzer complete. {len(dedup)} findings retained. Core security decisions remained LLM-disabled.",
+        )
         return {
             "deduplicated_findings": dedup,
             "false_positives": fps,
@@ -929,24 +942,27 @@ def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"AI Analyzer failed: {str(e)}")
-        log_agent_message(db, state.job_id, "AI_ANALYZER", f"AI Analyzer failed. Routing to deterministic fallback.")
+        log_agent_message(
+            db,
+            state.job_id,
+            "AI_ANALYZER",
+            "Deterministic analyzer failed. Routing to deterministic fallback report generation.",
+        )
         return generate_fallback_report(state)
 
 def ai_analyzer_node(state: AuditState) -> Dict[str, Any]:
-    return execute_phase(state, phase_name="ai_analyzer", agent_name="AI_ANALYZER", start_message="AI brain analyzing...", body=ai_analyzer_body)
+    return execute_phase(
+        state,
+        phase_name="ai_analyzer",
+        agent_name="AI_ANALYZER",
+        start_message="Applying deterministic finding triage...",
+        body=ai_analyzer_body,
+    )
 
 
 def cleanup_body(db: Session, state: AuditState) -> Dict[str, Any]:
     cleanup_resources(state)
     
-    # Run a persistent scan to remove non-PDF clutter from the R2 bucket to preserve space
-    try:
-        from backend.app.services.reporter import ReportGenerator
-        generator = ReportGenerator()
-        generator.clean_r2_bucket_clutter()
-    except Exception as e:
-        logger.error(f"Failed to run R2 bucket clutter cleanup: {str(e)}")
-
     mark_cleanup_completed()
     if state.clone_path:
         log_agent_message(db, state.job_id, "CLEANUP", f"Purged temporary workspace clone directory: {state.clone_path}")

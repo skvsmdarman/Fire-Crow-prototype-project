@@ -1,7 +1,8 @@
-from sqlalchemy import String, DateTime, Text
+from sqlalchemy import String, DateTime, Text, Float
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional
+import uuid
 
 from backend.app.models.database import Base
 
@@ -12,6 +13,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(255), primary_key=True)
     username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    credit_balance: Mapped[float] = mapped_column(Float, default=10.0, nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     tenant_id: Mapped[Optional[str]] = mapped_column(String(255), index=True, nullable=True)
     role_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -66,3 +68,15 @@ class AuthExchangeCode(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+

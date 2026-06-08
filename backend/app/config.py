@@ -49,10 +49,6 @@ class Settings(BaseSettings):
     )
     REDIS_PASSWORD: str = Field(default="", validation_alias="REDIS_PASSWORD")
     FIRE_CROW_MOCK_SANDBOX: bool = Field(default=False, validation_alias="FIRE_CROW_MOCK_SANDBOX")
-    FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD: bool = Field(
-        default=False,
-        validation_alias="FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD",
-    )
     FIRE_CROW_SCANNER_IMAGE: str = Field(
         default="ghcr.io/johan-droid/firecrow-scanner:2026-06-06",
         validation_alias="FIRE_CROW_SCANNER_IMAGE",
@@ -111,6 +107,10 @@ class Settings(BaseSettings):
     SCANNER_OUTPUT_MAX_LENGTH: int = Field(default=50000, validation_alias="SCANNER_OUTPUT_MAX_LENGTH")
     API_DISCOVERY_LIMIT: int = Field(default=50, validation_alias="API_DISCOVERY_LIMIT")
     GEMINI_FINDINGS_CHUNK_SIZE: int = Field(default=50, validation_alias="GEMINI_FINDINGS_CHUNK_SIZE")
+    LLM_CHAT_ASSISTANT: bool = Field(default=False, validation_alias="LLM_CHAT_ASSISTANT")
+    LLM_DASHBOARD_INSIGHT: bool = Field(default=False, validation_alias="LLM_DASHBOARD_INSIGHT")
+    LLM_ATTACK_CHAIN_NAMING: bool = Field(default=False, validation_alias="LLM_ATTACK_CHAIN_NAMING")
+    LLM_PR_DESCRIPTION: bool = Field(default=False, validation_alias="LLM_PR_DESCRIPTION")
 
     # --- Scoring Tunables ---
     SCORING_CRITICAL: float = Field(default=9.8, validation_alias="SCORING_CRITICAL")

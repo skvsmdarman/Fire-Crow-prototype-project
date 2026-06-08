@@ -1,5 +1,21 @@
 from typing import Any, Dict, List
 from backend.app.schemas.audit_state import AuditState, Finding, Severity
+from backend.app.services.safe_llm import is_llm_enabled, safe_llm_call
+
+
+def generate_chain_name(chain_description: str) -> str:
+    if not is_llm_enabled("attack_chain_naming"):
+        return "Potential Attack Path"
+
+    prompt = (
+        "Give a very short 3-5 word name for this attack chain. "
+        "Respond with only the name.\n"
+        f"Attack chain: {chain_description}"
+    )
+    name = safe_llm_call(prompt, max_tokens=15, temperature=0.3)
+    if not name:
+        return "Potential Attack Path"
+    return " ".join(name.split())[:80]
 
 def build_attack_graph(state: AuditState) -> Dict[str, Any]:
     """
@@ -53,8 +69,10 @@ def build_attack_graph(state: AuditState) -> Dict[str, Any]:
                     "target": f"vuln_{f.id}",
                     "relation": "exposes"
                 })
+                description = f"Public route {route_path} exposes {f.title}"
                 chains.append({
-                    "description": f"Public route {route_path} exposes {f.title}",
+                    "name": generate_chain_name(description),
+                    "description": description,
                     "severity": f.severity.value,
                     "nodes": [f"route_{route_path}", f"vuln_{f.id}"]
                 })

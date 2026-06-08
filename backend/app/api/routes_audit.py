@@ -3,6 +3,7 @@ import re
 import socket
 from datetime import datetime, timezone
 from pathlib import Path
+import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from backend.app.services.limiter import limiter
@@ -34,12 +35,15 @@ from backend.app.schemas import (
 from backend.app.orchestrator.runtime import execute_audit_job
 from backend.app.services.auth import get_current_user
 from backend.app.services.redaction import redact_text
+from backend.app.services.safe_llm import is_llm_enabled, safe_llm_call
 from backend.app.workers.celery_app import run_audit_job_task, celery_app
 
 logger = logging.getLogger("firecrow.api.audit")
 router = APIRouter(prefix="/audit", tags=["Security Auditing"])
 
 REPORTS_DIR = WORKSPACE_DIR / "workspace" / "reports"
+
+_bg_semaphore = asyncio.Semaphore(5)
 
 
 def _is_broker_reachable() -> bool:
@@ -64,16 +68,26 @@ def _dispatch_audit_job(
     repo_branch: str,
     custom_email: str = "",
 ) -> None:
-    if not _is_broker_reachable():
-        logger.info("Redis broker is unavailable. Running job %s through local BackgroundTasks fallback.", job_id)
-        background_tasks.add_task(
-            execute_audit_job,
-            job_id,
-            user_id,
-            repo_url,
-            repo_branch,
-            custom_email,
-        )
+    from backend.app.services.auth import _get_redis_client
+    redis_client = _get_redis_client()
+    
+    celery_alive = False
+    if redis_client and redis_client.get("celery:heartbeat"):
+        celery_alive = True
+
+    if not celery_alive:
+        logger.warning("Celery worker heartbeat missing or Redis unreachable. Falling back to local BackgroundTasks.")
+        async def _run_with_limit():
+            async with _bg_semaphore:
+                await asyncio.to_thread(
+                    execute_audit_job,
+                    job_id,
+                    user_id,
+                    repo_url,
+                    repo_branch,
+                    custom_email,
+                )
+        background_tasks.add_task(_run_with_limit)
         return
 
     try:
@@ -93,14 +107,17 @@ def _dispatch_audit_job(
             redact_text(str(exc)),
             job_id,
         )
-        background_tasks.add_task(
-            execute_audit_job,
-            job_id,
-            user_id,
-            repo_url,
-            repo_branch,
-            custom_email,
-        )
+        async def _run_with_limit():
+            async with _bg_semaphore:
+                await asyncio.to_thread(
+                    execute_audit_job,
+                    job_id,
+                    user_id,
+                    repo_url,
+                    repo_branch,
+                    custom_email,
+                )
+        background_tasks.add_task(_run_with_limit)
 
 
 def _active_job_count(db: Session, user_id: str) -> int:
@@ -198,10 +215,29 @@ async def submit_audit(
     user_id: str = Depends(get_current_user)
 ):
     """Submit a security audit job for a remote repository. Dispatches Celery task or falls back to BackgroundTasks."""
+    if payload.custom_email:
+        from email_validator import validate_email, EmailNotValidError
+        try:
+            validate_email(payload.custom_email, check_deliverability=False)
+        except EmailNotValidError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
     if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
+        )
+
+    from backend.app.services.auth import _get_redis_client
+    redis_client = _get_redis_client()
+    celery_alive = False
+    if redis_client and redis_client.get("celery:heartbeat"):
+        celery_alive = True
+
+    if not celery_alive and _bg_semaphore.locked():
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Server is currently at maximum capacity. Please try again later.",
         )
 
     # Scoping job to user's tenant_id
@@ -449,6 +485,15 @@ class EmailReportRequest(BaseModel):
     email: Optional[str] = None
 
 
+_SEVERITY_RANK = {
+    "critical": 4,
+    "high": 3,
+    "medium": 2,
+    "low": 1,
+    "info": 0,
+}
+
+
 @router.post("/job/{job_id}/email")
 async def email_report(
     job_id: str,
@@ -457,6 +502,13 @@ async def email_report(
     user_id: str = Depends(get_current_user),
 ):
     """On-demand endpoint to send/resend the PDF report to a user via email."""
+    if payload.email:
+        from email_validator import validate_email, EmailNotValidError
+        try:
+            validate_email(payload.email, check_deliverability=False)
+        except EmailNotValidError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
     import shutil
     from backend.app.schemas.audit_state import Severity
     from backend.app.services.reporter import ReportGenerator
@@ -580,3 +632,58 @@ async def email_report(
         raise HTTPException(status_code=500, detail="Failed to send report email.")
 
     return {"message": "Email report triggered successfully.", "recipient": recipient}
+
+
+@router.get("/job/{job_id}/insight")
+async def get_job_insight(
+    job_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
+    if not is_llm_enabled("dashboard_insight"):
+        return {"insight": None, "enabled": False}
+
+    get_owned_job_or_404(db, job_id, user_id)
+    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+    if not findings:
+        return {"insight": "No findings to summarize.", "enabled": True}
+
+    ranked_findings = sorted(
+        findings,
+        key=lambda finding: (
+            -_SEVERITY_RANK.get(
+                finding.severity.value if hasattr(finding.severity, "value") else str(finding.severity).lower(),
+                0,
+            ),
+            finding.title.lower(),
+        ),
+    )[:5]
+
+    prompt = "Findings from security audit:\n"
+    prompt += "\n".join(
+        f"- {(finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity)).upper()}: {finding.title}"
+        for finding in ranked_findings
+    )
+    prompt += "\nWrite one short sentence, maximum 15 words, summarizing the overall risk."
+
+    insight = safe_llm_call(prompt, max_tokens=30, temperature=0.2)
+    return {"insight": insight, "enabled": True}
+
+
+@router.get("/job/{job_id}/graph")
+async def get_attack_graph(
+    job_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    job = get_owned_job_or_404(db, job_id, user_id)
+    from backend.app.models import AuditArtifact
+    artifact = db.query(AuditArtifact).filter(
+        AuditArtifact.job_id == job_id,
+        AuditArtifact.artifact_type == "attack_graph"
+    ).first()
+    if not artifact or not artifact.data_json:
+        raise HTTPException(404, "Attack graph not generated yet")
+    import json
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=json.loads(artifact.data_json))

@@ -28,6 +28,7 @@ class AuditJob(Base):
     report_pdf_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     report_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    security_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Relationships
     findings: Mapped[list["FindingModel"]] = relationship(

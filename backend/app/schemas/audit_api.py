@@ -66,6 +66,7 @@ class JobResponse(BaseModel):
     cancel_requested_at: Optional[str] = None
     report_pdf_url: Optional[str] = None
     error_message: Optional[str] = None
+    security_score: Optional[float] = None
     email_delivered: bool = False
     github_issues_raised: bool = False
     github_pr_created: bool = False
@@ -126,6 +127,7 @@ def build_job_response(job: AuditJob) -> JobResponse:
         cancel_requested_at=job.cancel_requested_at.isoformat() if job.cancel_requested_at else None,
         report_pdf_url=job.report_pdf_url,
         error_message=job.error_message,
+        security_score=job.security_score,
         email_delivered=email_delivered,
         github_issues_raised=github_issues_raised,
         github_pr_created=github_pr_created,

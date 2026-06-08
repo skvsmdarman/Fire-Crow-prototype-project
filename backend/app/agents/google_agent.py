@@ -1,9 +1,5 @@
 import logging
-import json
-import urllib.request
-import urllib.error
 import smtplib
-import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
@@ -12,6 +8,56 @@ from backend.app.config import settings, WORKSPACE_DIR
 from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.google_agent")
+
+
+def _deterministic_pr_risk_analysis(findings: List[Finding], remediations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    severity_counts = {
+        Severity.CRITICAL: sum(1 for finding in findings if finding.severity == Severity.CRITICAL),
+        Severity.HIGH: sum(1 for finding in findings if finding.severity == Severity.HIGH),
+        Severity.MEDIUM: sum(1 for finding in findings if finding.severity == Severity.MEDIUM),
+        Severity.LOW: sum(1 for finding in findings if finding.severity == Severity.LOW),
+        Severity.INFO: sum(1 for finding in findings if finding.severity == Severity.INFO),
+    }
+
+    if severity_counts[Severity.CRITICAL]:
+        risk_level = "CRITICAL"
+        recommendation = "BLOCK"
+        description = "Critical findings remain unresolved. Merging would keep materially exploitable risk in the branch."
+    elif severity_counts[Severity.HIGH]:
+        risk_level = "HIGH"
+        recommendation = "BLOCK"
+        description = "High-severity findings remain unresolved and should be remediated before merge."
+    elif severity_counts[Severity.MEDIUM]:
+        risk_level = "MEDIUM"
+        recommendation = "REVIEW"
+        description = "Medium-severity findings need reviewer attention before the change is considered safe to merge."
+    elif findings:
+        risk_level = "LOW"
+        recommendation = "APPROVE"
+        description = "Only low or informational findings remain. Merge can proceed with normal reviewer awareness."
+    else:
+        risk_level = "LOW"
+        recommendation = "APPROVE"
+        description = "No findings were supplied to the PR risk agent."
+
+    key_risk_factors: List[str] = []
+    if severity_counts[Severity.CRITICAL]:
+        key_risk_factors.append(f"{severity_counts[Severity.CRITICAL]} critical finding(s) are still open.")
+    if severity_counts[Severity.HIGH]:
+        key_risk_factors.append(f"{severity_counts[Severity.HIGH]} high-severity finding(s) are still open.")
+    if severity_counts[Severity.MEDIUM]:
+        key_risk_factors.append(f"{severity_counts[Severity.MEDIUM]} medium-severity finding(s) require review.")
+    if remediations:
+        key_risk_factors.append(f"{len(remediations)} remediation change(s) require manual verification before merge.")
+    if not key_risk_factors:
+        key_risk_factors.append("No blocking risk factors were detected from the supplied findings.")
+
+    return {
+        "overall_pr_risk": risk_level,
+        "risk_description": description,
+        "key_risk_factors": key_risk_factors[:4],
+        "merge_recommendation": recommendation,
+    }
 
 def run_google_agent(
     job_id: str,
@@ -22,177 +68,14 @@ def run_google_agent(
 ) -> Dict[str, Any]:
     """
     Runs the Google Security Agent.
-    1. Analyzes the security findings and remediations for PR/Merge risks using Gemini.
+    1. Analyzes the security findings and remediations for PR/Merge risks deterministically.
     2. Sends a structured PR Risk Assessment Alert email via Google SMTP (Gmail) or Resend.
     """
     logger.info("Running Google Security Agent for job %s...", job_id)
     logs = [f"Started Google Agent for job {job_id}"]
-    
-    # 1. Analyze PR Risks using Gemini
-    api_key = settings.GEMINI_API_KEY
-    pr_risk_analysis = {}
-    
-    if not api_key:
-        if not settings.DEBUG:
-            logs.append("GEMINI_API_KEY not configured. Google Agent risk assessment unavailable.")
-            return {
-                "google_agent_delivered": False,
-                "google_agent_pr_risks_analyzed": False,
-                "google_agent_risk_report": {},
-                "google_agent_logs": logs,
-            }
 
-        logs.append("GEMINI_API_KEY not configured. Generating DEBUG simulated PR risk report.")
-        # Simulated PR risks if no Gemini API Key is configured
-        has_critical = any(f.severity == Severity.CRITICAL for f in findings)
-        has_high = any(f.severity == Severity.HIGH for f in findings)
-        
-        risk_level = "LOW"
-        risk_desc = "The changes checked appear generally low risk. No critical vulnerabilities detected."
-        if has_critical:
-            risk_level = "CRITICAL"
-            risk_desc = "Critical risks identified! Exposed credentials or active exploit paths detected. Merging is highly discouraged."
-        elif has_high:
-            risk_level = "HIGH"
-            risk_desc = "High security risks identified. Vulnerabilities found that could lead to unauthorized access. Suggest addressing remediations before merge."
-            
-        pr_risk_analysis = {
-            "overall_pr_risk": risk_level,
-            "risk_description": risk_desc,
-            "key_risk_factors": [
-                "Exposed secrets or API keys" if has_critical else "Static analysis code quality alerts",
-                "High severity security findings present" if has_high else "Dependency vulnerabilities checked"
-            ],
-            "merge_recommendation": "BLOCK" if (has_critical or has_high) else "APPROVE"
-        }
-    else:
-        # Prompt Gemini to evaluate PR risks
-        findings_summary = []
-        for f in findings:
-            findings_summary.append({
-                "id": f.id,
-                "title": f.title,
-                "severity": f.severity.value,
-                "description": f.description
-            })
-            
-        prompt = f"""You are a senior Google AI Security Architect. Analyze the security audit findings for a proposed pull request/code merge:
-Repository: {repo_url}
-Findings: {json.dumps(findings_summary, indent=2)}
-Remediations: {json.dumps(remediations, indent=2)}
-
-Your task:
-Evaluate the security risk of merging this code.
-1. Determine the overall PR risk level (CRITICAL | HIGH | MEDIUM | LOW).
-2. Write a detailed risk description summarizing the threat.
-3. List 2-4 key risk factors (concrete items).
-4. Provide a merge recommendation: "BLOCK" (if there are critical or high findings), "REVIEW" (if medium), or "APPROVE" (if low/info or clean).
-
-Output your evaluation in this exact JSON format (and ONLY output this raw JSON structure, no other text or explanation):
-{{
-  "overall_pr_risk": "CRITICAL | HIGH | MEDIUM | LOW",
-  "risk_description": "Summary of the merge risks...",
-  "key_risk_factors": ["Factor 1", "Factor 2"],
-  "merge_recommendation": "BLOCK | REVIEW | APPROVE"
-}}
-"""
-        payload = {
-            "contents": [{
-                "parts": [{
-                    "text": prompt
-                }]
-            }],
-            "generationConfig": {
-                "temperature": 0.1
-            }
-        }
-        
-        models_to_try = [settings.GEMINI_MODEL]
-        if getattr(settings, "GEMINI_ENABLE_FALLBACK_MODEL", False) and getattr(settings, "GEMINI_FALLBACK_MODEL", ""):
-            models_to_try.append(settings.GEMINI_FALLBACK_MODEL)
-        models_to_try = [m for m in dict.fromkeys(models_to_try) if m]
-        success = False
-
-        RETRYABLE_GEMINI_HTTP_CODES = {404, 408, 429, 500, 502, 503, 504}
-        
-        def _is_timeout_error(exc: Exception) -> bool:
-            if isinstance(exc, (TimeoutError, socket.timeout)):
-                return True
-            if isinstance(exc, urllib.error.URLError):
-                return isinstance(exc.reason, (TimeoutError, socket.timeout)) or "timed out" in str(exc.reason).lower()
-            return "timed out" in str(exc).lower()
-
-        last_error_summary = ""
-        for model_name in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-            logger.info(f"Attempting Gemini call for Google Security Agent using model: {model_name}")
-            try:
-                req_data = json.dumps(payload).encode("utf-8")
-                req = urllib.request.Request(url, data=req_data)
-                req.add_header("Content-Type", "application/json")
-                req.add_header("x-goog-api-key", api_key)
-                
-                with urllib.request.urlopen(req, timeout=getattr(settings, "GEMINI_TIMEOUT_SECONDS", 30)) as response:
-                    res_content = response.read().decode("utf-8")
-                    res_json = json.loads(res_content)
-                    text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    
-                    # Strip markdown blocks
-                    if text.startswith("```"):
-                        lines = text.splitlines()
-                        if lines[0].startswith("```"):
-                            lines = lines[1:]
-                        if lines[-1].startswith("```"):
-                            lines = lines[:-1]
-                        text = "\n".join(lines).strip()
-                        
-                    pr_risk_analysis = json.loads(text)
-                    logs.append(f"Successfully evaluated Pull Request security risks using Gemini ({model_name}).")
-                    success = True
-                    break
-            except urllib.error.HTTPError as err:
-                last_error_summary = f"HTTP {err.code}: {err.reason}"
-                if err.code in RETRYABLE_GEMINI_HTTP_CODES:
-                    logger.warning(
-                        "Gemini model %s returned HTTP %s. Trying next fallback model.",
-                        model_name,
-                        err.code,
-                    )
-                    continue
-                logger.exception(
-                    "Gemini API call failed for model %s with non-retryable status %s: %s",
-                    model_name,
-                    err.code,
-                    err,
-                )
-                break
-            except Exception as exc:
-                last_error_summary = str(exc)
-                if _is_timeout_error(exc):
-                    logger.warning("Gemini model %s timed out. Trying next fallback model.", model_name)
-                    continue
-                logger.exception("Gemini API call failed for model %s. Trying next fallback model.", model_name)
-                continue
-
-        if not success:
-            if last_error_summary:
-                logs.append(f"All Gemini models failed. Last error: {last_error_summary}")
-            else:
-                logs.append("All Gemini models failed.")
-            if not settings.DEBUG:
-                return {
-                    "google_agent_delivered": False,
-                    "google_agent_pr_risks_analyzed": False,
-                    "google_agent_risk_report": {},
-                    "google_agent_logs": logs,
-                }
-            logs.append("DEBUG mode enabled. Using fallback simulation.")
-            pr_risk_analysis = {
-                "overall_pr_risk": "HIGH" if findings else "LOW",
-                "risk_description": "Failed to run LLM assessment. Fallback analysis flags review risk due to unresolved findings.",
-                "key_risk_factors": ["AI analysis unavailable", "Unresolved findings in pipeline"],
-                "merge_recommendation": "REVIEW" if findings else "APPROVE"
-            }
+    logs.append("Using deterministic PR risk assessment. LLM scoring is disabled for this workflow.")
+    pr_risk_analysis = _deterministic_pr_risk_analysis(findings, remediations)
 
     # 2. Format a gorgeous Google Agent PR Risk Alert email
     risk_level = str(pr_risk_analysis.get("overall_pr_risk", "UNKNOWN")).upper()

@@ -728,62 +728,8 @@ class ReportGenerator:
         Scans the Cloudflare R2 bucket and deletes any objects that are not PDFs (e.g. temporary logs, non-pdf artifacts)
         to optimize storage.
         """
-        if _global_state.get("r2_disabled", False):
-            logger.info("Cloudflare R2 operations are disabled due to a previous authentication failure. Skipping bucket clutter cleanup.")
-            return
-        if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
-            logger.info("R2 storage not configured. Skipping bucket clutter cleanup.")
-            return
-
-        try:
-            import boto3  # type: ignore
-            from botocore.client import Config  # type: ignore
-
-            endpoint = self.r2_endpoint
-            if endpoint and not (endpoint.startswith("http://") or endpoint.startswith("https://")):
-                endpoint = f"https://{endpoint}"
-
-            s3 = boto3.client(
-                "s3",
-                endpoint_url=endpoint,
-                aws_access_key_id=self.r2_access_key,
-                aws_secret_access_key=self.r2_secret_key,
-                config=Config(signature_version="s3v4"),
-                region_name="auto"
-            )
-
-            logger.info("Scanning R2 bucket '%s' to clean up non-PDF clutter.", self.r2_bucket)
-            paginator = s3.get_paginator("list_objects_v2")
-            pages = paginator.paginate(Bucket=self.r2_bucket)
-
-            delete_keys = []
-            for page in pages:
-                if "Contents" in page:
-                    for obj in page["Contents"]:
-                        key = obj["Key"]
-                        # Delete any file that does not end with .pdf
-                        if not key.lower().endswith(".pdf"):
-                            logger.warning("R2 Cleanup: Tagged non-PDF object for deletion: %s", key)
-                            delete_keys.append({"Key": key})
-
-            if delete_keys:
-                # Batch delete up to 1000 at a time (AWS/S3 API constraint)
-                for i in range(0, len(delete_keys), 1000):
-                    batch = delete_keys[i:i+1000]
-                    s3.delete_objects(
-                        Bucket=self.r2_bucket,
-                        Delete={"Objects": batch, "Quiet": True}
-                    )
-                logger.info("Successfully cleaned up %d non-PDF clutter items from R2.", len(delete_keys))
-            else:
-                logger.info("No non-PDF clutter found in R2 bucket.")
-        except Exception as e:
-            redacted_error = redact_text(str(e))
-            if _is_r2_auth_error(redacted_error):
-                logger.warning("R2 credentials rejected during cleanup. Disabling future R2 operations.")
-                _global_state["r2_disabled"] = True
-            else:
-                logger.error("Failed cleaning up R2 bucket: %s", redacted_error)
+        logger.info("clean_r2_bucket_clutter is disabled to prevent cross-tenant data loss.")
+        return
 
 
     def send_email_report(

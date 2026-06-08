@@ -13,8 +13,16 @@ export const ENDPOINTS = {
     submit: "/audit/submit",
     jobs: "/audit/jobs",
     job: (jobId: string) => `/audit/job/${jobId}`,
+    insight: (jobId: string) => `/audit/job/${jobId}/insight`,
     report: (jobId: string) => `/audit/job/${jobId}/report`,
     stream: (jobId: string) => `/audit/${jobId}/stream`,
+  },
+  leaderboard: {
+    list: "/leaderboard",
+  },
+  push: {
+    vapidPublicKey: "/push/vapid-public-key",
+    subscribe: "/push/subscribe",
   },
   system: {
     status: "/system/status",

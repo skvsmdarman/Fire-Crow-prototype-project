@@ -1,6 +1,8 @@
 import os
 import logging
 import uuid
+import argparse
+import sys
 from pathlib import Path
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
@@ -16,7 +18,7 @@ from backend.app.services.limiter import limiter
 
 from backend.app.config import settings, WORKSPACE_DIR
 from backend.app.models.database import Base, engine, ensure_database_compatibility, get_db
-from backend.app.api import auth_router, audit_router, sse_router, system_router, storage_router
+from backend.app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router
 from backend.app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.main")
@@ -186,6 +188,9 @@ app.include_router(audit_router, prefix="/api/v1")
 app.include_router(sse_router, prefix="/api/v1")
 app.include_router(system_router, prefix="/api/v1")
 app.include_router(storage_router, prefix="/api/v1")
+app.include_router(chat_router, prefix="/api/v1")
+app.include_router(leaderboard_router, prefix="/api/v1")
+app.include_router(push_router, prefix="/api/v1")
 
 # Ensure reports directory exists for authenticated downloads
 reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
@@ -285,3 +290,26 @@ async def health_deep(db: Session = Depends(get_db)):
 frontend_dist_dir = Path(WORKSPACE_DIR) / "frontend" / "out"
 if frontend_dist_dir.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dist_dir), html=True), name="frontend")
+
+
+def _write_openapi(stream) -> None:
+    import yaml
+
+    yaml.safe_dump(app.openapi(), stream, sort_keys=False)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Fire Crow API utilities")
+    parser.add_argument("--generate-openapi", action="store_true", help="Write the OpenAPI schema as YAML to stdout.")
+    args = parser.parse_args()
+
+    if args.generate_openapi:
+        _write_openapi(sys.stdout)
+        return 0
+
+    parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

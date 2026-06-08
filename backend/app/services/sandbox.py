@@ -58,9 +58,6 @@ class SandboxManager:
             else:
                 logger.error("Docker python SDK missing in production; refusing sandbox simulation.")
 
-    def _allow_user_dockerfile_build(self) -> bool:
-        return settings.FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD
-
     def _container_security_options(self, job_id: str, role: str) -> dict[str, Any]:
         return {
             "cap_drop": ["ALL"],
@@ -149,21 +146,13 @@ class SandboxManager:
             if profile_name == "unsupported":
                 logger.warning("Unsupported repository tech stack for active sandbox test; skipped target container run.")
             else:
-                if has_dockerfile and self._allow_user_dockerfile_build():
-                    logger.warning(
-                        "Building repository Dockerfile for job %s because FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD is enabled.",
+                # User Dockerfile builds are permanently disabled for security.
+                if has_dockerfile:
+                    logger.info(
+                        "Repository Dockerfile detected for job %s but user Dockerfile builds are disabled; using controlled runtime image.",
                         job_id,
                     )
-                    image, _ = client.images.build(path=clone_path, tag=f"fc-target-img:{job_id}")
-                    image_name = image.tags[0]
-                    command = None
-                else:
-                    if has_dockerfile:
-                        logger.info(
-                            "Repository Dockerfile detected for job %s but user Dockerfile builds are disabled; using controlled runtime image.",
-                            job_id,
-                        )
-                    command = start_command
+                command = start_command
 
                 # Run target app container
                 target_container = client.containers.run(

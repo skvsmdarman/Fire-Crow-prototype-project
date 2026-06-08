@@ -108,3 +108,16 @@ def test_settings_accepts_json_github_oauth_scopes_from_env(monkeypatch):
     )
 
     assert configured.GITHUB_OAUTH_SCOPES == ["repo", "workflow", "read:org", "user:email"]
+
+
+def test_safe_llm_flags_default_disabled():
+    configured = Settings(
+        DEBUG=False,
+        SECRET_KEY="x" * 40,
+        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
+    )
+
+    assert configured.LLM_CHAT_ASSISTANT is False
+    assert configured.LLM_DASHBOARD_INSIGHT is False
+    assert configured.LLM_ATTACK_CHAIN_NAMING is False
+    assert configured.LLM_PR_DESCRIPTION is False

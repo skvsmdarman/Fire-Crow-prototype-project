@@ -8,13 +8,25 @@ import { useAuthSession } from "../../shared/hooks/useAuthSession";
 import { useSSE, LogLine } from "../../shared/hooks/useSSE";
 import useAudits from "../../features/audits/hooks";
 import { fetchSystemStatus as apiFetchSystemStatus } from "../../features/audits/api";
-import { Job, JobDetail, Finding, SystemStatus } from "../../features/audits/types";
+import { Job, Finding, SystemStatus } from "../../features/audits/types";
 import { formatDateTime, shortRepoName } from "../../shared/utils/format";
 import { API_BASE_URL, apiClient } from "../../shared/api/client";
 import AuditVerificationCard from "../../features/audits/components/AuditVerificationCard";
 import { ENDPOINTS } from "../../shared/api/endpoints";
 import { useToast } from "../../components/ui/Toast";
 import LogStream from "../../features/audits/components/LogStream";
+import dynamic from "next/dynamic";
+import ChatWidget from "../../components/ChatWidget";
+import Leaderboard from "../../components/Leaderboard";
+import { subscribeUserToPush } from "../../lib/pushNotifications";
+
+const AttackGraph = dynamic(() => import("../../components/AttackGraph"), { ssr: false });
+
+interface AuditInsightResponse {
+  jobId: string;
+  insight: string | null;
+  enabled: boolean;
+}
 
 const theme = {
   bg: "var(--bg)",
@@ -91,6 +103,7 @@ function SectionIcon({ name, active }: { name: string; active: boolean }) {
     Audits: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
     Findings: <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01" />,
     Reports: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8m8 4H8m2-8H8" />,
+    Leaderboard: <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34M12 2a4 4 0 0 0-4 4v5c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V6a4 4 0 0 0-4-4z" />,
     Settings: <><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
   };
   return (
@@ -100,7 +113,7 @@ function SectionIcon({ name, active }: { name: string; active: boolean }) {
   );
 }
 
-const SECTIONS = ["Overview", "Audits", "Findings", "Reports", "Settings"];
+const SECTIONS = ["Overview", "Audits", "Findings", "Reports", "Leaderboard", "Settings"];
 
 export default function Dashboard() {
   const router = useRouter();
@@ -111,6 +124,7 @@ export default function Dashboard() {
   const [active, setActive] = useState("Overview");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [isValidating, setIsValidating] = useState(true);
+  const [jobInsight, setJobInsight] = useState<AuditInsightResponse | null>(null);
 
   const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
@@ -129,6 +143,12 @@ export default function Dashboard() {
 
   const prevStatusesRef = React.useRef<Record<string, string>>({});
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (authSession.token) {
+      subscribeUserToPush(authSession.token);
+    }
+  }, [authSession.token]);
 
   useEffect(() => {
     jobs.forEach((job) => {
@@ -199,6 +219,35 @@ export default function Dashboard() {
     }
   }, [selectedJob?.id, startLogStream, stopLogStream]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedJobId || !authSession.token || !systemStatus?.llm_features?.dashboard_insight) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    apiClient
+      .get<AuditInsightResponse>(ENDPOINTS.audit.insight(selectedJobId), {
+        headers: { Authorization: `Bearer ${authSession.token}` },
+      })
+      .then((response) => {
+        if (!cancelled) {
+          setJobInsight({ ...response, jobId: selectedJobId });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setJobInsight((current) => (current?.jobId === selectedJobId ? null : current));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession.token, selectedJobId, systemStatus?.llm_features?.dashboard_insight]);
+
   // Use a polling interval to update the job list when a job is actively running
   useEffect(() => {
     let timer: number;
@@ -219,6 +268,7 @@ export default function Dashboard() {
 
   const completedJobs = jobs.filter(j => j.status === "completed" || j.status === "partial");
   const criticalCount = findings.filter(f => f.severity === "critical").length;
+  const selectedJobInsight = systemStatus?.llm_features?.dashboard_insight && jobInsight?.jobId === selectedJobId ? jobInsight : null;
 
   const filteredFindings = filter === "all" ? findings : findings.filter(f => f.severity === filter);
 
@@ -311,13 +361,24 @@ export default function Dashboard() {
         <AnimatePresence mode="wait">
           <motion.div key={active} initial={{ opacity: 0, scale: 0.98, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: -10 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
             {active === "Overview" && <OverviewSection jobs={jobs} findings={findings} criticalCount={criticalCount} setActive={setActive} />}
-            {active === "Audits" && <AuditsSection jobs={jobs} selected={selectedJob} onSelect={setSelectedJobId} newUrl={newAuditUrl} setNewUrl={setNewAuditUrl} newBranch={newAuditBranch} setNewBranch={setNewAuditBranch} onJobStarted={runAudit} openReportUrl={openReportUrl} streamActive={streamActive} logs={logs} />}
+            {active === "Audits" && <AuditsSection jobs={jobs} selected={selectedJob} insight={selectedJobInsight} onSelect={setSelectedJobId} newUrl={newAuditUrl} setNewUrl={setNewAuditUrl} newBranch={newAuditBranch} setNewBranch={setNewAuditBranch} onJobStarted={runAudit} openReportUrl={openReportUrl} streamActive={streamActive} logs={logs} token={authSession.token || ""} />}
             {active === "Findings" && <FindingsSection findings={filteredFindings} all={findings} filter={filter} setFilter={setFilter} expanded={expandedFinding} setExpanded={setExpandedFinding} selected={selectedJob} />}
-            {active === "Reports" && <ReportsSection jobs={completedJobs} openReportUrl={openReportUrl} />}
+             {active === "Reports" && <ReportsSection jobs={completedJobs} openReportUrl={openReportUrl} />}
+            {active === "Leaderboard" && (
+              <div>
+                <PageHeader kicker="Workspace Security" title="Leaderboard" />
+                <div style={{ padding: "24px 32px", maxWidth: 800 }}>
+                  <Leaderboard token={authSession.token || ""} />
+                </div>
+              </div>
+            )}
             {active === "Settings" && <SettingsSection systemStatus={systemStatus} />}
           </motion.div>
         </AnimatePresence>
       </main>
+      {systemStatus?.llm_features?.chat_assistant ? (
+        <ChatWidget jobId={selectedJobId} token={authSession.token || ""} />
+      ) : null}
     </div>
   );
 }
@@ -408,7 +469,7 @@ function OverviewSection({ jobs, findings, criticalCount, setActive }: { jobs: J
   );
 }
 
-function AuditsSection({ jobs, selected, onSelect, newUrl, setNewUrl, newBranch, setNewBranch, onJobStarted, openReportUrl, streamActive, logs }: { jobs: Job[]; selected: Job | null; onSelect: (id: string) => void; newUrl: string; setNewUrl: (s: string) => void; newBranch: string; setNewBranch: (s: string) => void; onJobStarted: (p: {repo_url: string; repo_branch: string;}) => Promise<Job | null>; openReportUrl: (id: string) => void; streamActive: boolean; logs: LogLine[]; }) {
+function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, newBranch, setNewBranch, onJobStarted, openReportUrl, streamActive, logs, token }: { jobs: Job[]; selected: Job | null; insight: AuditInsightResponse | null; onSelect: (id: string) => void; newUrl: string; setNewUrl: (s: string) => void; newBranch: string; setNewBranch: (s: string) => void; onJobStarted: (p: {repo_url: string; repo_branch: string;}) => Promise<Job | null>; openReportUrl: (id: string) => void; streamActive: boolean; logs: LogLine[]; token: string; }) {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -504,6 +565,14 @@ function AuditsSection({ jobs, selected, onSelect, newUrl, setNewUrl, newBranch,
                 </div>
               </div>
 
+              {insight?.enabled && insight.insight && (
+                <div style={{ marginBottom: 16, padding: "12px 14px", background: "rgba(255, 107, 43, 0.08)", border: "1px solid rgba(255, 107, 43, 0.18)", borderRadius: 6 }}>
+                  <div className="mono" style={{ fontSize: 9, color: theme.orange, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>AI Insight</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: theme.text }}>{insight.insight}</div>
+                  <div style={{ fontSize: 11, color: theme.muted, marginTop: 8 }}>Optional LLM hint only. Findings and report evidence remain the source of truth.</div>
+                </div>
+              )}
+
               {selected.report_pdf_url && (
                 <button onClick={() => openReportUrl(selected.id)} style={{ width: "100%", padding: "10px", border: `1px solid ${theme.border}`, borderRadius: 6, background: "transparent", color: theme.text, fontSize: 12, fontWeight: 500 }}>
                   Download PDF report ↓
@@ -516,6 +585,13 @@ function AuditsSection({ jobs, selected, onSelect, newUrl, setNewUrl, newBranch,
               )}
 
               <AuditVerificationCard job={selected} />
+
+              {selected.status === "completed" ? (
+                <div style={{ marginTop: 20 }}>
+                  <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Attack Graph</div>
+                  <AttackGraph jobId={selected.id} token={token} />
+                </div>
+              ) : null}
             </div>
 
             <div style={{ borderTop: `1px solid ${theme.border}`, padding: "14px 18px" }}>

@@ -13,6 +13,7 @@ export interface Job {
   cancel_requested_at: string | null;
   report_pdf_url: string | null;
   error_message: string | null;
+  security_score?: number | null;
   email_delivered?: boolean;
   github_issues_raised?: boolean;
   github_pr_created?: boolean;
@@ -51,9 +52,16 @@ export interface SystemAgent {
 export interface SystemStatus {
   api: string;
   database: string;
-  debug: boolean;
-  sandbox_mode: "simulation" | "docker";
+  readiness?: string;
+  debug?: boolean;
+  sandbox_mode?: "simulation" | "docker";
   stats: { jobs: number; findings: number };
-  integrations: Record<string, boolean>;
+  integrations?: Record<string, boolean>;
+  llm_features?: {
+    chat_assistant: boolean;
+    dashboard_insight: boolean;
+    attack_chain_naming: boolean;
+    pr_description: boolean;
+  };
   agents: SystemAgent[];
 }

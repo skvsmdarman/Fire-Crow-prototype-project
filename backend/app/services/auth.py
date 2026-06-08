@@ -40,7 +40,6 @@ _password_hasher = PasswordHasher(
     salt_len=16,
 )
 
-_revoked_jtis: dict[str, datetime] = {}
 _redis_client = None
 _redis_checked = False
 
@@ -76,9 +75,9 @@ def _get_redis_client():
         _redis_client = client
     except Exception:
         if settings.DEBUG:
-            logger.info("Redis token denylist unavailable in DEBUG mode; using in-memory fallback.")
+            logger.info("Redis token denylist unavailable in DEBUG mode.")
         else:
-            logger.error("Redis token denylist unavailable in production; token validation will fail closed.")
+            logger.critical("Redis token denylist unavailable in production; token validation will fail closed.")
         _redis_client = None
 
     return _redis_client
@@ -88,11 +87,7 @@ def _denylist_key(jti: str) -> str:
     return f"firecrow:revoked_jti:{jti}"
 
 
-def _cleanup_memory_denylist() -> None:
-    now = _utc_now()
-    expired = [jti for jti, expires_at in _revoked_jtis.items() if expires_at <= now]
-    for jti in expired:
-        _revoked_jtis.pop(jti, None)
+
 
 
 def _claims(expires_delta: timedelta) -> tuple[datetime, datetime, datetime, str]:
@@ -178,22 +173,19 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
     if not jti:
         return True
 
+    if not _get_redis_client() and not settings.DEBUG:
+        logger.critical("Redis unavailable in production – token validation impossible.")
+        return True  # fail closed
+
     client = _get_redis_client()
     if client is not None:
         try:
             return bool(client.exists(_denylist_key(str(jti))))
         except Exception:
             if not settings.DEBUG:
-                logger.error("Redis denylist lookup failed; rejecting token jti=%s.", jti)
+                logger.critical("Redis denylist lookup failed; rejecting token jti=%s.", jti)
                 return True
-            logger.info("Redis denylist lookup failed in DEBUG mode; using in-memory fallback.")
-
-    if not settings.DEBUG and settings.REDIS_URL:
-        return True
-
-    _cleanup_memory_denylist()
-    if str(jti) in _revoked_jtis:
-        return True
+            logger.info("Redis denylist lookup failed in DEBUG mode.")
 
     if db is not None:
         from backend.app.models.user import UserSession
@@ -210,6 +202,10 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
     if not jti or not exp:
         return False
 
+    if not _get_redis_client() and not settings.DEBUG:
+        logger.critical("Redis unavailable in production – token validation impossible.")
+        return True  # fail closed
+
     try:
         expires_at = datetime.fromtimestamp(int(exp), tz=timezone.utc)
     except (TypeError, ValueError):
@@ -220,25 +216,10 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
     if client is not None:
         try:
             client.setex(_denylist_key(str(jti)), ttl, "1")
-            if db is not None:
-                from backend.app.models.user import UserSession
-
-                sess = db.query(UserSession).filter(UserSession.id == jti).first()
-                if sess:
-                    sess.is_revoked = True
-                    sess.revocation_reason = reason or "logout"
-                    db.commit()
-            return True
         except Exception:
             logger.error("Failed to write token jti=%s to Redis denylist.", jti)
             if not settings.DEBUG and settings.REDIS_URL:
                 return False
-
-    if not settings.DEBUG and settings.REDIS_URL:
-        return False
-
-    _revoked_jtis[str(jti)] = expires_at
-    _cleanup_memory_denylist()
 
     if db is not None:
         from backend.app.models.user import UserSession
@@ -548,5 +529,4 @@ def revoke_session_family(db: Session, token_family: str, reason: str = "family_
                 client.setex(_denylist_key(sess.id), ttl, "1")
             except Exception:
                 pass
-        _revoked_jtis[sess.id] = sess.expires_at
     db.commit()

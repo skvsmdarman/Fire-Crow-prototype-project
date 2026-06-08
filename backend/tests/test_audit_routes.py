@@ -101,6 +101,80 @@ def test_get_job_detail_serializes_findings():
     assert payload["findings"][0]["title"] == "SQL Injection"
 
 
+def test_get_job_insight_returns_disabled_state(monkeypatch):
+    headers, user_id = _auth_session("insight-disabled-user")
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditJob(
+                id="job-insight-disabled",
+                user_id=user_id,
+                repo_url="https://example.com/repo",
+                repo_branch="main",
+                status=JobStatus.COMPLETED,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr("backend.app.api.routes_audit.is_llm_enabled", lambda feature: False)
+
+    response = client.get("/api/v1/audit/job/job-insight-disabled/insight", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"insight": None, "enabled": False}
+
+
+def test_get_job_insight_returns_safe_summary(monkeypatch):
+    headers, user_id = _auth_session("insight-enabled-user")
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditJob(
+                id="job-insight-enabled",
+                user_id=user_id,
+                repo_url="https://example.com/repo",
+                repo_branch="main",
+                status=JobStatus.COMPLETED,
+            )
+        )
+        db.add_all(
+            [
+                FindingModel(
+                    id="finding-insight-critical",
+                    job_id="job-insight-enabled",
+                    agent_source="SAST",
+                    title="Hardcoded secret",
+                    description="A credential is committed to the repository.",
+                    severity=Severity.CRITICAL,
+                ),
+                FindingModel(
+                    id="finding-insight-high",
+                    job_id="job-insight-enabled",
+                    agent_source="SEMGREP",
+                    title="SQL Injection",
+                    description="Unsanitized query path.",
+                    severity=Severity.HIGH,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr("backend.app.api.routes_audit.is_llm_enabled", lambda feature: True)
+    monkeypatch.setattr("backend.app.api.routes_audit.safe_llm_call", lambda *args, **kwargs: "Critical credential exposure and injection risk require immediate action.")
+
+    response = client.get("/api/v1/audit/job/job-insight-enabled/insight", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "insight": "Critical credential exposure and injection risk require immediate action.",
+        "enabled": True,
+    }
+
+
 def test_submit_audit_dispatches_celery_task(monkeypatch):
     calls = []
     headers, user_id = _auth_session()
@@ -108,7 +182,13 @@ def test_submit_audit_dispatches_celery_task(monkeypatch):
     def fake_apply_async(*, kwargs, task_id):
         calls.append({"kwargs": kwargs, "task_id": task_id})
 
-    monkeypatch.setattr("backend.app.api.routes_audit._is_broker_reachable", lambda: True)
+    class MockRedis:
+        def get(self, name):
+            if name == "celery:heartbeat":
+                return b"alive"
+            return None
+
+    monkeypatch.setattr("backend.app.services.auth._get_redis_client", lambda: MockRedis())
     monkeypatch.setattr("backend.app.api.routes_audit.run_audit_job_task.apply_async", fake_apply_async)
 
     response = client.post(

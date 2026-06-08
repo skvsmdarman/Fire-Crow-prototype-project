@@ -67,6 +67,12 @@ async def system_status(
         "api": "online",
         "database": database,
         "readiness": "degraded" if database != "connected" else "ready",
+        "llm_features": {
+            "chat_assistant": settings.LLM_CHAT_ASSISTANT,
+            "dashboard_insight": settings.LLM_DASHBOARD_INSIGHT,
+            "attack_chain_naming": settings.LLM_ATTACK_CHAIN_NAMING,
+            "pr_description": settings.LLM_PR_DESCRIPTION,
+        },
         "stats": {
             "jobs": total_jobs,
             "findings": total_findings,

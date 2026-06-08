@@ -1,12 +1,16 @@
 export interface SystemStatus {
-  status: string;
-  worker_status: string;
-  tasks_queued: number;
-  tasks_running: number;
-  scanners_available: string[];
-  active_sandboxes: number;
-  celery_active: boolean;
+  api: string;
+  database: string;
+  readiness?: string;
   debug?: boolean;
-  sandbox_mode?: boolean;
-  integrations?: Record<string, unknown>;
+  sandbox_mode?: "simulation" | "docker";
+  stats?: { jobs: number; findings: number };
+  integrations?: Record<string, boolean>;
+  llm_features?: {
+    chat_assistant: boolean;
+    dashboard_insight: boolean;
+    attack_chain_naming: boolean;
+    pr_description: boolean;
+  };
+  agents?: Array<{ name: string; role: string; status: string }>;
 }

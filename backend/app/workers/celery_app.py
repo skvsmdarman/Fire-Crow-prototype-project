@@ -40,3 +40,18 @@ def run_audit_job_task(self, job_id: str, user_id: str, repo_url: str, repo_bran
     )
     logger.info(f"Celery background job {job_id} finished with terminal status {final_state.status.value}.")
     return final_state.model_dump(mode="json")
+
+
+@celery_app.task(name="heartbeat")
+def heartbeat():
+    from backend.app.services.auth import _get_redis_client
+    redis_client = _get_redis_client()
+    if redis_client:
+        redis_client.setex("celery:heartbeat", 60, "alive")
+
+celery_app.conf.beat_schedule = {
+    'heartbeat-every-30s': {
+        'task': 'heartbeat',
+        'schedule': 30.0,
+    },
+}

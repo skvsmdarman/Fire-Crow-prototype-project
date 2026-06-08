@@ -161,3 +161,31 @@ def _persist_final_job_state(
         )
     )
     db.commit()
+
+    # Trigger Push Notification
+    try:
+        from backend.app.models import PushSubscription
+        from backend.app.services.push_notify import send_web_push
+        import json
+        
+        subscriptions = db.query(PushSubscription).filter(PushSubscription.user_id == job.user_id).all()
+        if subscriptions:
+            repo_name = job.repo_url.split("/")[-1] if "/" in job.repo_url else job.repo_url
+            score_text = f" (Score: {job.security_score:.0f})" if job.security_score is not None else ""
+            payload = {
+                "title": "Fire Crow Audit Finished",
+                "body": f"Audit for {repo_name} finished: {terminal_status.value}{score_text}."
+            }
+            payload_str = json.dumps(payload)
+            for sub in subscriptions:
+                sub_info = {
+                    "endpoint": sub.endpoint,
+                    "keys": {
+                        "p256dh": sub.p256dh,
+                        "auth": sub.auth
+                    }
+                }
+                send_web_push(sub_info, payload_str)
+    except Exception:
+        logger.exception("Failed to send push notifications for job finalization")
+
