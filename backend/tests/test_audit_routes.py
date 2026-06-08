@@ -456,3 +456,73 @@ def test_health_does_not_leak_database_exception():
     assert response.status_code == 200
     assert response.json() == {"status": "degraded", "database": "unavailable"}
     assert "secret" not in response.text
+
+
+def test_email_report_endpoint(monkeypatch, tmp_path):
+    headers, user_id = _auth_session("email-test-user")
+    (tmp_path / "job-email-report.pdf").write_bytes(b"%PDF-1.4 test report")
+
+    db = SessionLocal()
+    try:
+        # Create a user in db and set email
+        user = db.query(User).filter(User.id == user_id).first()
+        assert user is not None
+        user.email = "test-github-email@example.com"
+        db.commit()
+
+        db.add(
+            AuditJob(
+                id="job-email-test",
+                user_id=user_id,
+                repo_url="https://example.com/report",
+                repo_branch="main",
+                status=JobStatus.COMPLETED,
+                report_pdf_url="/reports/job-email-report.pdf",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr("backend.app.api.routes_audit.REPORTS_DIR", tmp_path)
+    
+    # Mock send_email_report
+    calls = []
+    def fake_send_email_report(self, to_email, report_url, job_id, counts, repo_url="", pdf_path=None):
+        calls.append({
+            "to_email": to_email,
+            "report_url": report_url,
+            "job_id": job_id,
+            "counts": counts,
+            "repo_url": repo_url,
+            "pdf_path": pdf_path
+        })
+        return True
+    
+    from backend.app.services.reporter import ReportGenerator
+    monkeypatch.setattr(ReportGenerator, "send_email_report", fake_send_email_report)
+
+    # 1. Test sending to custom email
+    response = client.post(
+        "/api/v1/audit/job/job-email-test/email",
+        json={"email": "custom-email@example.com"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["recipient"] == "custom-email@example.com"
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == "custom-email@example.com"
+    assert calls[0]["job_id"] == "job-email-test"
+    import os
+    assert os.path.exists(calls[0]["pdf_path"])
+
+    # 2. Test fallback to GitHub OAuth email
+    response = client.post(
+        "/api/v1/audit/job/job-email-test/email",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["recipient"] == "test-github-email@example.com"
+    assert len(calls) == 2
+    assert calls[1]["to_email"] == "test-github-email@example.com"

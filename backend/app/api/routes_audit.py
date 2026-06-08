@@ -62,6 +62,7 @@ def _dispatch_audit_job(
     user_id: str,
     repo_url: str,
     repo_branch: str,
+    custom_email: str = "",
 ) -> None:
     if not _is_broker_reachable():
         logger.info("Redis broker is unavailable. Running job %s through local BackgroundTasks fallback.", job_id)
@@ -71,6 +72,7 @@ def _dispatch_audit_job(
             user_id,
             repo_url,
             repo_branch,
+            custom_email,
         )
         return
 
@@ -81,6 +83,7 @@ def _dispatch_audit_job(
                 "user_id": user_id,
                 "repo_url": repo_url,
                 "repo_branch": repo_branch,
+                "custom_email": custom_email,
             },
             task_id=job_id,
         )
@@ -96,6 +99,7 @@ def _dispatch_audit_job(
             user_id,
             repo_url,
             repo_branch,
+            custom_email,
         )
 
 
@@ -238,6 +242,7 @@ async def submit_audit(
         user_id=user_id,
         repo_url=payload.repo_url,
         repo_branch=payload.repo_branch or "main",
+        custom_email=payload.custom_email or "",
     )
 
     return build_job_response(job)
@@ -395,3 +400,127 @@ async def download_report(
 
     logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
     raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")
+
+
+from pydantic import BaseModel
+from typing import Optional
+
+class EmailReportRequest(BaseModel):
+    email: Optional[str] = None
+
+
+@router.post("/job/{job_id}/email")
+async def email_report(
+    job_id: str,
+    payload: EmailReportRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
+    """On-demand endpoint to send/resend the PDF report to a user via email."""
+    import shutil
+    from backend.app.schemas.audit_state import Severity
+    from backend.app.services.reporter import ReportGenerator
+
+    # 1. Resolves the user job details & compiled findings counts
+    job = get_owned_job_or_404(db, job_id, user_id)
+    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+
+    counts = {
+        Severity.CRITICAL: 0,
+        Severity.HIGH: 0,
+        Severity.MEDIUM: 0,
+        Severity.LOW: 0,
+        Severity.INFO: 0,
+    }
+    for f in findings:
+        sev = f.severity
+        if isinstance(sev, str):
+            try:
+                sev = Severity(sev.lower())
+            except ValueError:
+                sev = Severity.INFO
+        counts[sev] = counts.get(sev, 0) + 1
+
+    # 2. Determines the recipient (either payload.email, or defaults to the user's GitHub email)
+    recipient = payload.email
+    if not recipient:
+        user = db.query(User).filter(User.id == job.user_id).first()
+        if user and user.email:
+            recipient = user.email
+
+    if not recipient:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recipient email could not be determined. Please specify an email address.",
+        )
+
+    # 3. Resolves the local file path for the PDF report
+    if not job.report_pdf_url:
+        raise HTTPException(status_code=404, detail="Report not ready or missing")
+
+    pdf_file_path = None
+    if job.report_pdf_url.startswith("artifact://"):
+        artifact_id = job.report_pdf_url.split("://")[1]
+        from backend.app.services.storage import storage_service
+        try:
+            file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+            pdf_file_path = file_path
+        except Exception as e:
+            logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
+            raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
+    else:
+        parsed_report_url = urlparse(job.report_pdf_url)
+        is_legacy_local_report = (
+            parsed_report_url.scheme in {"http", "https"}
+            and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+            and parsed_report_url.path.startswith("/reports/")
+        )
+        if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
+            file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
+            pdf_file_path = file_path
+
+    if not pdf_file_path or not pdf_file_path.exists():
+        raise HTTPException(status_code=404, detail="PDF report file not found on disk")
+
+    # Make a copy of the PDF file to a temporary location so that send_email_report's finally block does not delete the original
+    reports_dir = WORKSPACE_DIR / "workspace" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    temp_pdf_filename = f"temp_{job_id}_{pdf_file_path.name}"
+    temp_pdf_path = reports_dir / temp_pdf_filename
+
+    try:
+        shutil.copy2(pdf_file_path, temp_pdf_path)
+    except Exception as copy_err:
+        logger.error("Failed to copy PDF report to temporary location: %s", str(copy_err))
+        raise HTTPException(status_code=500, detail="Internal server error preparing report attachment")
+
+    # 4. Invokes the ReportGenerator service to send the email immediately
+    generator = ReportGenerator()
+
+    # Generate presigned URL specifically for the email link (valid for 7 days) if remote storage
+    email_url = job.report_pdf_url
+    if job.report_pdf_url.startswith("artifact://"):
+        artifact_id = job.report_pdf_url.split("://")[1]
+        from backend.app.services.storage import storage_service
+
+        if storage_service.is_s3_active():
+            try:
+                email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)
+            except Exception:
+                email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+        else:
+            email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+
+    success = generator.send_email_report(
+        to_email=recipient,
+        report_url=email_url,
+        job_id=job_id,
+        counts=counts,
+        repo_url=job.repo_url,
+        pdf_path=str(temp_pdf_path),
+    )
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send report email.")
+
+    return {"message": "Email report triggered successfully.", "recipient": recipient}

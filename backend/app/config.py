@@ -220,3 +220,8 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+_global_state = {
+    "r2_disabled": False
+}
+

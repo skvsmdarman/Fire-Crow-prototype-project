@@ -77,7 +77,7 @@ def test_settings_rejects_latest_scanner_image_in_production():
 
 def test_settings_do_not_hardcode_local_frontend_url():
     configured = Settings(
-        _env_file=None,
+        _env_file=None,  # type: ignore
         DEBUG=False,
         SECRET_KEY="x" * 40,
         DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",

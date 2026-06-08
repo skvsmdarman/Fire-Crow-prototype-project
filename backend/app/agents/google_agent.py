@@ -3,6 +3,7 @@ import json
 import urllib.request
 import urllib.error
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
@@ -112,6 +113,16 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         models_to_try = [m for m in dict.fromkeys(models_to_try) if m]
         success = False
 
+        RETRYABLE_GEMINI_HTTP_CODES = {404, 408, 429, 500, 502, 503, 504}
+        
+        def _is_timeout_error(exc: Exception) -> bool:
+            if isinstance(exc, (TimeoutError, socket.timeout)):
+                return True
+            if isinstance(exc, urllib.error.URLError):
+                return isinstance(exc.reason, (TimeoutError, socket.timeout)) or "timed out" in str(exc.reason).lower()
+            return "timed out" in str(exc).lower()
+
+        last_error_summary = ""
         for model_name in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
             logger.info(f"Attempting Gemini call for Google Security Agent using model: {model_name}")
@@ -140,18 +151,34 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
                     success = True
                     break
             except urllib.error.HTTPError as err:
-                if err.code == 404:
-                    logger.warning(f"Model {model_name} returned 404. Trying next fallback model...")
+                last_error_summary = f"HTTP {err.code}: {err.reason}"
+                if err.code in RETRYABLE_GEMINI_HTTP_CODES:
+                    logger.warning(
+                        "Gemini model %s returned HTTP %s. Trying next fallback model.",
+                        model_name,
+                        err.code,
+                    )
                     continue
-                else:
-                    logger.exception(f"Gemini API call failed for model {model_name} with status {err.code}: {err}")
-                    break
-            except Exception as exc:
-                logger.exception(f"Gemini API call failed for model {model_name}: {exc}")
+                logger.exception(
+                    "Gemini API call failed for model %s with non-retryable status %s: %s",
+                    model_name,
+                    err.code,
+                    err,
+                )
                 break
+            except Exception as exc:
+                last_error_summary = str(exc)
+                if _is_timeout_error(exc):
+                    logger.warning("Gemini model %s timed out. Trying next fallback model.", model_name)
+                    continue
+                logger.exception("Gemini API call failed for model %s. Trying next fallback model.", model_name)
+                continue
 
         if not success:
-            logs.append("All Gemini models failed.")
+            if last_error_summary:
+                logs.append(f"All Gemini models failed. Last error: {last_error_summary}")
+            else:
+                logs.append("All Gemini models failed.")
             if not settings.DEBUG:
                 return {
                     "google_agent_delivered": False,

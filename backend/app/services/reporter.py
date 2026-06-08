@@ -3,7 +3,7 @@ import os
 import html
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from backend.app.config import settings, WORKSPACE_DIR
+from backend.app.config import settings, WORKSPACE_DIR, _global_state
 from backend.app.schemas import Finding, Severity
 from backend.app.services.redaction import redact_text
 
@@ -671,6 +671,9 @@ class ReportGenerator:
         Falls back to local file URI if R2 credentials are not set.
         """
         filename = os.path.basename(pdf_path)
+        if _global_state.get("r2_disabled", False):
+            logger.info("Cloudflare R2 operations are disabled due to a previous authentication failure. Serving locally.")
+            return f"/reports/{filename}"
         if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
             logger.info("Cloudflare R2 environment variables not fully configured. Serving locally.")
             return f"/reports/{filename}"
@@ -708,9 +711,10 @@ class ReportGenerator:
             redacted_error = redact_text(str(e))
             if _is_r2_auth_error(redacted_error):
                 logger.warning(
-                    "R2 credentials were rejected for job %s. Serving the local report endpoint instead.",
+                    "R2 credentials were rejected for job %s. Disabling future R2 operations and serving local report.",
                     job_id,
                 )
+                _global_state["r2_disabled"] = True
             else:
                 logger.error(
                     "R2 upload failed for job %s: %s. Falling back to local report endpoint.",
@@ -724,6 +728,9 @@ class ReportGenerator:
         Scans the Cloudflare R2 bucket and deletes any objects that are not PDFs (e.g. temporary logs, non-pdf artifacts)
         to optimize storage.
         """
+        if _global_state.get("r2_disabled", False):
+            logger.info("Cloudflare R2 operations are disabled due to a previous authentication failure. Skipping bucket clutter cleanup.")
+            return
         if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
             logger.info("R2 storage not configured. Skipping bucket clutter cleanup.")
             return
@@ -771,7 +778,12 @@ class ReportGenerator:
             else:
                 logger.info("No non-PDF clutter found in R2 bucket.")
         except Exception as e:
-            logger.error("Failed cleaning up R2 bucket: %s", redact_text(str(e)))
+            redacted_error = redact_text(str(e))
+            if _is_r2_auth_error(redacted_error):
+                logger.warning("R2 credentials rejected during cleanup. Disabling future R2 operations.")
+                _global_state["r2_disabled"] = True
+            else:
+                logger.error("Failed cleaning up R2 bucket: %s", redacted_error)
 
 
     def send_email_report(
@@ -1047,6 +1059,15 @@ class ReportGenerator:
         
         <div class="cta-container">
           <a href="{safe_report_url}" class="cta-button">View Security Report</a>
+        </div>
+        
+        <div style="margin-top: 32px; padding: 16px; background-color: #f8fafc; border-left: 4px solid #7c3aed; border-radius: 8px; text-align: left; box-sizing: border-box;">
+          <p style="margin: 0; font-size: 14px; font-weight: 700; color: #1e1b4b; display: flex; align-items: center;">
+            <span style="font-size: 16px; margin-right: 8px;">📎</span> PDF Report Attached
+          </p>
+          <p style="margin: 6px 0 0 0; font-size: 13px; color: #4b5563; line-height: 1.5;">
+            A full high-fidelity PDF copy of this security audit report has been compiled and attached to this email for offline reading and records compliance.
+          </p>
         </div>
       </div>
       

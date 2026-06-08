@@ -764,12 +764,17 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     )
     pdf_url = f"artifact://{artifact.id}"
 
-    user_email = "audit-recipient@firecrow.dev"
-    if db_job:
+    user_email = ""
+    if state.custom_email:
+        user_email = state.custom_email
+    elif db_job:
         from backend.app.models.user import User
         user = db.query(User).filter(User.id == db_job.user_id).first()
         if user and user.email:
             user_email = user.email
+
+    if not user_email:
+        user_email = "audit-recipient@firecrow.dev"
 
     # Generate a presigned URL specifically for the email link (valid for 7 days)
     email_url = pdf_url

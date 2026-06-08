@@ -18,7 +18,7 @@ from backend.app.services.auth import decrypt_provider_token
 logger = logging.getLogger("firecrow.orchestrator.runtime")
 
 
-def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str) -> AuditState:
+def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str, custom_email: str = "") -> AuditState:
     db = SessionLocal()
     initial_state = AuditState(
         job_id=job_id,
@@ -26,6 +26,7 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         repo_url=repo_url,
         repo_branch=repo_branch,
         status=JobStatus.RUNNING,
+        custom_email=custom_email,
     )
     tracker_token = initialize_runtime_tracker(initial_state)
     result_state: AuditState = initial_state

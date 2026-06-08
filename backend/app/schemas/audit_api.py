@@ -15,6 +15,7 @@ class SubmitJobRequest(BaseModel):
     repo_branch: Optional[str] = Field("main", max_length=255)
     attestation_accepted: bool = Field(False, description="Confirm that you are authorized to run security audits on this repository.")
     authorization_scope: str = Field("authorized_representative", max_length=255)
+    custom_email: Optional[str] = Field(default=None, max_length=255)
 
     @field_validator("attestation_accepted")
     @classmethod

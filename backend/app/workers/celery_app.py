@@ -28,9 +28,15 @@ celery_app.conf.update(
 
 
 @celery_app.task(bind=True, name="run_audit_job_task")
-def run_audit_job_task(self, job_id: str, user_id: str, repo_url: str, repo_branch: str):
+def run_audit_job_task(self, job_id: str, user_id: str, repo_url: str, repo_branch: str, custom_email: str = ""):
     """Celery task that executes the orchestrator LangGraph pipeline for an audit job."""
     logger.info(f"Starting Celery background job {job_id} for user {user_id}")
-    final_state = execute_audit_job(job_id=job_id, user_id=user_id, repo_url=repo_url, repo_branch=repo_branch)
+    final_state = execute_audit_job(
+        job_id=job_id,
+        user_id=user_id,
+        repo_url=repo_url,
+        repo_branch=repo_branch,
+        custom_email=custom_email,
+    )
     logger.info(f"Celery background job {job_id} finished with terminal status {final_state.status.value}.")
     return final_state.model_dump(mode="json")

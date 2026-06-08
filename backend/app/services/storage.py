@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings, WORKSPACE_DIR
+from backend.app.config import settings, WORKSPACE_DIR, _global_state
 from backend.app.models.compliance import ArtifactObject, Membership, RetentionPolicy
 from backend.app.models.user import User
 from backend.app.services.redaction import redact_text
@@ -28,6 +28,20 @@ def calculate_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _is_r2_auth_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(
+        token in lowered
+        for token in (
+            "invalidaccesskeyid",
+            "accessdenied",
+            "signaturedoesnotmatch",
+            "malformed access key id",
+            "invalid access key id",
+        )
+    )
+
+
 class StorageService:
     def __init__(self):
         self.r2_bucket = settings.R2_BUCKET_NAME or os.getenv("CLOUDFLARE_R2_BUCKET", "firecrow-reports")
@@ -36,6 +50,8 @@ class StorageService:
         self.r2_secret_key = settings.R2_SECRET_ACCESS_KEY or os.getenv("CLOUDFLARE_R2_SECRET_KEY")
 
         self.s3_client = None
+        if _global_state.get("r2_disabled", False):
+            return
         if self.r2_endpoint and self.r2_access_key and self.r2_secret_key:
             try:
                 import boto3  # type: ignore
@@ -58,6 +74,8 @@ class StorageService:
                 logger.error("Failed to initialize S3 client: %s", redact_text(str(e)))
 
     def is_s3_active(self) -> bool:
+        if _global_state.get("r2_disabled", False):
+            return False
         return self.s3_client is not None
 
     def upload_artifact(
@@ -100,6 +118,9 @@ class StorageService:
         safe_file_name = "".join(c for c in file_name if c.isalnum() or c in "._-")
         object_key = f"tenants/{organization_id}/{artifact_type}/{unique_id}-{safe_file_name}"
 
+        if _global_state.get("r2_disabled", False):
+            self.s3_client = None
+
         if self.s3_client is not None:
             try:
                 logger.info("Uploading artifact key '%s' to S3/R2", object_key)
@@ -111,7 +132,13 @@ class StorageService:
                 )
                 storage_provider = "cloudflare_r2"
             except Exception as e:
-                logger.error("S3 upload failed: %s", redact_text(str(e)))
+                err_msg = str(e)
+                logger.error("S3 upload failed: %s", redact_text(err_msg))
+                if _is_r2_auth_error(err_msg):
+                    logger.warning("R2 authentication/credentials invalid. Disabling S3 client for this session.")
+                    _global_state["r2_disabled"] = True
+                    self.s3_client = None
+                
                 from backend.app.config import settings
                 if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
                     logger.info("Falling back to local storage")

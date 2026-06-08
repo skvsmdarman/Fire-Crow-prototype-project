@@ -65,6 +65,7 @@ class AuditState(BaseModel):
     github_access_token: str = ""
     github_token_scopes: list[str] = []
     created_at: datetime = PydanticField(default_factory=get_utc_now)
+    custom_email: str = ""
 
     # --- Phase Tracking ---
     current_phase: str = "intake"
