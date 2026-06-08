@@ -106,9 +106,11 @@ export default function Dashboard() {
   const router = useRouter();
   const authSession = useAuthSession();
   const isAuthenticated = authSession.hasDashboardSession;
+  const validateSession = authSession.validateSession;
 
   const [active, setActive] = useState("Overview");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [isValidating, setIsValidating] = useState(true);
 
   const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
@@ -166,17 +168,28 @@ export default function Dashboard() {
   });
 
   const fetchSystemStatus = useCallback(() => {
-    if (!isAuthenticated) return;
     apiFetchSystemStatus().then(setSystemStatus).catch(console.error);
-  }, [isAuthenticated]);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace("/signin");
       return;
     }
-    fetchSystemStatus();
-  }, [isAuthenticated, fetchSystemStatus, router]);
+    
+    let isMounted = true;
+    validateSession().then((isValid) => {
+      if (!isMounted) return;
+      if (!isValid) {
+        router.replace("/signin");
+      } else {
+        setIsValidating(false);
+        fetchSystemStatus();
+      }
+    });
+    
+    return () => { isMounted = false; };
+  }, [isAuthenticated, validateSession, fetchSystemStatus, router]);
 
   useEffect(() => {
     if (selectedJob?.id) {
@@ -209,8 +222,15 @@ export default function Dashboard() {
 
   const filteredFindings = filter === "all" ? findings : findings.filter(f => f.severity === filter);
 
-  if (!isAuthenticated) {
-    return null;
+  if (!isAuthenticated || isValidating) {
+    return (
+      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "#0d0d0d" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ width: 32, height: 32, border: "2px solid #333", borderTopColor: theme.orange, borderRadius: "50%" }} />
+          <div className="mono" style={{ fontSize: 11, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase" }}>Validating session...</div>
+        </div>
+      </div>
+    );
   }
 
   const openReportUrl = async (jobId: string) => {
@@ -235,36 +255,61 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "100vh" }}>
-      {/* Sidebar */}
-      <aside style={{ borderRight: `1px solid ${theme.border}`, padding: "24px 0", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", background: theme.bg }}>
-        <div style={{ padding: "0 20px 24px", borderBottom: `1px solid ${theme.border}` }}>
+    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh", background: "#050505", overflow: "hidden" }}>
+      {/* Sidebar with Glassmorphism */}
+      <aside style={{ 
+        borderRight: `1px solid rgba(255,255,255,0.05)`, 
+        padding: "24px 0", 
+        display: "flex", 
+        flexDirection: "column", 
+        position: "sticky", 
+        top: 0, 
+        height: "100vh", 
+        background: "rgba(10, 10, 10, 0.4)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        boxShadow: "10px 0 30px rgba(0,0,0,0.5)",
+        zIndex: 10
+      }}>
+        <div style={{ padding: "0 24px 32px", borderBottom: `1px solid rgba(255,255,255,0.05)` }}>
           <Logo />
         </div>
-        <nav style={{ flex: 1, padding: "16px 10px" }}>
+        <nav style={{ flex: 1, padding: "20px 16px" }}>
           {SECTIONS.map(s => (
-            <button key={s} onClick={() => setActive(s)} style={{ width: "100%", textAlign: "left", padding: "9px 12px", borderRadius: 6, fontSize: 13, fontWeight: active === s ? 500 : 400, color: active === s ? theme.text : theme.muted, background: active === s ? "#1a1a1a" : "transparent", marginBottom: 2, display: "flex", alignItems: "center", gap: 10, transition: "all .15s" }}
-              onMouseEnter={e => { if (active !== s) e.currentTarget.style.color = theme.text; }}
-              onMouseLeave={e => { if (active !== s) e.currentTarget.style.color = theme.muted; }}>
+            <button key={s} onClick={() => setActive(s)} style={{ 
+                width: "100%", textAlign: "left", padding: "12px 16px", borderRadius: 10, 
+                fontSize: 14, fontWeight: active === s ? 500 : 400, 
+                color: active === s ? theme.text : theme.muted, 
+                background: active === s ? "linear-gradient(90deg, rgba(255,107,43,0.1), transparent)" : "transparent",
+                borderLeft: active === s ? `3px solid ${theme.orange}` : "3px solid transparent",
+                marginBottom: 4, display: "flex", alignItems: "center", gap: 12, 
+                transition: "all .2s cubic-bezier(0.4, 0, 0.2, 1)" 
+              }}
+              onMouseEnter={e => { if (active !== s) { e.currentTarget.style.color = theme.text; e.currentTarget.style.background = "rgba(255,255,255,0.02)"; } }}
+              onMouseLeave={e => { if (active !== s) { e.currentTarget.style.color = theme.muted; e.currentTarget.style.background = "transparent"; } }}>
               <SectionIcon name={s} active={active === s} />
               {s}
             </button>
           ))}
         </nav>
-        <div style={{ padding: "16px 12px", borderTop: `1px solid ${theme.border}` }}>
-          <div style={{ padding: "10px 10px", borderRadius: 6, background: theme.surface, border: `1px solid ${theme.border}`, marginBottom: 10 }}>
+        <div style={{ padding: "20px 16px", borderTop: `1px solid rgba(255,255,255,0.05)` }}>
+          <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: `1px solid rgba(255,255,255,0.05)`, marginBottom: 12, backdropFilter: "blur(10px)" }}>
             <div style={{ fontSize: 11, color: theme.muted, marginBottom: 4 }}>Workspace</div>
             <div style={{ fontSize: 13, fontWeight: 500 }}>{authSession.workspace || "acme-corp"}</div>
             <div className="mono" style={{ fontSize: 9, color: theme.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{authSession.userId || "usr_unknown"}</div>
           </div>
-          <button onClick={handleSignOut} style={{ width: "100%", padding: "7px 10px", border: `1px solid ${theme.border}`, borderRadius: 6, background: "transparent", color: theme.muted, fontSize: 12, textAlign: "left" }}>Sign out</button>
+          <button onClick={handleSignOut} style={{ width: "100%", padding: "10px", border: `1px solid rgba(255,255,255,0.05)`, borderRadius: 10, background: "transparent", color: theme.muted, fontSize: 13, textAlign: "center", transition: "all .2s" }} onMouseEnter={e => { e.currentTarget.style.color = theme.text; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }} onMouseLeave={e => { e.currentTarget.style.color = theme.muted; e.currentTarget.style.background = "transparent"; }}>Sign out</button>
         </div>
       </aside>
 
-      {/* Main */}
-      <main style={{ overflowY: "auto", background: "#0d0d0d" }}>
+      {/* Main Area */}
+      <main style={{ 
+        overflowY: "auto", 
+        background: "radial-gradient(circle at top left, rgba(255,107,43,0.05), transparent 50%), radial-gradient(circle at bottom right, rgba(59,158,255,0.03), transparent 50%)",
+        minHeight: "100vh"
+      }}>
         <AnimatePresence mode="wait">
-          <motion.div key={active} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+          <motion.div key={active} initial={{ opacity: 0, scale: 0.98, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: -10 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
             {active === "Overview" && <OverviewSection jobs={jobs} findings={findings} criticalCount={criticalCount} setActive={setActive} />}
             {active === "Audits" && <AuditsSection jobs={jobs} selected={selectedJob} onSelect={setSelectedJobId} newUrl={newAuditUrl} setNewUrl={setNewAuditUrl} newBranch={newAuditBranch} setNewBranch={setNewAuditBranch} onJobStarted={runAudit} openReportUrl={openReportUrl} streamActive={streamActive} logs={logs} />}
             {active === "Findings" && <FindingsSection findings={filteredFindings} all={findings} filter={filter} setFilter={setFilter} expanded={expandedFinding} setExpanded={setExpandedFinding} selected={selectedJob} />}
@@ -279,7 +324,7 @@ export default function Dashboard() {
 
 function PageHeader({ kicker, title, action }: { kicker: string; title: string; action?: React.ReactNode }) {
   return (
-    <div style={{ padding: "28px 32px 20px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-end", background: theme.bg }}>
+    <div style={{ padding: "40px 48px 24px", borderBottom: `1px solid rgba(255,255,255,0.05)`, display: "flex", justifyContent: "space-between", alignItems: "flex-end", background: "rgba(10,10,10,0.6)", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 5 }}>
       <div>
         <p className="mono" style={{ fontSize: 10, color: theme.orange, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 6 }}>{kicker}</p>
         <h1 style={{ fontSize: 26, fontWeight: 500, letterSpacing: "-0.02em" }}>{title}</h1>
