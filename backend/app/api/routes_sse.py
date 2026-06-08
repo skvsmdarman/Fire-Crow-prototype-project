@@ -26,7 +26,10 @@ async def stream_audit_logs(
     Establish a Server-Sent Events (SSE) stream for live agent log updates.
     Ensures tenant isolation by checking job ownership before streaming.
     """
-    get_owned_job_or_404(db, job_id, user_id)
+    try:
+        get_owned_job_or_404(db, job_id, user_id)
+    finally:
+        db.close()
 
     async def log_generator() -> AsyncGenerator[str, None]:
         from datetime import datetime, timezone

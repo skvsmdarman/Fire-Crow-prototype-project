@@ -340,103 +340,106 @@ async def download_report(
     user_id: str = Depends(get_current_user)
 ):
     """Authenticated endpoint to download PDF reports."""
-    import os
-    job = get_owned_job_or_404(db, job_id, user_id)
+    try:
+        import os
+        job = get_owned_job_or_404(db, job_id, user_id)
 
-    # 1. Try structured database report first (on-the-fly compiling)
-    from backend.app.models.audit_job import AuditReport
-    from backend.app.services.report_service import generate_temp_pdf_report
-    
-    report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
-    if report and report.html_content:
-        try:
-            pdf_path = generate_temp_pdf_report(report.html_content, job_id)
-            if os.path.exists(pdf_path):
-                # Cleanup task to delete temporary PDF file after serving
-                def cleanup_temp_pdf(path: str):
-                    try:
-                        if os.path.exists(path):
-                            os.remove(path)
-                            logger.info("Deleted temporary PDF report at %s", path)
-                    except Exception as e:
-                        logger.error("Failed to delete temporary PDF report: %s", str(e))
-                
-                background_tasks.add_task(cleanup_temp_pdf, pdf_path)
-                
-                return FileResponse(
-                    path=pdf_path,
-                    filename=f"fire_crow_report_{job_id}.pdf",
-                    media_type="application/pdf"
-                )
-        except Exception as e:
-            logger.error("Failed to generate on-the-fly PDF report: %s", redact_text(str(e)))
+        # 1. Try structured database report first (on-the-fly compiling)
+        from backend.app.models.audit_job import AuditReport
+        from backend.app.services.report_service import generate_temp_pdf_report
+        
+        report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
+        if report and report.html_content:
+            try:
+                pdf_path = generate_temp_pdf_report(report.html_content, job_id)
+                if os.path.exists(pdf_path):
+                    # Cleanup task to delete temporary PDF file after serving
+                    def cleanup_temp_pdf(path: str):
+                        try:
+                            if os.path.exists(path):
+                                os.remove(path)
+                                logger.info("Deleted temporary PDF report at %s", path)
+                        except Exception as e:
+                            logger.error("Failed to delete temporary PDF report: %s", str(e))
+                    
+                    background_tasks.add_task(cleanup_temp_pdf, pdf_path)
+                    
+                    return FileResponse(
+                        path=pdf_path,
+                        filename=f"fire_crow_report_{job_id}.pdf",
+                        media_type="application/pdf"
+                    )
+            except Exception as e:
+                logger.error("Failed to generate on-the-fly PDF report: %s", redact_text(str(e)))
 
-    # 2. Legacy fallback
-    if not job.report_pdf_url:
-        raise HTTPException(status_code=404, detail="Report not ready or missing")
+        # 2. Legacy fallback
+        if not job.report_pdf_url:
+            raise HTTPException(status_code=404, detail="Report not ready or missing")
 
-    if job.report_pdf_url.startswith("artifact://"):
-        artifact_id = job.report_pdf_url.split("://")[1]
-        from backend.app.services.storage import storage_service
-        try:
-            if storage_service.is_s3_active():
-                presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)
-                return RedirectResponse(presigned_url)
-            else:
-                file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
-                # If an HTML version exists, serve that instead of a simulated PDF
-                html_path = file_path.with_suffix(".html")
-                if file_path.suffix.lower() == ".pdf" and html_path.exists():
-                    file_path = html_path
-                    file_name = html_path.name
-                    media_type = "text/html"
+        if job.report_pdf_url.startswith("artifact://"):
+            artifact_id = job.report_pdf_url.split("://")[1]
+            from backend.app.services.storage import storage_service
+            try:
+                if storage_service.is_s3_active():
+                    presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)
+                    return RedirectResponse(presigned_url)
+                else:
+                    file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+                    # If an HTML version exists, serve that instead of a simulated PDF
+                    html_path = file_path.with_suffix(".html")
+                    if file_path.suffix.lower() == ".pdf" and html_path.exists():
+                        file_path = html_path
+                        file_name = html_path.name
+                        media_type = "text/html"
 
-                if not file_path.exists():
+                    if not file_path.exists():
+                        html_response = _persisted_report_html_response(db, job_id)
+                        if html_response is not None:
+                            return html_response
+                        raise HTTPException(status_code=404, detail="Report file not found on disk")
+
+                    return FileResponse(path=file_path, filename=file_name, media_type=media_type)
+            except HTTPException as exc:
+                if exc.status_code == 404:
                     html_response = _persisted_report_html_response(db, job_id)
                     if html_response is not None:
                         return html_response
-                    raise HTTPException(status_code=404, detail="Report file not found on disk")
+                raise
+            except Exception as e:
+                logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
+                raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
 
-                return FileResponse(path=file_path, filename=file_name, media_type=media_type)
-        except HTTPException as exc:
-            if exc.status_code == 404:
+        parsed_report_url = urlparse(job.report_pdf_url)
+        is_legacy_local_report = (
+            parsed_report_url.scheme in {"http", "https"}
+            and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+            and parsed_report_url.path.startswith("/reports/")
+        )
+        if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
+            file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
+
+            # If an HTML version exists, serve that instead of a simulated PDF
+            html_path = file_path.with_suffix(".html")
+            if file_path.suffix.lower() == ".pdf" and html_path.exists():
+                file_path = html_path
+                file_name = html_path.name
+                media_type = "text/html"
+
+            if not file_path.exists():
                 html_response = _persisted_report_html_response(db, job_id)
                 if html_response is not None:
                     return html_response
-            raise
-        except Exception as e:
-            logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
-            raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
+                raise HTTPException(status_code=404, detail="Report file not found on disk")
 
-    parsed_report_url = urlparse(job.report_pdf_url)
-    is_legacy_local_report = (
-        parsed_report_url.scheme in {"http", "https"}
-        and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
-        and parsed_report_url.path.startswith("/reports/")
-    )
-    if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
-        file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
+            return FileResponse(path=file_path, filename=file_name, media_type=media_type)
 
-        # If an HTML version exists, serve that instead of a simulated PDF
-        html_path = file_path.with_suffix(".html")
-        if file_path.suffix.lower() == ".pdf" and html_path.exists():
-            file_path = html_path
-            file_name = html_path.name
-            media_type = "text/html"
+        if _allowed_external_report_url(job.report_pdf_url):
+            return RedirectResponse(job.report_pdf_url)
 
-        if not file_path.exists():
-            html_response = _persisted_report_html_response(db, job_id)
-            if html_response is not None:
-                return html_response
-            raise HTTPException(status_code=404, detail="Report file not found on disk")
-
-        return FileResponse(path=file_path, filename=file_name, media_type=media_type)
-
-    if _allowed_external_report_url(job.report_pdf_url):
-        return RedirectResponse(job.report_pdf_url)
-
-    logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
-    raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")
+        logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
+        raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")
+    finally:
+        db.close()
 
 
 from pydantic import BaseModel

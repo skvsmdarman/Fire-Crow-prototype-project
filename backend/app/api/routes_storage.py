@@ -20,7 +20,10 @@ async def download_artifact(
     """
     Downloads an artifact from storage. Validates tenant access first.
     """
-    file_path, filename, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+    try:
+        file_path, filename, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+    finally:
+        db.close()
     return FileResponse(path=file_path, filename=filename, media_type=media_type)
 
 
