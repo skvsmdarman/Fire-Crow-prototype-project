@@ -78,6 +78,40 @@ See [Data Flow And Storage](docs/DATA_FLOW_AND_STORAGE.md).
 
 Detailed instructions: [Local Development](docs/LOCAL_DEVELOPMENT.md).
 
+## Render Deployment And OAuth Redirects
+
+Render production deployments must set `FRONTEND_URL` to the deployed frontend origin. Do not leave it as `http://localhost:3000` outside local development, because OAuth callbacks and post-login redirects are derived from `FRONTEND_URL`.
+
+Minimum production envs:
+
+```bash
+DEBUG=false
+DATABASE_URL=postgresql://...
+SECRET_KEY=<long random secret>
+ENCRYPTION_KEY=<long random encryption key>
+FRONTEND_URL=https://your-firecrow-frontend.example.com
+CORS_ORIGINS=https://your-firecrow-frontend.example.com
+```
+
+Optional OAuth envs:
+
+```bash
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+```
+
+Provider consoles must use deployed URLs, not localhost. Configure GitHub/Google authorized origins and callback URLs to match the deployed frontend/backend domains used by `routes_auth.py`.
+
+Before relying on OAuth in Render, verify the live environment:
+
+```bash
+bash scripts/verify_render_env.sh
+```
+
+The script fails when production envs still point at localhost, when `FRONTEND_URL` is not an HTTPS origin, when `DEBUG` is enabled, or when SQLite is used in production.
+
 ## Development Commands
 
 ```powershell
@@ -117,70 +151,3 @@ See [Testing And Validation](docs/TESTING_AND_VALIDATION.md).
 Full route details: [API Reference](docs/API_REFERENCE.md).
 
 ## Repository Layout
-
-```text
-backend/
-  app/
-    api/
-    agents/
-    models/
-    orchestrator/
-    schemas/
-    services/
-    workers/
-  tests/
-frontend/
-  src/
-    app/
-    components/
-    features/
-    lib/
-    shared/
-scripts/
-workspace/
-docs/
-```
-
-## Security And Authorization Notice
-
-Fire Crow is written for authorization-only scanning. The backend records an authorization attestation on audit submission and the orchestrator only enables active stages when attestation, authorization scope, Docker availability, and target profile all line up. Sources: `backend/app/schemas/audit_api.py`, `backend/app/api/routes_audit.py`, `backend/app/orchestrator/scan_plan.py`.
-
-That said, the current frontend does not yet send the attestation fields required by the backend, so the current dashboard submission flow is out of sync with the real API contract.
-
-## Known Limitations
-
-- Debug mode can simulate scanners and email/report paths instead of proving them.
-- The dashboard audit submission flow is currently out of sync with the backend schema.
-- The smoke script currently does not match the current auth and attestation requirements.
-- Legal/policy content in the frontend makes claims that are not fully backed by server-side implementation.
-
-See [Known Limitations](docs/KNOWN_LIMITATIONS.md), [Deployment Notes](docs/DEPLOYMENT_NOTES.md), and [Security Model](docs/SECURITY_MODEL.md).
-
-## Documentation
-
-- [Documentation Index](docs/INDEX.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Backend Structure](docs/BACKEND_STRUCTURE.md)
-- [Orchestration Pipeline](docs/ORCHESTRATION_PIPELINE.md)
-- [API Reference](docs/API_REFERENCE.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Local Development](docs/LOCAL_DEVELOPMENT.md)
-
-
-### Deterministic Report Automation
-Fire Crow now includes a deterministic fallback reporting engine. If the `GEMINI_MODEL` fails or is not provided, the platform will automatically route to the fallback engine to generate the executive summary, remediation tasks, email notifications, and PR plans.
-Ensure `REPORT_LOCAL_FALLBACK` is set appropriately for your artifact persistence requirements.
-
-### Required Environment Variables
-Ensure the following variables are configured in your Render environment or `.env` file:
-```env
-REPORT_AUTOMATION_ENABLED=true
-REPORT_AUTOMATION_USE_LANGGRAPH=false
-REPORT_AUTOMATION_SEND_EMAIL=false
-REPORT_AUTOMATION_CREATE_PR=false
-REPORT_AUTOMATION_STORE_EMAIL_BODY=true
-REPORT_AUTOMATION_STORE_PR_PLAN=true
-REPORT_AUTOMATION_MAX_FINDINGS=50
-REPORT_AUTOMATION_MAX_EMAIL_CHARS=8000
-REPORT_AUTOMATION_MAX_PR_BODY_CHARS=12000
-```
