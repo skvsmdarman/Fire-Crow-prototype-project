@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { motion as framerMotion } from "framer-motion";
@@ -10,10 +9,37 @@ import { usePolicyContext } from "../../features/auth/hooks";
 import { exchangeCode } from "../../features/auth/api";
 import { detectRegionFromTimezone } from "../../lib/policyData";
 import { API_BASE_URL } from "../../shared/api/client";
-import styles from "./page.module.css";
-import { fadeInLeft, fadeInRight } from "../../lib/animations";
 
-const cx = (...args: (string | undefined | false)[]) => args.filter(Boolean).join(" ");
+const theme = {
+  bg: "var(--bg)",
+  surface: "var(--surface)",
+  border: "var(--border)",
+  borderHover: "var(--borderHover)",
+  text: "var(--text)",
+  muted: "var(--muted)",
+  dim: "var(--dim)",
+  orange: "var(--orange)",
+  orangeDim: "var(--orangeDim)",
+  orangeBorder: "var(--orangeBorder)",
+  green: "var(--green)",
+  red: "var(--red)",
+  blue: "var(--blue)",
+  amber: "var(--amber)",
+};
+
+function Logo({ centered }: { centered?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: centered ? "center" : "flex-start" }}>
+      <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg, ${theme.orange}, #ffb347)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#160800", fontFamily: "'IBM Plex Mono', monospace" }}>FC</span>
+      </div>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>Fire Crow</div>
+        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>FCv1 security audit</div>
+      </div>
+    </div>
+  );
+}
 
 export default function SignInPage() {
   const router = useRouter();
@@ -98,135 +124,64 @@ export default function SignInPage() {
   const providerCount = Number(providerAvailability.github) + Number(providerAvailability.google);
 
   if (authSession.hasDashboardSession) {
-    return (
-      <main className={styles.loadingPage}>
-        <div className={styles.loadingBackdrop} aria-hidden="true" />
-        <section className={styles.loadingCard}>
-          <div className="auth-loading-spinner" />
-          <p className={styles.eyebrow}>Session</p>
-          <h1 className={styles.loadingTitle}>Validating access</h1>
-          <p className={styles.loadingCopy}>Checking your existing FireCrow token and preparing the console.</p>
-        </section>
-      </main>
-    );
+    return null; // Will redirect
   }
 
   return (
-    <main className={styles.page}>
-      <div className="auth-glow-orb auth-glow-orb-1" aria-hidden="true" style={{ background: "radial-gradient(circle, rgba(92, 144, 255, 0.22) 0%, transparent 70%)" }} />
-      <div className="auth-glow-orb auth-glow-orb-2" aria-hidden="true" style={{ background: "radial-gradient(circle, rgba(179, 92, 255, 0.16) 0%, transparent 70%)" }} />
-      <div className="auth-grid-overlay" aria-hidden="true" />
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: theme.bg, color: theme.text }}>
+      <framerMotion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} style={{ width: "100%", maxWidth: 360 }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <Logo centered />
+          <p style={{ color: theme.muted, fontSize: 13, marginTop: 10 }}>Sign in to access your workspace</p>
+        </div>
 
-      <div className={styles.backdrop} aria-hidden="true" />
-      <div className={styles.gridGlow} aria-hidden="true" />
-
-      <div className={styles.centerContainer}>
-        <framerMotion.div
-          variants={fadeInLeft}
-          initial="hidden"
-          animate="visible"
-          className={styles.logoContainer}
-        >
-          <Link href="/" className={cx(styles.brand, "auth-brand")}>
-            <span className={styles.brandMark}>FC</span>
-            <span className={styles.brandText}>
-              <strong>FireCrow</strong>
-              <small>Autonomous security audit</small>
-            </span>
-          </Link>
-        </framerMotion.div>
-
-        <framerMotion.section
-          variants={fadeInRight}
-          initial="hidden"
-          animate="visible"
-          className={cx(styles.card, "auth-card")}
-        >
-          <div className="auth-card-accent" />
-
-          <div className={styles.cardHeader}>
-            <p className={styles.eyebrow}>Secure access</p>
-            <h2>Sign in with your provider</h2>
-            <p>
-              FireCrow now uses OAuth-only access. Continue with GitHub or Google to open your dashboard.
-            </p>
-          </div>
-
-          <div className={styles.providerStack}>
-            {providerAvailability.github ? (
-              <framerMotion.a
-                whileHover={{ scale: 1.01, borderColor: "rgba(255,255,255,0.18)" }}
-                whileTap={{ scale: 0.99 }}
-                href={oauthHref("github")}
-                className={styles.providerButton}
-              >
-                <span className={styles.providerIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.138 20.164 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
-                  </svg>
-                </span>
-                <span className={styles.providerCopy}>
-                  <strong>Continue with GitHub</strong>
-                </span>
-              </framerMotion.a>
-            ) : null}
-
-            {providerAvailability.google ? (
-              <framerMotion.a
-                whileHover={{ scale: 1.01, borderColor: "rgba(255,255,255,0.18)" }}
-                whileTap={{ scale: 0.99 }}
-                href={oauthHref("google")}
-                className={styles.providerButton}
-              >
-                <span className={cx(styles.providerIcon, styles.googleIcon)} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path fillRule="evenodd" clipRule="evenodd" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                    <path fillRule="evenodd" clipRule="evenodd" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                    <path fillRule="evenodd" clipRule="evenodd" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                    <path fillRule="evenodd" clipRule="evenodd" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
-                  </svg>
-                </span>
-                <span className={styles.providerCopy}>
-                  <strong>Continue with Google</strong>
-                </span>
-              </framerMotion.a>
-            ) : null}
-          </div>
-
-          {providerCount === 0 ? (
-            <div className={styles.errorNotice} role="alert">
-              OAuth sign-in is not configured yet. Add GitHub and/or Google OAuth credentials in the backend environment before using this page.
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, overflow: "hidden", background: theme.surface }}>
+          <div style={{ height: 2, background: `linear-gradient(90deg, ${theme.orange}, #ffb347)` }} />
+          <div style={{ padding: 24 }}>
+            <p style={{ fontSize: 12, color: theme.muted, marginBottom: 14, textAlign: "center" }}>Continue with</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {providerAvailability.github && (
+                <a href={oauthHref("github")} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", border: `1px solid ${theme.border}`, borderRadius: 7, background: "transparent", color: theme.text, fontSize: 13, fontWeight: 500, transition: "border-color .2s, background .2s", textDecoration: "none" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.borderHover; e.currentTarget.style.background = "#1a1a1a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.background = "transparent"; }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill={theme.muted}><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48 0-.24-.01-.87-.01-1.7-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.84c.85.004 1.7.115 2.5.337 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85 0 1.34-.01 2.41-.01 2.74 0 .27.18.58.69.48A10.02 10.02 0 0 0 22 12c0-5.52-4.48-10-10-10z" /></svg>
+                  Continue with GitHub
+                </a>
+              )}
+              {providerAvailability.google && (
+                <a href={oauthHref("google")} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", border: `1px solid ${theme.border}`, borderRadius: 7, background: "transparent", color: theme.text, fontSize: 13, fontWeight: 500, transition: "border-color .2s, background .2s", textDecoration: "none" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.borderHover; e.currentTarget.style.background = "#1a1a1a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.background = "transparent"; }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill={theme.muted}><path d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81z" /></svg>
+                  Continue with Google
+                </a>
+              )}
             </div>
-          ) : null}
 
-          {error && (
-            <div className={styles.errorNotice} role="alert">
-              {error}
-            </div>
-          )}
+            {providerCount === 0 && (
+              <div style={{ color: theme.red, fontSize: 12, marginTop: 12, textAlign: "center" }}>
+                OAuth sign-in is not configured yet.
+              </div>
+            )}
 
-          {loading ? (
-            <div className={styles.divider}>Finishing sign-in...</div>
-          ) : null}
+            {error && (
+              <div style={{ color: theme.red, fontSize: 12, marginTop: 12, textAlign: "center" }}>
+                {error}
+              </div>
+            )}
 
-          <footer className={styles.cardFootnote}>
-            <p>
-              By signing in, you agree to our{" "}
-              <PolicyLink href="/terms" policy="terms" source="signin_footnote">
-                Terms of Use
-              </PolicyLink>
-              {" "}and{" "}
-              <PolicyLink href="/privacy-policy" policy="privacy_policy" source="signin_footnote">
-                Privacy Policy
-              </PolicyLink>
-              .
-            </p>
-            <p style={{ marginTop: "12px" }}>
-              Use GitHub or Google above to continue.
-            </p>
-          </footer>
-        </framerMotion.section>
-      </div>
-    </main>
+            {loading && (
+              <div style={{ color: theme.blue, fontSize: 12, marginTop: 12, textAlign: "center" }}>
+                Finishing sign-in...
+              </div>
+            )}
+          </div>
+        </div>
+
+        <p style={{ textAlign: "center", fontSize: 11, color: theme.muted, marginTop: 16, lineHeight: 1.6 }}>
+          By signing in you agree to our Terms of Use and Privacy Policy
+        </p>
+      </framerMotion.div>
+    </div>
   );
 }
