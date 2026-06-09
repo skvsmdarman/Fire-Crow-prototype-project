@@ -1,0 +1,12 @@
+{
+  "name": "firecrow-project-7f7744631732",
+  "description": "FireCrow autonomous security audit backend",
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-git.git"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
