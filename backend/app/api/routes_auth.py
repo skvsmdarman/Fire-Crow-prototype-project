@@ -561,6 +561,30 @@ async def get_session(user_id: str = Depends(get_current_user), db: Session = De
     return _user_session_payload(user)
 
 
+class SettingsUpdateRequest(BaseModel):
+    email: str
+
+
+@router.put("/me/settings")
+async def update_user_settings(
+    payload: SettingsUpdateRequest,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    
+    email = payload.email.strip()
+    if email and ("@" not in email or "." not in email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address format.")
+    
+    user.email = email
+    db.commit()
+    db.refresh(user)
+    return {"message": "Settings updated successfully", "email": user.email}
+
+
 @router.get("/github")
 @limiter.limit("20/minute")
 async def github_login(

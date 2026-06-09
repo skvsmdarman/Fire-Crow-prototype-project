@@ -166,6 +166,7 @@ export default function Dashboard() {
   const [token, setToken] = useState("");
   const [userId, setUserId] = useState("");
   const [authReady, setAuthReady] = useState(false);
+  const [email, setEmail] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -477,9 +478,11 @@ export default function Dashboard() {
           router.replace(`/signin${searchParamsString}`);
           return;
         }
+        const data = await response.json();
         setToken(savedToken);
         setUsername(savedUsername);
         setUserId(savedUserId);
+        setEmail(data.email || "");
         setAuthReady(true);
       } catch {
         clearStoredAuthSession();
@@ -817,12 +820,64 @@ export default function Dashboard() {
               <Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Reports</div><h2>Audit reports</h2></div><Button variant="ghost" size="sm" onClick={fetchJobs} disabled={!token || loadingJobs}><RefreshCw className={loadingJobs ? styles.spin : ""} size={12} />Refresh</Button></div><div className={styles.reportList}>{reportError && <div className={styles.noticeError}>{reportError}</div>}{!token ? <div className={styles.emptyState}>Connect a workspace to view reports.</div> : reportJobs.length === 0 ? <div className={styles.emptyState}>No audit reports are available yet. Start an authorized audit to generate your first report.</div> : reportJobs.map((job) => <motion.article whileHover={{ scale: 1.01 }} className={styles.reportRow} key={job.id}><div><Badge variant="status" type={statusLabel(job)}>{statusLabel(job)}</Badge><h3>{shortRepoName(job.repo_url)}</h3><p>Branch {job.repo_branch} / finished {formatDateTime(job.finished_at)}</p></div>{job.report_pdf_url ? <Button variant="ghost" size="sm" onClick={() => openReport(job.id)}><FileText size={14} />Open report</Button> : <span className={styles.reportMissing}>No PDF artifact</span>}</motion.article>)}</div></Card>
             </motion.div>
           )}
-
           {activeSection === "settings" && (
             <motion.div key="settings" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
               <Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Settings</div><h2>Workspace settings</h2></div><Button variant="ghost" size="sm" onClick={fetchSystemStatus} disabled={loadingSystem}><RefreshCw className={loadingSystem ? styles.spin : ""} size={12} />Refresh</Button></div>{systemError && <div className={styles.noticeError}>{systemError}</div>}<div className={styles.settingsGrid}><StatusCard label="API" value={systemStatus?.api || "checking"} tone={systemStatus?.api === "online" ? "good" : "warn"} icon={<Globe size={14} />} /><StatusCard label="Database" value={systemStatus?.database || "checking"} tone={systemStatus?.database === "connected" ? "good" : "warn"} icon={<Database size={14} />} /><StatusCard label="Sandbox" value={systemStatus?.sandbox_mode === "docker" ? "Docker/Kali" : "Simulation"} tone="warn" icon={<HardDrive size={14} />} /><StatusCard label="Workspace" value={username || "Not connected"} tone={username ? "good" : "warn"} icon={<Fingerprint size={14} />} /></div><div className={styles.integrationList}>{Object.entries(systemStatus?.integrations || {}).map(([name, enabled]) => <motion.div whileHover={{ x: 2 }} className={styles.integrationRow} key={name}><span>{name.replaceAll("_", " ")}</span><strong className={enabled ? styles.integrationOn : styles.integrationOff}>{enabled ? "configured" : "not configured"}</strong></motion.div>)}<div className={styles.integrationRow}><span>PWA offline policy</span><strong className={styles.integrationOn}>private API data not cached</strong></div><div className={styles.integrationRow}><span>Install help</span><strong className={styles.integrationOn}>use browser install prompt when available</strong></div>{!systemStatus && !systemError && <div className={styles.emptyState}>System status has not loaded yet.</div>}</div><div className={mobile.settingsActions}><Button type="button" variant="danger" onClick={signOut}><LogOut size={14} />Logout</Button></div></Card>
+              <Card variant="surface" className={styles.panel} style={{ marginTop: "24px" }}>
+                <div className={styles.panelHeader}>
+                  <div>
+                    <div className={styles.sectionKicker}>Preferences</div>
+                    <h2>Email Report Delivery</h2>
+                  </div>
+                </div>
+                <p style={{ fontSize: "13px", color: "rgba(255, 255, 255, 0.6)", marginBottom: "16px" }}>
+                  Specify the email address where security reports should be delivered automatically after each scan completes.
+                </p>
+                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter email address"
+                    style={{
+                      flex: 1,
+                      backgroundColor: "rgba(0, 0, 0, 0.2)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "6px",
+                      padding: "8px 12px",
+                      color: "#fff",
+                      fontSize: "14px"
+                    }}
+                  />
+                  <Button
+                    onClick={async () => {
+                      if (email && (!email.includes("@") || !email.includes("."))) {
+                        toast({ variant: "destructive", title: "Invalid Email", description: "Please enter a valid email address." });
+                        return;
+                      }
+                      try {
+                        const res = await fetch(`${API_BASE_URL}/auth/me/settings`, {
+                          method: "PUT",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`
+                          },
+                          body: JSON.stringify({ email })
+                        });
+                        if (!res.ok) throw new Error("Failed to update email.");
+                        toast({ title: "Success", description: "Report email updated successfully!" });
+                      } catch (err: any) {
+                        toast({ variant: "destructive", title: "Error", description: err.message || "An error occurred." });
+                      }
+                    }}
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+              </Card>
             </motion.div>
           )}
+
         </AnimatePresence>
       </motion.section>
     </main>

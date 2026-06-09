@@ -1184,11 +1184,15 @@ class ReportGenerator:
         finally:
             if pdf_path:
                 try:
-                    if os.path.exists(pdf_path):
-                        os.remove(pdf_path)
-                    html_path = pdf_path.replace(".pdf", ".html")
-                    if os.path.exists(html_path):
-                        os.remove(html_path)
-                    logger.info("Purged local report file copies after email dispatch.")
+                    import tempfile
+                    temp_dir = tempfile.gettempdir()
+                    # Only delete if it resides in the temporary folder (e.g., temp download copies)
+                    if os.path.abspath(pdf_path).startswith(os.path.abspath(temp_dir)):
+                        if os.path.exists(pdf_path):
+                            os.remove(pdf_path)
+                        html_path = pdf_path.replace(".pdf", ".html")
+                        if os.path.exists(html_path):
+                            os.remove(html_path)
+                        logger.info("Purged local temporary report file copies after email dispatch.")
                 except Exception as delete_error:
                     logger.warning("Failed to delete local report copies after email dispatch: %s", str(delete_error))
