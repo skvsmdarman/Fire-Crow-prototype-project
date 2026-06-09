@@ -418,7 +418,7 @@ async def list_github_repos(
     """Retrieve all GitHub repositories for the current authenticated user using their GitHub access token."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     
     if not user.github_access_token:
         raise HTTPException(

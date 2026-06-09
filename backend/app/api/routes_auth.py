@@ -548,7 +548,7 @@ async def logout(
 async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User session could not be resolved.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User session could not be resolved.")
 
     return _user_session_payload(user)
 
@@ -557,7 +557,7 @@ async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends
 async def get_session(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User session could not be resolved.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User session could not be resolved.")
     return _user_session_payload(user)
 
 
