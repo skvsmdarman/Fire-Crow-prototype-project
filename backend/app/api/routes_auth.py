@@ -263,6 +263,7 @@ def _user_session_payload(user: User) -> dict:
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
+        "auto_email_reports": user.auto_email_reports if user.auto_email_reports is not None else True,
         "role": "security_engineer",
         "privacy_policy_version": user.privacy_policy_version,
         "privacy_policy_accepted_at": user.privacy_policy_accepted_at.isoformat()
@@ -563,6 +564,7 @@ async def get_session(user_id: str = Depends(get_current_user), db: Session = De
 
 class SettingsUpdateRequest(BaseModel):
     email: str
+    auto_email_reports: Optional[bool] = None
 
 
 @router.put("/me/settings")
@@ -580,9 +582,16 @@ async def update_user_settings(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address format.")
     
     user.email = email
+    if payload.auto_email_reports is not None:
+        user.auto_email_reports = payload.auto_email_reports
+        
     db.commit()
     db.refresh(user)
-    return {"message": "Settings updated successfully", "email": user.email}
+    return {
+        "message": "Settings updated successfully", 
+        "email": user.email, 
+        "auto_email_reports": user.auto_email_reports if user.auto_email_reports is not None else True
+    }
 
 
 @router.get("/github")

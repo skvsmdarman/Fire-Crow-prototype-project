@@ -13,6 +13,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    auto_email_reports: Mapped[Optional[bool]] = mapped_column(default=True, nullable=True)
     tenant_id: Mapped[Optional[str]] = mapped_column(String(255), index=True, nullable=True)
     role_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     github_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
