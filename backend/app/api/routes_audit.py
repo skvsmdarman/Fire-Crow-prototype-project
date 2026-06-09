@@ -77,11 +77,6 @@ def _dispatch_audit_job(
 
     if not celery_alive:
         logger.warning("Celery worker heartbeat missing or Redis unreachable. Falling back to local BackgroundTasks.")
-        if _bg_semaphore.locked():
-            raise HTTPException(
-                status_code=429,
-                detail="Too Many Requests: System is currently under heavy load. Please try again later."
-            )
 
         async def _run_with_limit():
             async with _bg_semaphore:
@@ -97,7 +92,7 @@ def _dispatch_audit_job(
         return
 
     try:
-        run_audit_job_task.apply_async(
+        run_audit_job_task.apply_async(  # type: ignore
             kwargs={
                 "job_id": job_id,
                 "user_id": user_id,
@@ -243,7 +238,7 @@ async def submit_audit(
     if not celery_alive and _bg_semaphore.locked():
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Server is currently at maximum capacity. Please try again later.",
+            detail="Server is currently at maximum background capacity. Please try again later.",
         )
 
     # Scoping job to user's tenant_id
@@ -423,7 +418,7 @@ async def download_report(
             from backend.app.services.storage import storage_service
             try:
                 if storage_service.is_s3_active():
-                    presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)
+                    presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)  # type: ignore
                     return RedirectResponse(presigned_url)
                 else:
                     file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
@@ -616,7 +611,7 @@ async def email_report(
 
             if storage_service.is_s3_active():
                 try:
-                    email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)
+                    email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)  # type: ignore
                 except Exception:
                     email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
             else:

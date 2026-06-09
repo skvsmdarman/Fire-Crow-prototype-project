@@ -62,6 +62,11 @@ async def lifespan(app: FastAPI):
                 raise e
             logger.error("Error running database migration startup check: %s", str(e))
 
+    # Ensure workspace directories exist
+    from pathlib import Path
+    for dir_name in ["workspace/reports", "workspace/temp", "workspace/storage", "workspace/scans"]:
+        (WORKSPACE_DIR / dir_name).mkdir(parents=True, exist_ok=True)
+
     # Run database storage housekeeping
     try:
         from backend.app.models.database import SessionLocal

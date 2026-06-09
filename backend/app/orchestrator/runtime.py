@@ -63,8 +63,33 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         )
         db.commit()
 
-        graph_result = maestro_graph.invoke(initial_state)
-        result_state = AuditState.model_validate(graph_result)
+        try:
+            graph_result = maestro_graph.invoke(initial_state)
+            result_state = AuditState.model_validate(graph_result)
+        except Exception as exc:
+            execution_error = exc
+            if not isinstance(exc, JobCancellationRequested):
+                logger.exception("Orchestrator graph execution or state validation failed: %s", exc)
+
+                from backend.app.orchestrator.runtime_context import get_runtime_tracker as get_tracker
+                tracker = get_tracker()
+                if tracker:
+                    tracker_state = tracker.state
+
+                    # Fallback to a safe, failed state while preserving state collected so far
+                    result_state = AuditState(
+                        job_id=job_id,
+                        user_id=user_id,
+                        repo_url=repo_url,
+                        repo_branch=repo_branch,
+                        status=JobStatus.FAILED,
+                        errors=[{"phase": "orchestration", "message": f"State validation failed: {str(exc)}"}],
+                        custom_email=custom_email,
+                        sandbox_container_id=tracker_state.get("sandbox_container_id", ""),
+                    )
+                    # Ensure get_runtime_state() returns this fallback if accessed downstream
+                    from backend.app.orchestrator.runtime_context import sync_runtime_state
+                    sync_runtime_state(result_state)
     except Exception as exc:
         execution_error = exc
         if not isinstance(exc, JobCancellationRequested):

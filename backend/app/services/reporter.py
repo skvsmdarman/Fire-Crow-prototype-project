@@ -87,7 +87,7 @@ class ReportGenerator:
         self.resend_api_key = settings.RESEND_API_KEY
         self.sender_email = settings.SENDER_EMAIL
         if RESEND_AVAILABLE and self.resend_api_key:
-            resend.api_key = self.resend_api_key
+            resend.api_key = self.resend_api_key  # type: ignore
 
     def generate_compliance_report(self, job_id: str, findings: List[Finding], standard: str = "SOC2") -> str:
         """
@@ -659,7 +659,7 @@ class ReportGenerator:
 
         try:
             logger.info(f"Compiling HTML to PDF using WeasyPrint: {output_path}")
-            weasyprint.HTML(string=html_content).write_pdf(output_path)
+            weasyprint.HTML(string=html_content).write_pdf(output_path)  # type: ignore
             return True
         except Exception as e:
             logger.exception(f"WeasyPrint PDF compilation failed: {str(e)}")
@@ -1084,7 +1084,7 @@ class ReportGenerator:
                                 "filename": os.path.basename(pdf_path),
                             }
                         ]
-                    resend.Emails.send(params)
+                    resend.Emails.send(params)  # type: ignore
                     logger.info("Transactional email successfully sent via Resend.")
                     success = True
                 except Exception as e:
