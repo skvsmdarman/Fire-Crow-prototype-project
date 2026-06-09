@@ -496,19 +496,13 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     pdf_url = generator.upload_to_r2(pdf_path, state.job_id)
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
     user_email = state.custom_email.strip() if state.custom_email and state.custom_email.strip() else ""
-    auto_email = True
-
-    if db_job:
-        from backend.app.models.user import User
-        user = db.query(User).filter(User.id == db_job.user_id).first()
-        if user:
-            if not user_email and user.email:
-                user_email = user.email
-            if user.auto_email_reports is not None:
-                auto_email = user.auto_email_reports
-
     if not user_email:
         user_email = "audit-recipient@firecrow.dev"
+        if db_job:
+            from backend.app.models.user import User
+            user = db.query(User).filter(User.id == db_job.user_id).first()
+            if user and user.email:
+                user_email = user.email
 
     counts = {
         Severity.CRITICAL: len([finding for finding in all_findings if finding.severity == Severity.CRITICAL]),
@@ -517,16 +511,12 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         Severity.LOW: len([finding for finding in all_findings if finding.severity == Severity.LOW]),
         Severity.INFO: len([finding for finding in all_findings if finding.severity == Severity.INFO]),
     }
-
-    if auto_email and user_email:
-        generator.send_email_report(user_email, pdf_url, state.job_id, counts, repo_url=state.repo_url, pdf_path=pdf_path)
-        log_agent_message(db, state.job_id, "REPORTER", f"Audit report successfully generated and emailed to {user_email}.")
-    else:
-        log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated. Automated email delivery skipped per settings.")
+    generator.send_email_report(user_email, pdf_url, state.job_id, counts, repo_url=state.repo_url, pdf_path=pdf_path)
+    log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated.")
 
     return {
         "report_pdf_url": pdf_url,
-        "report_delivered": auto_email,
+        "report_delivered": True,
         "status": JobStatus.COMPLETED,
     }
 
