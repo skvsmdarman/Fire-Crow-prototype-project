@@ -1084,8 +1084,13 @@ class ReportGenerator:
                             )
                             msg.attach(part)
 
-                    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+                    if settings.SMTP_PORT == 465:
+                        server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT)
+                    else:
+                        server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
                         server.starttls()
+
+                    with server:
                         server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                         server.sendmail(settings.SMTP_USER, [to_email], msg.as_string())
                     
