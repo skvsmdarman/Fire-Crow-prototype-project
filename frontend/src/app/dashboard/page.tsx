@@ -852,7 +852,7 @@ export default function Dashboard() {
                   <Button
                     onClick={async () => {
                       if (email && (!email.includes("@") || !email.includes("."))) {
-                        toast({ variant: "destructive", title: "Invalid Email", description: "Please enter a valid email address." });
+                        toast("Please enter a valid email address.", "error");
                         return;
                       }
                       try {
@@ -865,9 +865,9 @@ export default function Dashboard() {
                           body: JSON.stringify({ email })
                         });
                         if (!res.ok) throw new Error("Failed to update email.");
-                        toast({ title: "Success", description: "Report email updated successfully!" });
+                        toast("Report email updated successfully!", "success");
                       } catch (err: any) {
-                        toast({ variant: "destructive", title: "Error", description: err.message || "An error occurred." });
+                        toast(err.message || "An error occurred.", "error");
                       }
                     }}
                   >
