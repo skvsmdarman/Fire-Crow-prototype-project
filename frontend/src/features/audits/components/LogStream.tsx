@@ -104,6 +104,8 @@ export default function LogStream({ logs, streamActive, hasSelection }: LogStrea
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: "8px",
         padding: "10px 16px",
         background: "#12141c",
         borderBottom: "1px solid #1f2230",
@@ -120,7 +122,7 @@ export default function LogStream({ logs, streamActive, hasSelection }: LogStrea
         </div>
 
         {/* Live/Saved badge */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", width: "100%" }}>
           <span style={{
             display: "inline-flex",
             alignItems: "center",
@@ -157,13 +159,13 @@ export default function LogStream({ logs, streamActive, hasSelection }: LogStrea
         alignItems: "center",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: "12px",
+        gap: "8px",
         padding: "10px 16px",
         background: "#0c0e15",
         borderBottom: "1px solid #1b1d28"
       }}>
         {/* Search / Filter input */}
-        <div style={{ position: "relative", flex: 1, minWidth: "200px" }}>
+        <div style={{ position: "relative", width: "100%", flexBasis: "100%" }}>
           <Search size={14} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#6b7280" }} />
           <input
             type="text"
@@ -188,7 +190,7 @@ export default function LogStream({ logs, streamActive, hasSelection }: LogStrea
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", width: "100%" }}>
           {/* Auto-Scroll Toggle */}
           <button
             onClick={() => setAutoScroll(!autoScroll)}
