@@ -469,6 +469,65 @@ async def list_github_repos(
             raise HTTPException(status_code=503, detail="GitHub API is unreachable.")
 
 
+@router.get("/github-branches", response_model=List[str])
+@limiter.limit("15/minute")
+async def list_github_branches(
+    request: Request,
+    repo_url: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    """Retrieve all branches of a given GitHub repository using the current user's token."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    
+    token = None
+    if user.github_access_token:
+        try:
+            token = decrypt_provider_token(user.github_access_token)
+        except Exception as e:
+            logger.error("Failed to decrypt github token: %s", str(e))
+            raise HTTPException(status_code=500, detail="Secure token decryption failed.")
+
+    # Extract owner and repo from the URL
+    url_str = repo_url.strip()
+    match = re.match(r"^https?://github\.com/([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)(?:\.git)?$", url_str)
+    if not match:
+        match = re.match(r"^git@github\.com:([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)(?:\.git)?$", url_str)
+        
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid GitHub repository URL")
+    
+    owner, repo = match.groups()
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "FireCrow"
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/branches?per_page=100",
+                headers=headers,
+                timeout=15.0
+            )
+            if response.status_code != 200:
+                logger.error("GitHub API branches error: %s - %s", response.status_code, response.text)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"GitHub API returned error: {response.status_code}"
+                )
+            
+            branches_data = response.json()
+            return [b.get("name") for b in branches_data if b.get("name")]
+        except httpx.RequestError as exc:
+            logger.error("Failed to connect to GitHub API: %s", str(exc))
+            raise HTTPException(status_code=503, detail="GitHub API is unreachable.")
+
+
 @router.post("/submit-bulk", response_model=List[JobResponse])
 @limiter.limit("10/minute")
 async def submit_bulk_audit(
