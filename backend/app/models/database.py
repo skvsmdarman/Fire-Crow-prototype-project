@@ -79,6 +79,8 @@ def _ensure_user_compatibility() -> None:
 
     columns = {column["name"] for column in inspector.get_columns("users")}
     with engine.begin() as conn:
+        if "auto_email_reports" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN auto_email_reports BOOLEAN DEFAULT true")
         if "github_id" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_id VARCHAR(255)")
         if "github_access_token" not in columns:

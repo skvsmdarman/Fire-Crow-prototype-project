@@ -167,6 +167,7 @@ export default function Dashboard() {
   const [userId, setUserId] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [email, setEmail] = useState("");
+  const [autoEmailReports, setAutoEmailReports] = useState(true);
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -483,6 +484,7 @@ export default function Dashboard() {
         setUsername(savedUsername);
         setUserId(savedUserId);
         setEmail(data.email || "");
+        setAutoEmailReports(data.auto_email_reports !== false);
         setAuthReady(true);
       } catch {
         clearStoredAuthSession();
@@ -833,6 +835,18 @@ export default function Dashboard() {
                 <p style={{ fontSize: "13px", color: "rgba(255, 255, 255, 0.6)", marginBottom: "16px" }}>
                   Specify the email address where security reports should be delivered automatically after each scan completes.
                 </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+                  <input
+                    type="checkbox"
+                    id="autoEmailReportsCheck"
+                    checked={autoEmailReports}
+                    onChange={(e) => setAutoEmailReports(e.target.checked)}
+                    style={{ accentColor: "var(--primary)", cursor: "pointer" }}
+                  />
+                  <label htmlFor="autoEmailReportsCheck" style={{ fontSize: "13px", color: "rgba(255, 255, 255, 0.8)", cursor: "pointer" }}>
+                    Enable automatic email report delivery
+                  </label>
+                </div>
                 <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                   <input
                     type="email"
@@ -862,10 +876,10 @@ export default function Dashboard() {
                             "Content-Type": "application/json",
                             Authorization: `Bearer ${token}`
                           },
-                          body: JSON.stringify({ email })
+                          body: JSON.stringify({ email, auto_email_reports: autoEmailReports })
                         });
                         if (!res.ok) throw new Error("Failed to update email.");
-                        toast("Report email updated successfully!", "success");
+                        toast("Report settings updated successfully!", "success");
                       } catch (err: any) {
                         toast(err.message || "An error occurred.", "error");
                       }
