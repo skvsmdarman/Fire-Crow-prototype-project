@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, 
 from fastapi.responses import FileResponse, RedirectResponse
 from backend.app.services.limiter import limiter
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from urllib.parse import unquote, urlparse
 
 from backend.app.api.audit_queries import get_owned_job_or_404
@@ -52,6 +52,7 @@ def _dispatch_audit_job(
     user_id: str,
     repo_url: str,
     repo_branch: str,
+    custom_email: Optional[str] = None,
 ) -> None:
     if not _is_broker_reachable():
         logger.info("Redis broker is unavailable. Running job %s through local BackgroundTasks fallback.", job_id)
@@ -61,6 +62,7 @@ def _dispatch_audit_job(
             user_id,
             repo_url,
             repo_branch,
+            custom_email,
         )
         return
 
@@ -71,6 +73,7 @@ def _dispatch_audit_job(
                 "user_id": user_id,
                 "repo_url": repo_url,
                 "repo_branch": repo_branch,
+                "custom_email": custom_email,
             },
             task_id=job_id,
         )
@@ -86,6 +89,7 @@ def _dispatch_audit_job(
             user_id,
             repo_url,
             repo_branch,
+            custom_email,
         )
 
 
@@ -168,6 +172,7 @@ async def submit_audit(
         user_id=user_id,
         repo_url=payload.repo_url,
         repo_branch=payload.repo_branch or "main",
+        custom_email=payload.custom_email,
     )
 
     return build_job_response(job)
@@ -270,3 +275,117 @@ async def download_report(
 
     logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
     raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")
+
+
+from pydantic import BaseModel
+
+class EmailReportRequest(BaseModel):
+    email: Optional[str] = None
+
+
+@router.post("/job/{job_id}/email")
+async def email_report(
+    job_id: str,
+    payload: EmailReportRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    """Authenticated endpoint to send report via email."""
+    job = get_owned_job_or_404(db, job_id, user_id)
+    if not job.report_pdf_url:
+        raise HTTPException(status_code=400, detail="Report is not ready or missing")
+
+    recipient = payload.email.strip() if payload.email and payload.email.strip() else None
+    if not recipient:
+        from backend.app.models.user import User
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and user.email:
+            recipient = user.email
+
+    if not recipient or recipient == "audit-recipient@firecrow.dev":
+        raise HTTPException(status_code=400, detail="No valid recipient email address found. Please specify one.")
+
+    # Re-calculate finding counts
+    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+    counts = {
+        Severity.CRITICAL: len([f for f in findings if f.severity == Severity.CRITICAL]),
+        Severity.HIGH: len([f for f in findings if f.severity == Severity.HIGH]),
+        Severity.MEDIUM: len([f for f in findings if f.severity == Severity.MEDIUM]),
+        Severity.LOW: len([f for f in findings if f.severity == Severity.LOW]),
+        Severity.INFO: len([f for f in findings if f.severity == Severity.INFO]),
+    }
+
+    # Resolve local PDF path if the report URL points locally
+    pdf_path = None
+    parsed_report_url = urlparse(job.report_pdf_url)
+    is_legacy_local_report = (
+        parsed_report_url.scheme in {"http", "https"}
+        and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+        and parsed_report_url.path.startswith("/reports/")
+    )
+    if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
+        try:
+            file_path, _, _ = _safe_local_report_path(job.report_pdf_url)
+            if file_path.exists():
+                pdf_path = str(file_path)
+        except Exception:
+            pass
+
+    # If the file is not on the local disk (e.g. stored in R2 or stateless container),
+    # download it from the remote URL to a temporary file so we can attach it.
+    temp_file_to_cleanup = None
+    if not pdf_path and job.report_pdf_url and (job.report_pdf_url.startswith("http://") or job.report_pdf_url.startswith("https://")):
+        import tempfile
+        import httpx
+        try:
+            logger.info("Report PDF is not on local disk. Attempting to download from storage URL: %s", job.report_pdf_url)
+            temp_dir = tempfile.gettempdir()
+            temp_pdf_path = os.path.join(temp_dir, f"temp_report_{job_id}.pdf")
+            
+            with httpx.Client(timeout=15.0) as client:
+                response = client.get(job.report_pdf_url)
+                if response.status_code == 200:
+                    with open(temp_pdf_path, "wb") as f:
+                        f.write(response.content)
+                    pdf_path = temp_pdf_path
+                    temp_file_to_cleanup = temp_pdf_path
+                    logger.info("Successfully downloaded report from storage to: %s", pdf_path)
+                else:
+                    logger.error("Failed to download report PDF from storage URL. HTTP Status: %s", response.status_code)
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to retrieve report from storage service"
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Error downloading report PDF from storage: %s", str(e))
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to retrieve report from storage service"
+            )
+
+    from backend.app.services.reporter import ReportGenerator
+    generator = ReportGenerator()
+    success = False
+    try:
+        success = generator.send_email_report(
+            to_email=recipient,
+            report_url=job.report_pdf_url,
+            job_id=job_id,
+            counts=counts,
+            repo_url=job.repo_url,
+            pdf_path=pdf_path
+        )
+    finally:
+        if temp_file_to_cleanup and os.path.exists(temp_file_to_cleanup):
+            try:
+                os.remove(temp_file_to_cleanup)
+                logger.info("Cleaned up temporary report file: %s", temp_file_to_cleanup)
+            except Exception as e:
+                logger.warning("Failed to delete temp report file: %s", str(e))
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send report email.")
+
+    return {"message": "Report email sent successfully", "recipient": recipient}

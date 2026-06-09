@@ -30,10 +30,10 @@ const TRUST_CARDS = [
   { label: "Remediation-focused", hint: "The output points teams toward impact, priority, and fix direction.", state: "Actionable" },
 ];
 
-const FIRST_RUN_HINTS = [
-  { title: "Start with a repo the team already knows", body: "A smaller service, staging branch, or recent hotfix usually makes the first audit easier to verify." },
-  { title: "Treat the first report like calibration", body: "The first pass should start a useful conversation. Teams can tighten scope after reviewing one real run." },
-  { title: "Pull one engineer into the first review", body: "Findings move faster when the reviewer can map the trace back to code they understand." },
+const ONBOARDING_STRATEGY = [
+  { title: "Select a familiar target service", body: "Auditing a smaller microservice or a staging branch first makes findings simpler to analyze and verify." },
+  { title: "Establish an operational baseline", body: "The initial audit establishes baseline metrics. Use findings to refine configuration and scope in subsequent runs." },
+  { title: "Involve engineering stakeholders early", body: "Integrate engineering leads during the first report review to map security traces directly to active codebases." },
 ];
 
 const CAPABILITIES = [
@@ -95,7 +95,7 @@ export default function LandingPage() {
 
   return (
     <main className={styles.page}>
-      <motion.div className="scroll-progress-bar" style={{ scaleX: scrollProgress, position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #ff4d08, #ffbf47, #00e676)", transformOrigin: "0%", zIndex: 1000 }} />
+      <motion.div className="scroll-progress-bar" style={{ scaleX: scrollProgress, position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, var(--fire), var(--orange), var(--purple), var(--blue))", transformOrigin: "0%", zIndex: 1000 }} />
       <div className={styles.backdrop} aria-hidden="true" />
       <div className={styles.noise} aria-hidden="true" />
       <div className="glowing-bg-blob-3" aria-hidden="true" />
@@ -134,17 +134,17 @@ export default function LandingPage() {
         </section>
 
         <motion.section id="capabilities" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={staggerContainer} className={styles.section}>
-          <motion.div variants={fadeInUp} className={styles.sectionHeader}><div><p className={styles.eyebrow}>Platform posture</p><h2 className={styles.sectionTitle}>Less dashboard theater. More useful context.</h2></div><p className={styles.sectionIntro}>The UI explains the audit boundary, the evidence, and the remediation path in language a SaaS team can act on.</p></motion.div>
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}><div><p className={styles.eyebrow}>Platform Posture</p><h2 className={styles.sectionTitle}>Executive security context with actionable insights.</h2></div><p className={styles.sectionIntro}>Our platform reports provide deep visibility into vulnerability boundaries, detailed evidence, and clear remediation guidance.</p></motion.div>
           <div className={styles.capabilityGrid}>{CAPABILITIES.map((item) => <motion.article key={item.title} variants={fadeInUp} whileHover={{ y: -4, borderColor: "rgba(255,114,0,0.2)", background: "rgba(255,255,255,0.03)" }} className={styles.capabilityCard}><div className={styles.capabilityMeta}><span>{item.stat}</span></div><h3>{item.title}</h3><p>{item.body}</p></motion.article>)}</div>
         </motion.section>
 
         <motion.section initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={staggerContainer} className={cx(styles.section, styles.hintsSection)}>
-          <motion.div variants={fadeInUp} className={styles.sectionHeader}><div><p className={styles.eyebrow}>Helpful hints</p><h2 className={styles.sectionTitle}>A few cues that make the first run land better.</h2></div><p className={styles.sectionIntro}>Use a familiar repository, keep scope narrow, and review the output with someone who knows the code.</p></motion.div>
-          <div className={styles.hintGrid}>{FIRST_RUN_HINTS.map((hint) => <motion.article key={hint.title} variants={fadeInUp} whileHover={{ y: -4, borderColor: "rgba(255,184,0,0.25)", background: "rgba(255,255,255,0.03)" }} className={styles.hintCard}><span className={styles.hintMarker}>Note</span><h3>{hint.title}</h3><p>{hint.body}</p></motion.article>)}</div>
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}><div><p className={styles.eyebrow}>Onboarding</p><h2 className={styles.sectionTitle}>Best practices for your first security audit.</h2></div><p className={styles.sectionIntro}>Optimize initial baseline reviews by defining scope, targeting familiar components, and coordinating reviews.</p></motion.div>
+          <div className={styles.hintGrid}>{ONBOARDING_STRATEGY.map((strategy) => <motion.article key={strategy.title} variants={fadeInUp} whileHover={{ y: -4, borderColor: "rgba(255,184,0,0.25)", background: "rgba(255,255,255,0.03)" }} className={styles.hintCard}><span className={styles.hintMarker}>Guideline</span><h3>{strategy.title}</h3><p>{strategy.body}</p></motion.article>)}</div>
         </motion.section>
 
         <motion.section id="workflow" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={staggerContainer} className={cx(styles.section, styles.demoSection)}>
-          <motion.div variants={fadeInUp} className={styles.sectionHeader}><div><p className={styles.eyebrow}>Workflow</p><h2 className={styles.sectionTitle}>From authorized intake to remediation report.</h2></div><p className={styles.sectionIntro}>The landing page no longer simulates audit results. Real audits start only inside the authenticated console.</p></motion.div>
+          <motion.div variants={fadeInUp} className={styles.sectionHeader}><div><p className={styles.eyebrow}>Workflow</p><h2 className={styles.sectionTitle}>From authorized intake to remediation report.</h2></div><p className={styles.sectionIntro}>Secure audits run within a sandbox environment. Connect your repository in the console to initiate scanning.</p></motion.div>
           <div className={styles.demoSplit}>
             <div className={styles.pipelinePanel}>{PIPELINE.map((step) => <motion.article key={step.id} variants={fadeInLeft} className={cx(styles.pipelineCard, "hero-pipeline-step")} layout><div className={styles.pipelineHeader}><span>{step.id}</span><strong style={{ display: "flex", alignItems: "center", gap: 6 }}>{step.output}</strong></div><h3>{step.title}</h3><p>{step.body}</p></motion.article>)}</div>
             <motion.div variants={fadeInRight} className={styles.simulator}><div className={styles.simulatorHeader}><div className={styles.simulatorDots} aria-hidden="true"><span className={styles.simulatorDotRed} /><span className={styles.simulatorDotAmber} /><span className={styles.simulatorDotGreen} /></div><span className={styles.simulatorTitle}>firecrow@maestro / safety-brief</span></div><div className={styles.simulatorBody}>{consoleLines.map((line, index) => <motion.div className={styles.terminalLine} key={`${line.text}-${index}`} initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.25, ease: "easeOut" }}><span className={styles.terminalPrompt}>&gt;</span><span className={cx(styles.terminalText, line.tone === "info" && styles.infoTone, line.tone === "success" && styles.successTone, line.tone === "warning" && styles.warningTone, line.tone === "error" && styles.errorTone)}>{line.text}</span></motion.div>)}</div><div className={styles.simulatorFooter}><Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.launchButton}>Start an authorized audit</Link></div></motion.div>
@@ -156,7 +156,7 @@ export default function LandingPage() {
           <div className="agents-showcase-grid">{AGENTS.map((agent, index) => <motion.article key={agent.id} variants={fadeInUp} className="agent-showcase-card"><div className="agent-showcase-header"><span className="agent-idx">{String(index + 1).padStart(2, "0")}</span><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span className="agent-status-dot" /><span className="agent-idx">Ready</span></div></div><h3>{agent.id}</h3><span className="agent-role">{agent.role.split(",")[0]}</span><p>{agent.role}</p></motion.article>)}</div>
         </motion.section>
 
-        <motion.section initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={fadeInUp} className="cta-band"><div className="cta-band-content"><p className={styles.eyebrow}>Next step</p><h2>Run it on a repo your team already knows.</h2><p>That first pass is where trust gets built. Keep the scope familiar, keep the language human, and the review moves faster.</p><div className={styles.heroActions} style={{ marginTop: 24 }}><motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.primaryButton}>{isLoggedIn ? "Go to Dashboard" : "Go to sign in"}</Link></motion.div><motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>Review privacy policy</PolicyLink></motion.div></div></div></motion.section>
+        <motion.section initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={fadeInUp} className="cta-band"><div className="cta-band-content"><p className={styles.eyebrow}>Next step</p><h2>Deploy continuous security intelligence today.</h2><p>Establish baseline safety configurations, evaluate package vulnerabilities, and implement validated security controls.</p><div className={styles.heroActions} style={{ marginTop: 24 }}><motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><Link href={isLoggedIn ? "/dashboard" : "/signin"} className={styles.primaryButton}>{isLoggedIn ? "Go to Dashboard" : "Go to sign in"}</Link></motion.div><motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><PolicyLink href="/privacy-policy" policy="privacy_policy" source="landing_cta" className={styles.secondaryButton}>Review privacy policy</PolicyLink></motion.div></div></div></motion.section>
 
         <Footer />
       </div>

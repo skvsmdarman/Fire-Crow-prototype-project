@@ -53,8 +53,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable} ${rajdhani.variable}`}>
-      <body>
+    <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable} ${rajdhani.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <ToastProvider>
           {children}
           <PWARegister />

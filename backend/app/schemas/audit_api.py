@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class SubmitJobRequest(BaseModel):
     repo_url: str = Field(..., max_length=2048)
     repo_branch: Optional[str] = Field("main", max_length=255)
+    custom_email: Optional[str] = Field(None, max_length=255)
 
     @field_validator("repo_url")
     @classmethod

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
 from backend.app.orchestrator.maestro import cleanup_resources, maestro_graph
@@ -18,13 +19,14 @@ from backend.app.services.auth import decrypt_provider_token
 logger = logging.getLogger("firecrow.orchestrator.runtime")
 
 
-def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str) -> AuditState:
+def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str, custom_email: Optional[str] = None) -> AuditState:
     db = SessionLocal()
     initial_state = AuditState(
         job_id=job_id,
         user_id=user_id,
         repo_url=repo_url,
         repo_branch=repo_branch,
+        custom_email=custom_email or "",
         status=JobStatus.RUNNING,
     )
     tracker_token = initialize_runtime_tracker(initial_state)

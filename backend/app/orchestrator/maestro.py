@@ -495,12 +495,14 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
 
     pdf_url = generator.upload_to_r2(pdf_path, state.job_id)
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
-    user_email = "audit-recipient@firecrow.dev"
-    if db_job:
-        from backend.app.models.user import User
-        user = db.query(User).filter(User.id == db_job.user_id).first()
-        if user and user.email:
-            user_email = user.email
+    user_email = state.custom_email.strip() if state.custom_email and state.custom_email.strip() else ""
+    if not user_email:
+        user_email = "audit-recipient@firecrow.dev"
+        if db_job:
+            from backend.app.models.user import User
+            user = db.query(User).filter(User.id == db_job.user_id).first()
+            if user and user.email:
+                user_email = user.email
 
     counts = {
         Severity.CRITICAL: len([finding for finding in all_findings if finding.severity == Severity.CRITICAL]),
@@ -650,7 +652,7 @@ def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
     }
 
 def ai_analyzer_node(state: AuditState) -> Dict[str, Any]:
-    return execute_phase(state, phase_name="ai_analyzer", agent_name="AI_ANALYZER", start_message="AI brain analyzing...", body=ai_analyzer_body)
+    return execute_phase(state, phase_name="ai_analyzer", agent_name="AI_ANALYZER", start_message="Triaging security findings and deduplicating alerts...", body=ai_analyzer_body)
 
 
 def cleanup_body(db: Session, state: AuditState) -> Dict[str, Any]:

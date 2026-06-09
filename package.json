@@ -5,6 +5,8 @@
     "dev": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
     "dev:no-worker": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 --skip-worker",
     "smoke": ".\\.venv\\Scripts\\python.exe scripts/smoke.py",
-    "validate": "powershell -ExecutionPolicy Bypass -File scripts/validate.ps1"
+    "validate": "powershell -ExecutionPolicy Bypass -File scripts/validate.ps1",
+    "build": "npm run build --prefix frontend",
+    "postinstall": "npm install --prefix frontend"
   }
 }

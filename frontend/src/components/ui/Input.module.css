@@ -22,7 +22,7 @@
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
-  background: rgba(5, 6, 9, 0.72);
+  background: rgba(4, 5, 8, 0.7);
   color: var(--text);
   outline: none;
   padding: 12px 14px;
@@ -35,8 +35,8 @@
 }
 
 .input:focus {
-  border-color: rgba(255, 114, 0, 0.72);
-  box-shadow: var(--focus-ring);
+  border-color: rgba(255, 109, 0, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 109, 0, 0.12), 0 0 12px rgba(255, 109, 0, 0.08);
 }
 
 /* Left Icon Integration */

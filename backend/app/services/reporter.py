@@ -1032,8 +1032,10 @@ class ReportGenerator:
           </div>
         </div>
         
-        <div class="cta-container">
-          <a href="{safe_report_url}" class="cta-button">View Security Report</a>
+        <div class="cta-container" style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; text-align: center;">
+          <p style="margin: 0; color: #475569; font-size: 14px; font-weight: 600;">
+            📎 The complete audit report has been attached directly to this email as a PDF.
+          </p>
         </div>
       </div>
       

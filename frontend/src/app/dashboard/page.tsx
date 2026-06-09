@@ -253,6 +253,42 @@ export default function Dashboard() {
     [handleUnauthorized, token],
   );
 
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState<string | null>(null);
+
+  const uniqueRepos = useMemo(() => {
+    const seen = new Set<string>();
+    const repos: { url: string; name: string }[] = [];
+    for (const job of jobs) {
+      if (!seen.has(job.repo_url)) {
+        seen.add(job.repo_url);
+        repos.push({ url: job.repo_url, name: shortRepoName(job.repo_url) });
+      }
+    }
+    return repos;
+  }, [jobs]);
+
+  const currentRepoUrl = selectedJob?.repo_url || selectedRepoUrl || (uniqueRepos[0]?.url) || null;
+
+  const repoRuns = useMemo(() => {
+    if (!currentRepoUrl) return [];
+    return jobs.filter((job) => job.repo_url === currentRepoUrl);
+  }, [jobs, currentRepoUrl]);
+
+  const handleRepoChange = useCallback((repoUrl: string) => {
+    setSelectedRepoUrl(repoUrl);
+    const runs = jobs.filter((j) => j.repo_url === repoUrl);
+    if (runs.length > 0) {
+      setSelectedJobId(runs[0].id);
+      fetchJobDetail(runs[0].id);
+    }
+  }, [jobs, fetchJobDetail]);
+
+  useEffect(() => {
+    if (selectedJob && selectedJob.repo_url !== selectedRepoUrl) {
+      setSelectedRepoUrl(selectedJob.repo_url);
+    }
+  }, [selectedJob, selectedRepoUrl]);
+
   const openReport = useCallback(
     async (jobId: string) => {
       if (!token) return;
@@ -509,10 +545,50 @@ export default function Dashboard() {
                 <div className={mobile.homePrimary}>
                   <motion.div variants={scaleUp}>
                     <Card variant="surface" className={`${styles.panel} ${mobile.overviewCard}`}>
-                      <div className={styles.panelHeader}>
-                        <div>
+                      <div className={styles.panelHeader} style={{ flexWrap: "wrap", gap: "12px" }}>
+                        <div style={{ flexGrow: 1, minWidth: "200px" }}>
                           <div className={styles.sectionKicker}>Current view</div>
-                          <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
+                            <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
+                             {uniqueRepos.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "4px" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "2px", flexGrow: 1, minWidth: "140px" }}>
+                                  <label style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>Repository</label>
+                                  <select
+                                    value={currentRepoUrl || ""}
+                                    onChange={(e) => handleRepoChange(e.target.value)}
+                                    className={styles.customSelect}
+                                    style={{ maxWidth: "280px", padding: "8px 12px" }}
+                                  >
+                                    {uniqueRepos.map((repo) => (
+                                      <option key={repo.url} value={repo.url} className={styles.customSelectOption}>
+                                        {repo.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "2px", flexGrow: 1, minWidth: "140px" }}>
+                                  <label style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>Run History</label>
+                                  <select
+                                    value={selectedJobId || ""}
+                                    onChange={(e) => {
+                                      const jobId = e.target.value;
+                                      setSelectedJobId(jobId);
+                                      fetchJobDetail(jobId);
+                                    }}
+                                    className={styles.customSelect}
+                                    style={{ maxWidth: "280px", padding: "8px 12px" }}
+                                  >
+                                    {repoRuns.map((run) => (
+                                      <option key={run.id} value={run.id} className={styles.customSelectOption}>
+                                        {formatDateTime(run.created_at)} ({run.repo_branch}) - {statusLabel(run)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         {selectedJob ? <Badge variant="status" type={statusLabel(selectedJob)}>{statusLabel(selectedJob)}</Badge> : <ShieldCheck size={18} className={styles.metricIcon} />}
                       </div>
@@ -637,7 +713,68 @@ export default function Dashboard() {
 
           {activeSection === "findings" && (
             <motion.div key="findings" initial="hidden" animate="visible" exit="exit" variants={tabTransition} className={styles.sectionBody}>
-              <div className={mobile.findingsHeroGrid}><Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Selected Audit</div><h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2></div>{selectedJob && <Badge variant="status" type={statusLabel(selectedJob)}>{statusLabel(selectedJob)}</Badge>}</div><p className={mobile.panelCopy}>{selectedJob ? `Showing findings returned for branch ${selectedJob.repo_branch}. Select another audit from the Audits tab to inspect its details.` : "Start or select an audit to review evidence-backed findings."}</p></Card><Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Critical / High</div><h2>{criticalFindings + highFindings}</h2></div><AlertTriangle size={18} className={styles.metricIcon} /></div><p className={mobile.panelCopy}>Severity labels are shown in text and color; color is never the only signal.</p></Card></div>
+              <div className={mobile.findingsHeroGrid}>
+                <Card variant="surface" className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <div>
+                      <div className={styles.sectionKicker}>Selected Audit</div>
+                      <h2>{selectedJob ? shortRepoName(selectedJob.repo_url) : "No audit selected"}</h2>
+                    </div>
+                    {selectedJob && <Badge variant="status" type={statusLabel(selectedJob)}>{statusLabel(selectedJob)}</Badge>}
+                  </div>
+                  <p className={mobile.panelCopy}>
+                    {selectedJob 
+                      ? `Showing findings returned for branch ${selectedJob.repo_branch}. Select another audit below or from the Audits tab to inspect its details.` 
+                      : "Start or select an audit to review evidence-backed findings."}
+                  </p>
+                  {uniqueRepos.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "14px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexGrow: 1, minWidth: "200px" }}>
+                        <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Repository</label>
+                        <select
+                          value={currentRepoUrl || ""}
+                          onChange={(e) => handleRepoChange(e.target.value)}
+                          className={styles.customSelect}
+                        >
+                          {uniqueRepos.map((repo) => (
+                            <option key={repo.url} value={repo.url} className={styles.customSelectOption}>
+                              {repo.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexGrow: 1, minWidth: "200px" }}>
+                        <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Run History</label>
+                        <select
+                          value={selectedJobId || ""}
+                          onChange={(e) => {
+                            const jobId = e.target.value;
+                            setSelectedJobId(jobId);
+                            fetchJobDetail(jobId);
+                          }}
+                          className={styles.customSelect}
+                        >
+                          {repoRuns.map((run) => (
+                            <option key={run.id} value={run.id} className={styles.customSelectOption}>
+                              {formatDateTime(run.created_at)} ({run.repo_branch}) - {statusLabel(run)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+                <Card variant="surface" className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <div>
+                      <div className={styles.sectionKicker}>Critical / High</div>
+                      <h2>{criticalFindings + highFindings}</h2>
+                    </div>
+                    <AlertTriangle size={18} className={styles.metricIcon} />
+                  </div>
+                  <p className={mobile.panelCopy}>Severity labels are shown in text and color; color is never the only signal.</p>
+                </Card>
+              </div>
               <FindingsList findings={findings} loading={loadingDetail} />
             </motion.div>
           )}

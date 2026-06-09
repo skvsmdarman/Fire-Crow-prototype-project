@@ -1,20 +1,21 @@
 :root {
-  --bg: #050609;
-  --surface: #0b0d18;
-  --surface-alt: #0f1120;
-  --border: #151826;
-  --bright: #22253c;
-  --fire: #ff4500;
-  --orange: #ff7200;
-  --amber: #ffb800;
+  --bg: #08090f;
+  --surface: #0e1017;
+  --surface-alt: #131622;
+  --border: rgba(255, 255, 255, 0.045);
+  --border-glow: rgba(255, 114, 0, 0.08);
+  --bright: #1c1e2b;
+  --fire: #ff3d00;
+  --orange: #ff6d00;
+  --amber: #ffab00;
   --green: #00e676;
   --red: #ff3047;
   --blue: #5cc8ff;
   --purple: #b197fc;
-  --text: #dee1f5;
-  --dim: #8890b5;
-  --muted: #484a6a;
-  --card-radius: 8px;
+  --text: #f1f3fa;
+  --dim: #a3aecd;
+  --muted: #545a7c;
+  --card-radius: 12px;
 
   /* Phase 1: Tactile Motion & Interaction Tokens */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -27,8 +28,9 @@
   --press-scale: 0.97;
   --hover-lift: -3px;
   --focus-ring: 0 0 0 3px rgba(255, 114, 0, 0.25);
-  --glow-primary: 0 8px 32px rgba(255, 69, 0, 0.15);
-  --glow-hover: 0 16px 48px rgba(255, 69, 0, 0.22);
+  --glow-primary: 0 8px 32px rgba(255, 69, 0, 0.12);
+  --glow-hover: 0 16px 48px rgba(255, 69, 0, 0.2);
+  --glow-secondary: 0 8px 32px rgba(0, 242, 255, 0.12);
 }
 
 * {
@@ -104,12 +106,18 @@ a {
 }
 
 ::-webkit-scrollbar-track {
-  background: #070913;
+  background: var(--bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bright);
+  background: var(--border);
   border-radius: 999px;
+  border: 2px solid var(--bg);
+  transition: background var(--duration-normal) var(--ease-smooth);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 .shell {
@@ -128,8 +136,10 @@ a {
   padding: 28px 22px;
   border-right: 1px solid var(--border);
   background:
-    linear-gradient(180deg, rgba(15, 17, 32, 0.96), rgba(5, 6, 9, 0.96)),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 36px);
+    linear-gradient(180deg, rgba(14, 16, 23, 0.75), rgba(8, 9, 15, 0.85)),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.01) 0 1px, transparent 1px 36px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .brand-block {
@@ -1664,7 +1674,7 @@ input:focus {
 
 /* Hero gradient text */
 .hero-gradient-text {
-  background: linear-gradient(135deg, var(--fire) 0%, var(--orange) 30%, var(--amber) 60%, var(--green) 100%);
+  background: linear-gradient(135deg, var(--fire) 0%, var(--orange) 35%, var(--purple) 80%, var(--blue) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

@@ -53,6 +53,7 @@ class AuditState(BaseModel):
     user_id: str = ""
     repo_url: str = ""
     repo_branch: str = "main"
+    custom_email: str = ""
     repo_owner: str = ""
     repo_name: str = ""
     github_access_token: str = ""

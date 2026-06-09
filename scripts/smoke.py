@@ -103,7 +103,7 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
     me = request_json(urljoin(api_base, "auth/me"), token=token)
     results.append(SmokeResult("auth me", me.get("user_id") == "usr_smoke", json.dumps(me)))
 
-    system_status = request_json(urljoin(api_base, "system/status"))
+    system_status = request_json(urljoin(api_base, "system/status"), token=token)
     results.append(
         SmokeResult(
             "system status",
