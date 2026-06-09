@@ -173,24 +173,23 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
     if not jti:
         return True
 
-    if not _get_redis_client() and not settings.DEBUG:
-        logger.critical("Redis unavailable in production – token validation impossible.")
-        return True  # fail closed
+    # Fast path: check database session table directly (blistering fast, no Redis required)
+    if db is not None:
+        from backend.app.models.user import UserSession
+        sess = db.query(UserSession).filter(UserSession.id == jti).first()
+        if sess:
+            return bool(sess.is_revoked)
+        # If the session row doesn't exist, we assume it's valid
+        # (handles older tokens created before UserSession tracking)
+        return False
 
+    # Fallback to Redis only if DB is not provided (rare in API routes)
     client = _get_redis_client()
     if client is not None:
         try:
             return bool(client.exists(_denylist_key(str(jti))))
         except Exception:
-            if not settings.DEBUG:
-                logger.critical("Redis denylist lookup failed; rejecting token jti=%s.", jti)
-                return True
-            logger.info("Redis denylist lookup failed in DEBUG mode.")
-
-    if db is not None:
-        from backend.app.models.user import UserSession
-        sess = db.query(UserSession).filter(UserSession.id == jti).first()
-        if sess and sess.is_revoked:
+            logger.error("Redis denylist lookup failed for jti=%s.", jti)
             return True
 
     return False
@@ -202,25 +201,12 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
     if not jti or not exp:
         return False
 
-    if not _get_redis_client() and not settings.DEBUG:
-        logger.critical("Redis unavailable in production – token validation impossible.")
-        return True  # fail closed
-
     try:
         expires_at = datetime.fromtimestamp(int(exp), tz=timezone.utc)
     except (TypeError, ValueError):
         return False
 
-    ttl = max(int((expires_at - _utc_now()).total_seconds()), 1)
-    client = _get_redis_client()
-    if client is not None:
-        try:
-            client.setex(_denylist_key(str(jti)), ttl, "1")
-        except Exception:
-            logger.error("Failed to write token jti=%s to Redis denylist.", jti)
-            if not settings.DEBUG and settings.REDIS_URL:
-                return False
-
+    revoked = False
     if db is not None:
         from backend.app.models.user import UserSession
         sess = db.query(UserSession).filter(UserSession.id == jti).first()
@@ -228,8 +214,18 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
             sess.is_revoked = True
             sess.revocation_reason = reason or "logout"
             db.commit()
+            revoked = True
 
-    return True
+    # Optionally write to Redis for cross-instance cache if available
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            ttl = max(int((expires_at - _utc_now()).total_seconds()), 1)
+            client.setex(_denylist_key(str(jti)), ttl, "1")
+        except Exception:
+            logger.error("Failed to write token jti=%s to Redis denylist.", jti)
+
+    return revoked or (client is not None)
 
 
 def verify_access_token(token: str, *, check_revocation: bool = True, db: Optional[Session] = None) -> Optional[dict]:
