@@ -1,5 +1,7 @@
 import logging
 import socket
+import re
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
@@ -11,7 +13,7 @@ from urllib.parse import unquote, urlparse
 
 from backend.app.api.audit_queries import get_owned_job_or_404
 from backend.app.config import WORKSPACE_DIR, settings
-from backend.app.models import get_db, AuditJob, FindingModel, AgentLog
+from backend.app.models import get_db, AuditJob, FindingModel, AgentLog, User
 from backend.app.schemas import (
     JobDetailResponse,
     JobResponse,
@@ -21,7 +23,7 @@ from backend.app.schemas import (
     build_job_response,
 )
 from backend.app.orchestrator.runtime import execute_audit_job
-from backend.app.services.auth import get_current_user
+from backend.app.services.auth import get_current_user, decrypt_provider_token
 from backend.app.services.redaction import redact_text
 from backend.app.workers.celery_app import run_audit_job_task, celery_app
 
@@ -389,3 +391,132 @@ async def email_report(
         raise HTTPException(status_code=500, detail="Failed to send report email.")
 
     return {"message": "Report email sent successfully", "recipient": recipient}
+
+
+# GitHub Repositories List and Bulk Scan Schemas
+class GitHubRepoResponse(BaseModel):
+    name: str
+    full_name: str
+    html_url: str
+    default_branch: str
+    private: bool
+
+class SubmitBulkJobRequest(BaseModel):
+    repo_urls: List[str]
+    repo_branch: Optional[str] = "main"
+    custom_email: Optional[str] = None
+
+
+@router.get("/github-repos", response_model=List[GitHubRepoResponse])
+@limiter.limit("15/minute")
+async def list_github_repos(
+    request: Request,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    """Retrieve all GitHub repositories for the current authenticated user using their GitHub access token."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if not user.github_access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="GitHub account not connected. Please authenticate using GitHub Login first."
+        )
+    
+    try:
+        token = decrypt_provider_token(user.github_access_token)
+    except Exception as e:
+        logger.error("Failed to decrypt github token: %s", str(e))
+        raise HTTPException(status_code=500, detail="Secure token decryption failed.")
+
+    async with httpx.AsyncClient() as client:
+        try:
+            # Fetch user's own repositories
+            response = await client.get(
+                "https://api.github.com/user/repos?per_page=100&sort=updated",
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "FireCrow"
+                },
+                timeout=15.0
+            )
+            if response.status_code != 200:
+                logger.error("GitHub API error: %s - %s", response.status_code, response.text)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"GitHub API returned error: {response.status_code}"
+                )
+            
+            repos_data = response.json()
+            repos = []
+            for repo in repos_data:
+                repos.append(
+                    GitHubRepoResponse(
+                        name=repo.get("name", ""),
+                        full_name=repo.get("full_name", ""),
+                        html_url=repo.get("html_url", ""),
+                        default_branch=repo.get("default_branch", "main"),
+                        private=repo.get("private", False)
+                    )
+                )
+            return repos
+        except httpx.RequestError as exc:
+            logger.error("Failed to connect to GitHub API: %s", str(exc))
+            raise HTTPException(status_code=503, detail="GitHub API is unreachable.")
+
+
+@router.post("/submit-bulk", response_model=List[JobResponse])
+@limiter.limit("10/minute")
+async def submit_bulk_audit(
+    request: Request,
+    payload: SubmitBulkJobRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    """Submit multiple security audit jobs for remote repositories. Enqueues tasks sequentially."""
+    if not payload.repo_urls:
+        raise HTTPException(status_code=400, detail="No repository URLs provided.")
+    
+    # We allow a higher limit for bulk audits (up to 50 active jobs)
+    active_count = _active_job_count(db, user_id)
+    if active_count + len(payload.repo_urls) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Active audit limit reached. Adding {len(payload.repo_urls)} jobs would exceed the max limit of 50 active audits.",
+        )
+    
+    jobs = []
+    for repo_url in payload.repo_urls:
+        repo_url = repo_url.strip()
+        # Basic validation (must match Github HTTP/HTTPS format)
+        if not re.match(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(\.git)?$", repo_url):
+            logger.warning("Skipping invalid repository URL: %s", repo_url)
+            continue
+            
+        branch = (payload.repo_branch or "main").strip()
+        
+        job = AuditJob(
+            user_id=user_id,
+            repo_url=repo_url,
+            repo_branch=branch,
+            status=JobStatus.QUEUED
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        _dispatch_audit_job(
+            background_tasks,
+            job_id=job.id,
+            user_id=user_id,
+            repo_url=repo_url,
+            repo_branch=branch,
+            custom_email=payload.custom_email,
+        )
+        jobs.append(build_job_response(job))
+        
+    return jobs

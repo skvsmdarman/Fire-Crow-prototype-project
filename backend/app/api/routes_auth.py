@@ -313,8 +313,8 @@ async def policy_context():
         "terms_version": TERMS_VERSION,
         "providers": {
             "github": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
-            "google": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
-            "password": True,
+            "google": False,
+            "password": False,
         },
     }
 
@@ -358,6 +358,9 @@ async def create_policy_event(
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)):
+    import os
+    if os.environ.get("FIRE_CROW_MOCK_SANDBOX") != "True":
+        raise HTTPException(status_code=400, detail="Username and password registration is disabled. Please sign in using GitHub Login.")
     username = _normalize_username(payload.username)
     email = _normalize_email(payload.email)
     if not username:
@@ -437,6 +440,9 @@ async def register(request: Request, payload: RegisterRequest, db: Session = Dep
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("20/minute")
 async def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+    import os
+    if os.environ.get("FIRE_CROW_MOCK_SANDBOX") != "True":
+        raise HTTPException(status_code=400, detail="Username and password authentication is disabled. Please sign in using GitHub Login.")
     username = _normalize_username(payload.username)
     if not username:
         raise HTTPException(status_code=400, detail="Workspace name is required.")
@@ -743,6 +749,9 @@ async def google_login(
     region: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
+    import os
+    if os.environ.get("FIRE_CROW_MOCK_SANDBOX") != "True":
+        raise HTTPException(status_code=400, detail="Google authentication is disabled. Please sign in using GitHub Login.")
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
 
@@ -783,6 +792,9 @@ async def google_callback(
     state: str,
     db: Session = Depends(get_db),
 ):
+    import os
+    if os.environ.get("FIRE_CROW_MOCK_SANDBOX") != "True":
+        raise HTTPException(status_code=400, detail="Google authentication is disabled. Please sign in using GitHub Login.")
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
 

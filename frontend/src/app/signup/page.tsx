@@ -382,110 +382,120 @@ export default function SignUpPage() {
             ) : null}
           </div>
 
-          <div className={styles.divider}>or register with credentials</div>
+          {providerAvailability.password ? (
+            <>
+              <div className={styles.divider}>or register with credentials</div>
 
-          <form className={styles.form} onSubmit={submitRegister}>
-            <label className={styles.field}>
-              <span>Workspace name</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-                    <path d="M16 3h-8l-2 4h12l-2-4z" />
-                  </svg>
-                </span>
-                <input
-                  value={workspace}
-                  onChange={(event) => {
-                    setWorkspace(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="your-security-team"
-                />
-              </div>
-              <p className={styles.fieldHint}>
-                Unique handle for your workspace console. Only alphanumeric characters allowed.
-              </p>
-            </label>
+              <form className={styles.form} onSubmit={submitRegister}>
+                <label className={styles.field}>
+                  <span>Workspace name</span>
+                  <div className={styles.inputWrap}>
+                    <span className={styles.inputIcon} aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                        <path d="M16 3h-8l-2 4h12l-2-4z" />
+                      </svg>
+                    </span>
+                    <input
+                      value={workspace}
+                      onChange={(event) => {
+                        setWorkspace(event.target.value);
+                        setError("");
+                      }}
+                      placeholder="your-security-team"
+                    />
+                  </div>
+                  <p className={styles.fieldHint}>
+                    Unique handle for your workspace console. Only alphanumeric characters allowed.
+                  </p>
+                </label>
 
-            <label className={styles.field}>
-              <span>Work email</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="4" width="20" height="16" rx="2" />
-                    <path d="m22 7-10 6L2 7" />
-                  </svg>
-                </span>
-                <input
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="security@company.in"
-                  type="email"
-                />
-              </div>
-            </label>
+                <label className={styles.field}>
+                  <span>Work email</span>
+                  <div className={styles.inputWrap}>
+                    <span className={styles.inputIcon} aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <path d="m22 7-10 6L2 7" />
+                      </svg>
+                    </span>
+                    <input
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        setError("");
+                      }}
+                      placeholder="security@company.in"
+                      type="email"
+                    />
+                  </div>
+                </label>
 
-            <label className={styles.field}>
-              <span>Password</span>
-              <div className={styles.inputWrap}>
-                <span className={styles.inputIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                </span>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="Create a strong password"
-                />
-                <button
-                  type="button"
-                  className={styles.togglePassword}
-                  onClick={() => setShowPassword((current) => !current)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                <label className={styles.field}>
+                  <span>Password</span>
+                  <div className={styles.inputWrap}>
+                    <span className={styles.inputIcon} aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    </span>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setError("");
+                      }}
+                      placeholder="Create a strong password"
+                    />
+                    <button
+                      type="button"
+                      className={styles.togglePassword}
+                      onClick={() => setShowPassword((current) => !current)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </label>
+
+                {error && (
+                  <div className={styles.errorNotice} role="alert">
+                    {error}
+                  </div>
+                )}
+
+                <motion.button
+                  whileHover={{ scale: loading ? 1 : 1.01 }}
+                  whileTap={{ scale: loading ? 1 : 0.99 }}
+                  className={styles.submitButton}
+                  disabled={loading || loadingContext}
+                  type="submit"
                 >
-                  {showPassword ? (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </label>
+                  {loading && <span className={styles.submitSpinner} />}
+                  {loading ? "Registering Workspace..." : "Create workspace"}
+                </motion.button>
+              </form>
+            </>
+          ) : null}
 
-            {error && (
-              <div className={styles.errorNotice} role="alert">
-                {error}
-              </div>
-            )}
-
-            <motion.button
-              whileHover={{ scale: loading ? 1 : 1.01 }}
-              whileTap={{ scale: loading ? 1 : 0.99 }}
-              className={styles.submitButton}
-              disabled={loading || loadingContext}
-              type="submit"
-            >
-              {loading && <span className={styles.submitSpinner} />}
-              {loading ? "Registering Workspace..." : "Create workspace"}
-            </motion.button>
-          </form>
+          {error && !providerAvailability.password && (
+            <div className={styles.errorNotice} role="alert" style={{ marginTop: "16px" }}>
+              {error}
+            </div>
+          )}
 
           <p className={styles.cardFootnote}>
             Already have a workspace?{" "}

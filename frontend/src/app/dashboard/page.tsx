@@ -405,6 +405,39 @@ export default function Dashboard() {
     }
   };
 
+  const handleLaunchBulkScan = async (repoUrls: string[], repoBranch: string) => {
+    if (!token) return setSubmitError("Connect a workspace before launching an audit.");
+    if (!repoUrls.length) return setSubmitError("At least one repository URL is required.");
+    setSubmitting(true);
+    setSubmitError("");
+    toast(`Submitting ${repoUrls.length} repository intake requests...`, "info");
+    try {
+      const response = await fetch(`${API_BASE_URL}/audit/submit-bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ repo_urls: repoUrls, repo_branch: repoBranch.trim() || "main" }),
+      });
+      if (response.status === 401 || response.status === 403) return handleUnauthorized();
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.detail || "Unable to launch bulk audits.");
+      }
+      const queuedJobs = (await response.json()) as Job[];
+      if (queuedJobs.length > 0) {
+        setSelectedJobId(queuedJobs[0].id);
+      }
+      setActiveSection("audits");
+      await fetchJobs();
+      toast(`Successfully queued ${queuedJobs.length} audit jobs!`, "success");
+    } catch (error: unknown) {
+      const msg = getErrorMessage(error, "Unable to launch bulk audits.");
+      setSubmitError(msg);
+      toast(msg, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const cancelScan = async (jobId: string) => {
     if (!token) return;
     toast("Requesting job cancellation...", "info");
@@ -705,7 +738,7 @@ export default function Dashboard() {
 
           {activeSection === "audits" && (
             <motion.div key="audits" initial="hidden" animate="visible" exit="exit" variants={staggerContainer}>
-              <div className={styles.workGrid}><motion.div variants={scaleUp}><AuditForm onSubmit={handleLaunchScan} submitting={submitting} submitError={submitError} /></motion.div><motion.div variants={scaleUp}><JobList jobs={jobs} selectedJobId={selectedJobId} loadingJobs={loadingJobs} onRefresh={fetchJobs} onJobSelect={(jobId) => { setSelectedJobId(jobId); fetchJobDetail(jobId); }} /></motion.div></div>
+               <div className={styles.workGrid}><motion.div variants={scaleUp}><AuditForm onSubmit={handleLaunchScan} onBulkSubmit={handleLaunchBulkScan} submitting={submitting} submitError={submitError} token={token} /></motion.div><motion.div variants={scaleUp}><JobList jobs={jobs} selectedJobId={selectedJobId} loadingJobs={loadingJobs} onRefresh={fetchJobs} onJobSelect={(jobId) => { setSelectedJobId(jobId); fetchJobDetail(jobId); }} /></motion.div></div>
               <div className={styles.detailGrid}><motion.div variants={scaleUp}><PipelineViz job={selectedJob} onOpenReport={openReport} onCancel={cancelScan} reportError={reportError} /></motion.div><motion.div variants={scaleUp}><Card variant="surface" className={styles.panel}><div className={styles.panelHeader}><div><div className={styles.sectionKicker}>Status</div><h2>{selectedJob ? statusLabel(selectedJob) : "No audit selected"}</h2></div><Badge variant="status" type={streamActive ? "running" : selectedJob ? statusLabel(selectedJob) : "queued"}>{streamActive ? "live logs" : selectedJob ? statusLabel(selectedJob) : "idle"}</Badge></div><p className={mobile.panelCopy}>{selectedJob ? "The selected audit controls the summary, report action, and log panel below." : "Choose an audit from the list to inspect its saved state."}</p></Card></motion.div></div>
               <motion.div variants={scaleUp}><LogStream logs={logs} streamActive={streamActive} hasSelection={Boolean(selectedJobId)} /></motion.div>
             </motion.div>

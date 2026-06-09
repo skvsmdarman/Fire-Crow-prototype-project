@@ -173,7 +173,12 @@ def test_login_requires_privacy_consent():
     assert "Privacy Policy consent" in response.json()["detail"]
 
 
-def test_oauth_redirects_fail_when_provider_not_configured():
+def test_oauth_redirects_fail_when_provider_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+
     github_response = client.get(
         "/api/v1/auth/github",
         params={
