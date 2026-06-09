@@ -201,6 +201,9 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
     safe_repo_url = html_escape(repo_url)
     safe_risk_level = html_escape(risk_level)
     safe_recommendation = html_escape(recommendation)
+    
+    frontend_url = settings.FRONTEND_URL or "http://localhost:3000"
+    dashboard_url = f"{frontend_url.rstrip('/')}/dashboard"
 
     html_body = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -226,7 +229,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
         </ul>
 
         <div style="text-align: center; margin-top: 35px; margin-bottom: 15px;">
-            <a href="http://localhost:3000/dashboard" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
+            <a href="{dashboard_url}" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
         </div>
         
         <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 30px; text-align: center;">This analysis was autonomously formulated by the Fire Crow Google Security Agent orchestrator.</p>
