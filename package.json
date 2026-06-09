@@ -7,6 +7,6 @@
     "smoke": ".\\.venv\\Scripts\\python.exe scripts/smoke.py",
     "validate": "powershell -ExecutionPolicy Bypass -File scripts/validate.ps1",
     "build": "npm run build --prefix frontend",
-    "postinstall": "npm install --prefix frontend"
+    "postinstall": "npm install --production=false --prefix frontend"
   }
 }
