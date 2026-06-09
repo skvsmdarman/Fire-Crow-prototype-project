@@ -31,11 +31,26 @@ def calculate_sha256(data: bytes) -> str:
 
 class StorageService:
     def __init__(self):
-        self.s3_client = None
         self.r2_bucket = settings.R2_BUCKET_NAME or os.getenv("CLOUDFLARE_R2_BUCKET", "firecrow-reports")
+        self.s3_client = None
+        self._s3_disabled = False
+        if settings.R2_ENDPOINT_URL and settings.R2_ACCESS_KEY_ID and settings.R2_SECRET_ACCESS_KEY:
+            try:
+                import boto3
+                self.s3_client = boto3.client(
+                    "s3",
+                    endpoint_url=settings.R2_ENDPOINT_URL,
+                    aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                )
+            except Exception as e:
+                logger.error("Failed to initialize S3 client: %s", str(e))
+
 
     def is_s3_active(self) -> bool:
-        return False
+        if self._s3_disabled or _global_state.get("r2_disabled", False):
+            return False
+        return self.s3_client is not None
 
     def upload_artifact(
         self,
@@ -96,6 +111,7 @@ class StorageService:
                 if _is_r2_auth_error(err_msg):
                     logger.warning("R2 authentication/credentials invalid. Disabling S3 client for this session.")
                     _global_state["r2_disabled"] = True
+                    self._s3_disabled = True
                     self.s3_client = None
                 
                 from backend.app.config import settings
@@ -194,6 +210,14 @@ class StorageService:
                 return None
             return artifact, local_path
 
+
+    def download_artifact_local(self, db: Session, artifact_id: str, user_id: str):
+        result = self.get_artifact(db, artifact_id, user_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        artifact, file_path = result
+        return file_path, artifact.object_key.split("/")[-1], artifact.mime_type
+
     def delete_artifact(self, db: Session, artifact_id: str, user_id: str) -> bool:
         """
         Soft deletes an artifact from DB and optionally queues for hard deletion.
@@ -233,3 +257,5 @@ class StorageService:
                     local_path.unlink()
                 except Exception as e:
                     logger.error("Failed to delete local file: %s", redact_text(str(e)))
+
+storage_service = StorageService()
