@@ -31,7 +31,7 @@ async def stream_audit_logs(
     Establish a Server-Sent Events (SSE) stream for live agent log updates.
     Ensures tenant isolation by checking job ownership before streaming.
     """
-    if len(_active_connections[user_id]) >= MAX_SSE_CONNECTIONS_PER_USER:
+    if user_id in _active_connections and len(_active_connections[user_id]) >= MAX_SSE_CONNECTIONS_PER_USER:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Maximum number of active streams ({MAX_SSE_CONNECTIONS_PER_USER}) reached."

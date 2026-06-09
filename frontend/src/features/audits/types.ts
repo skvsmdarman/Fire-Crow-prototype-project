@@ -5,6 +5,8 @@ export interface Job {
   id: string;
   user_id: string;
   repo_url: string;
+  attestation_accepted: boolean;
+  authorization_scope: string;
   repo_branch: string;
   status: JobStatus;
   created_at: string;
@@ -38,6 +40,8 @@ export interface JobDetail {
 
 export interface SubmitAuditBody {
   repo_url: string;
+  attestation_accepted: boolean;
+  authorization_scope: string;
   repo_branch?: string;
   scanners?: string[];
   sandbox_mode?: "docker" | "simulation";

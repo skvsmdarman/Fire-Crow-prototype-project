@@ -36,7 +36,7 @@ class SandboxManager:
             logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in sandbox simulation mode.")
         elif DOCKER_AVAILABLE:
             try:
-                self.client = docker.from_env()
+                self.client = docker.from_env()  # type: ignore
                 # Ping daemon to confirm it is actually running and responsive
                 self.client.ping()
                 logger.info("Docker daemon connected. Sandbox manager running in active mode.")
@@ -257,7 +257,7 @@ class SandboxManager:
                     container.remove(force=True)
                     logger.info(f"Removed container {cid}")
                 except Exception as e:
-                    logger.warning(f"Failed to cleanly remove container {cid}: {e}")
+                    logger.warning(f"Failed to remove container {cid}: {str(e)}")
 
         # Remove bridge network
         if network_name:
@@ -266,4 +266,4 @@ class SandboxManager:
                 network.remove()
                 logger.info(f"Removed network {network_name}")
             except Exception as e:
-                logger.warning(f"Failed to cleanly remove network {network_name}: {e}")
+                logger.warning(f"Failed to remove network {network_name}: {str(e)}")

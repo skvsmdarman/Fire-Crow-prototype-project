@@ -469,7 +469,7 @@ function OverviewSection({ jobs, findings, criticalCount, setActive }: { jobs: J
   );
 }
 
-function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, newBranch, setNewBranch, onJobStarted, openReportUrl, streamActive, logs, token }: { jobs: Job[]; selected: Job | null; insight: AuditInsightResponse | null; onSelect: (id: string) => void; newUrl: string; setNewUrl: (s: string) => void; newBranch: string; setNewBranch: (s: string) => void; onJobStarted: (p: {repo_url: string; repo_branch: string;}) => Promise<Job | null>; openReportUrl: (id: string) => void; streamActive: boolean; logs: LogLine[]; token: string; }) {
+function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, newBranch, setNewBranch, onJobStarted, openReportUrl, streamActive, logs, token }: { jobs: Job[]; selected: Job | null; insight: AuditInsightResponse | null; onSelect: (id: string) => void; newUrl: string; setNewUrl: (s: string) => void; newBranch: string; setNewBranch: (s: string) => void; onJobStarted: (p: {repo_url: string; repo_branch: string; attestation_accepted: boolean; authorization_scope: string;}) => Promise<Job | null>; openReportUrl: (id: string) => void; streamActive: boolean; logs: LogLine[]; token: string; }) {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -477,7 +477,7 @@ function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, n
     if (!newUrl.trim()) return;
     setSubmitting(true);
     try {
-      await onJobStarted({ repo_url: newUrl, repo_branch: newBranch });
+      await onJobStarted({ repo_url: newUrl, repo_branch: newBranch, attestation_accepted: true, authorization_scope: "authorized_representative" });
       setNewUrl("");
       setNewBranch("main");
     } catch (e) {

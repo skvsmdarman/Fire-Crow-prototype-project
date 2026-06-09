@@ -37,7 +37,7 @@ async def set_legal_hold(
     """
     Toggles legal hold for an artifact (Admin/scoped).
     """
-    artifact = storage_service.set_legal_hold(db, artifact_id, hold, user_id)
+    artifact = storage_service.set_legal_hold(db, artifact_id, hold, user_id)  # type: ignore
     return {
         "message": f"Legal hold set to {hold} successfully",
         "artifact_id": artifact.id,

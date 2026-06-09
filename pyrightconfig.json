@@ -1,9 +1,9 @@
 {
-  "venvPath": "d:\\Fire Crow",
+  "venvPath": "/app",
   "venv": ".venv",
   "extraPaths": [
-    "d:\\Fire Crow",
-    "d:\\Fire Crow\\backend"
+    "/app",
+    "/app/backend"
   ],
   "typeCheckingMode": "basic"
 }
