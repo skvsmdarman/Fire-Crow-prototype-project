@@ -2,6 +2,7 @@ import logging
 import socket
 import re
 import os
+import httpx
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
