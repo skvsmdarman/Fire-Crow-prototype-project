@@ -77,6 +77,12 @@ def _dispatch_audit_job(
 
     if not celery_alive:
         logger.warning("Celery worker heartbeat missing or Redis unreachable. Falling back to local BackgroundTasks.")
+        if _bg_semaphore.locked():
+            raise HTTPException(
+                status_code=429,
+                detail="Too Many Requests: System is currently under heavy load. Please try again later."
+            )
+
         async def _run_with_limit():
             async with _bg_semaphore:
                 await asyncio.to_thread(

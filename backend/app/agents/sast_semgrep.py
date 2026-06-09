@@ -117,6 +117,4 @@ def run_semgrep_scan(clone_path: str, tech_stack: List[str]) -> List[Finding]:
         return [_finding_from_result(result) for result in data.get("results", [])]
 
     logger.info("Semgrep unavailable; no Semgrep findings will be generated.")
-    if settings.DEBUG:
-        return _simulated_findings(tech_stack)
     return []

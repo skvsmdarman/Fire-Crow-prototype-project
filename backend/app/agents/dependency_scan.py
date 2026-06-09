@@ -161,6 +161,4 @@ def run_dependency_scan(clone_path: str, dependency_manifests: List[str]) -> Lis
             return _findings_from_trivy(data)
 
     logger.info("Dependency scanner unavailable; no dependency findings will be generated.")
-    if settings.DEBUG:
-        return _simulated_findings(dependency_manifests)
     return []
