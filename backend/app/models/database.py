@@ -68,6 +68,8 @@ def _ensure_audit_job_compatibility() -> None:
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested_at TIMESTAMP")
         if "report_id" not in columns:
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN report_id VARCHAR(36)")
+        if "security_score" not in columns:
+            conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN security_score FLOAT")
 
 
 def _ensure_user_compatibility() -> None:
@@ -107,6 +109,8 @@ def _ensure_user_compatibility() -> None:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_logout_at TIMESTAMP")
         if "activity_log" not in columns:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN activity_log TEXT")
+        if "credit_balance" not in columns:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN credit_balance FLOAT NOT NULL DEFAULT 10.0")
         try:
             if engine.dialect.name == "postgresql":
                 conn.exec_driver_sql(
@@ -258,9 +262,9 @@ def _ensure_session_and_failure_compatibility() -> None:
     tables_to_create = []
 
     # Import models here to make sure they are in Base.metadata
-    from backend.app.models.user import AuthExchangeCode, LoginFailure, UserSession
+    from backend.app.models.user import AuthExchangeCode, LoginFailure, UserSession, PushSubscription
 
-    for table_name in ["login_failures", "user_sessions", "auth_exchange_codes"]:
+    for table_name in ["login_failures", "user_sessions", "auth_exchange_codes", "push_subscriptions"]:
         if table_name not in existing_tables:
             table_obj = Base.metadata.tables.get(table_name)
             if table_obj is not None:
