@@ -33,8 +33,8 @@ OAUTH_STATE_EXPIRE_MINUTES = 15
 AUTH_COOKIE_NAME = "fc_access_token"
 
 _password_hasher = PasswordHasher(
-    time_cost=3,
-    memory_cost=65536,
+    time_cost=2,
+    memory_cost=19456,
     parallelism=2,
     hash_len=32,
     salt_len=16,
