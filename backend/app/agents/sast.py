@@ -4,9 +4,9 @@ import logging
 import hashlib
 import uuid
 from typing import List
-from backend.app.config import settings
-from backend.app.schemas import Finding, Severity
-from backend.app.services.redaction import redact_text
+from app.config import settings
+from app.schemas import Finding, Severity
+from app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.sast")
 

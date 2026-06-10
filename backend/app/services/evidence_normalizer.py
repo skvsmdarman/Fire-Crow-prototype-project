@@ -1,7 +1,7 @@
 import json
 import uuid
 from typing import Any, Dict, List, Optional
-from backend.app.schemas.audit_state import Finding, Severity
+from app.schemas.audit_state import Finding, Severity
 
 
 def is_test_fixture_path(path: str) -> bool:
@@ -65,8 +65,6 @@ def normalize_finding(
     Produce a normalized dictionary representing a finding.
     Applies test/fixture false-positive hygiene.
     """
-    import uuid
-    import json
     is_test = is_test_fixture_path(file_path or "")
     has_fake_markers = check_fake_markers(evidence or "")
 

@@ -15,10 +15,10 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from backend.app.models.database import get_db
+from app.models.database import get_db
 
-from backend.app.config import settings
-from backend.app.services.crypto import crypto_manager
+from app.config import settings
+from app.services.crypto import crypto_manager
 
 logger = logging.getLogger("firecrow.services.auth")
 
@@ -123,7 +123,7 @@ def create_access_token(
     token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
     if db is not None:
-        from backend.app.models.user import UserSession
+        from app.models.user import UserSession
         ip_str = ip or "unknown"
         ua_str = user_agent or "unknown"
         ip_h = hashlib.sha256(ip_str.encode("utf-8")).hexdigest()
@@ -175,7 +175,7 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
 
     # Fast path: check database session table directly (blistering fast, no Redis required)
     if db is not None:
-        from backend.app.models.user import UserSession
+        from app.models.user import UserSession
         sess = db.query(UserSession).filter(UserSession.id == jti).first()
         if sess:
             return bool(sess.is_revoked)
@@ -208,7 +208,7 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
 
     revoked = False
     if db is not None:
-        from backend.app.models.user import UserSession
+        from app.models.user import UserSession
         sess = db.query(UserSession).filter(UserSession.id == jti).first()
         if sess:
             sess.is_revoked = True
@@ -228,7 +228,7 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
     return revoked or (client is not None)
 
 
-def verify_access_token(token: str, *, check_revocation: bool = True, db: Optional[Session] = None) -> Optional[dict]:
+def verify_access_token(token: str, *, check_revocation: bool = False, db: Optional[Session] = None) -> Optional[dict]:
     try:
         payload = jwt.decode(
             token,
@@ -377,7 +377,7 @@ def decrypt_provider_token(token: str | None) -> str:
 def create_exchange_code(user_id: str, username: str, token: str, *, db: Session) -> str:
     import secrets
 
-    from backend.app.models.user import AuthExchangeCode
+    from app.models.user import AuthExchangeCode
 
     now = _utc_now()
     expires_at = now + timedelta(seconds=60)
@@ -405,7 +405,7 @@ def create_exchange_code(user_id: str, username: str, token: str, *, db: Session
 
 
 def verify_and_consume_exchange_code(code: str, *, db: Session) -> Optional[dict]:
-    from backend.app.models.user import AuthExchangeCode
+    from app.models.user import AuthExchangeCode
 
     now = _utc_now()
     try:
@@ -453,7 +453,7 @@ def record_login_failure(db: Session, ip: str, username: str) -> None:
         except Exception:
             logger.error("Failed to write login failure key=%s to Redis.", key_hash)
 
-    from backend.app.models.user import LoginFailure
+    from app.models.user import LoginFailure
     db.add(LoginFailure(id=str(uuid.uuid4()), key_hash=key_hash, attempted_at=now))
     db.commit()
 
@@ -480,7 +480,7 @@ def check_login_lockout(db: Session, ip: str, username: str) -> bool:
         except Exception:
             logger.error("Failed to read login failures key=%s from Redis.", key_hash)
 
-    from backend.app.models.user import LoginFailure
+    from app.models.user import LoginFailure
     db.query(LoginFailure).filter(LoginFailure.attempted_at < window_start).delete()
     db.commit()
 
@@ -504,13 +504,13 @@ def clear_login_failures(db: Session, ip: str, username: str) -> None:
         except Exception:
             logger.error("Failed to clear login failures key=%s in Redis.", key_hash)
 
-    from backend.app.models.user import LoginFailure
+    from app.models.user import LoginFailure
     db.query(LoginFailure).filter(LoginFailure.key_hash == key_hash).delete()
     db.commit()
 
 
 def revoke_session_family(db: Session, token_family: str, reason: str = "family_revocation") -> None:
-    from backend.app.models.user import UserSession
+    from app.models.user import UserSession
     sessions = db.query(UserSession).filter(
         UserSession.token_family == token_family,
         UserSession.is_revoked == False

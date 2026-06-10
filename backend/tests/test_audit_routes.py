@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from backend.app.main import app
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.models import AgentLog, AuditArtifact, AuditJob, FindingModel, SessionLocal, User, get_db
-from backend.app.schemas import JobStatus, Severity
+from app.main import app
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.models import AgentLog, AuditArtifact, AuditJob, FindingModel, SessionLocal, User, get_db
+from app.schemas import JobStatus, Severity
 
 client = TestClient(app)
 
@@ -118,7 +118,7 @@ def test_get_job_insight_returns_disabled_state(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.api.routes_audit.is_llm_enabled", lambda feature: False)
+    monkeypatch.setattr("app.api.routes_audit.is_llm_enabled", lambda feature: False)
 
     response = client.get("/api/v1/audit/job/job-insight-disabled/insight", headers=headers)
 
@@ -163,8 +163,8 @@ def test_get_job_insight_returns_safe_summary(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.api.routes_audit.is_llm_enabled", lambda feature: True)
-    monkeypatch.setattr("backend.app.api.routes_audit.safe_llm_call", lambda *args, **kwargs: "Critical credential exposure and injection risk require immediate action.")
+    monkeypatch.setattr("app.api.routes_audit.is_llm_enabled", lambda feature: True)
+    monkeypatch.setattr("app.api.routes_audit.safe_llm_call", lambda *args, **kwargs: "Critical credential exposure and injection risk require immediate action.")
 
     response = client.get("/api/v1/audit/job/job-insight-enabled/insight", headers=headers)
 
@@ -188,8 +188,8 @@ def test_submit_audit_dispatches_celery_task(monkeypatch):
                 return b"alive"
             return None
 
-    monkeypatch.setattr("backend.app.services.auth._get_redis_client", lambda: MockRedis())
-    monkeypatch.setattr("backend.app.api.routes_audit.run_audit_job_task.apply_async", fake_apply_async)
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: MockRedis())
+    monkeypatch.setattr("app.api.routes_audit.run_audit_job_task.apply_async", fake_apply_async)
 
     response = client.post(
         "/api/v1/audit/submit",
@@ -235,8 +235,8 @@ def test_submit_audit_enforces_active_job_limit(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.api.routes_audit._is_broker_reachable", lambda: True)
-    monkeypatch.setattr("backend.app.api.routes_audit.run_audit_job_task.apply_async", fake_apply_async)
+    monkeypatch.setattr("app.api.routes_audit._is_broker_reachable", lambda: True)
+    monkeypatch.setattr("app.api.routes_audit.run_audit_job_task.apply_async", fake_apply_async)
 
     response = client.post(
         "/api/v1/audit/submit",
@@ -284,7 +284,7 @@ def test_cancel_job_sets_cancel_intent_without_forcing_terminal_state():
 
 
 def test_download_report_serves_local_report(monkeypatch, tmp_path):
-    monkeypatch.setattr("backend.app.api.routes_audit.REPORTS_DIR", tmp_path)
+    monkeypatch.setattr("app.api.routes_audit.REPORTS_DIR", tmp_path)
     headers, user_id = _auth_session()
     (tmp_path / "job-report.pdf").write_bytes(b"%PDF-1.4 test report")
 
@@ -564,7 +564,7 @@ def test_email_report_endpoint(monkeypatch, tmp_path):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.api.routes_audit.REPORTS_DIR", tmp_path)
+    monkeypatch.setattr("app.api.routes_audit.REPORTS_DIR", tmp_path)
     
     # Mock send_email_report
     calls = []
@@ -579,7 +579,7 @@ def test_email_report_endpoint(monkeypatch, tmp_path):
         })
         return True
     
-    from backend.app.services.reporter import ReportGenerator
+    from app.services.reporter import ReportGenerator
     monkeypatch.setattr(ReportGenerator, "send_email_report", fake_send_email_report)
 
     # 1. Test sending to custom email

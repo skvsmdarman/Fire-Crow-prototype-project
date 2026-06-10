@@ -1,7 +1,6 @@
-import json
 import logging
-from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState, Finding, Severity
+from typing import Any, Dict
+from app.schemas.audit_state import AuditState, Severity
 
 logger = logging.getLogger("firecrow.reporting.fallback")
 

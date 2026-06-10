@@ -1,5 +1,4 @@
-from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal, Optional
 import urllib.parse
 import uuid
@@ -11,10 +10,10 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings
-from backend.app.models.database import get_db
-from backend.app.models.user import User
-from backend.app.services.auth import (
+from app.config import settings
+from app.models.database import get_db
+from app.models.user import User
+from app.services.auth import (
     ACCESS_TOKEN_EXPIRE_SECONDS,
     create_access_token,
     create_exchange_code,
@@ -33,8 +32,8 @@ from backend.app.services.auth import (
     record_login_failure,
     clear_login_failures,
 )
-from backend.app.services.security_log import record_security_event
-from backend.app.services.limiter import limiter
+from app.services.security_log import record_security_event
+from app.services.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -580,7 +579,15 @@ async def logout(
 
 
 @router.get("/me")
-async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_me(request: Request, db: Session = Depends(get_db)):
+    from app.services.auth import _extract_bearer_or_cookie_token, verify_access_token
+    token = _extract_bearer_or_cookie_token(request, None)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = verify_access_token(token, check_revocation=True, db=db)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id = payload.get("sub")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User session could not be resolved.")

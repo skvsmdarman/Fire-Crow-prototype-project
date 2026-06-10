@@ -1,7 +1,6 @@
 import logging
-import uuid
 from typing import List
-from backend.app.schemas import Finding, Severity
+from app.schemas import Finding
 
 logger = logging.getLogger("firecrow.agents.iac")
 

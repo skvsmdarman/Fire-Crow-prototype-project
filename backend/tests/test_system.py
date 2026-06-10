@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from backend.app.main import app
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.models import SessionLocal, User, get_db
+from app.main import app
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.models import SessionLocal, User, get_db
 
 client = TestClient(app)
 

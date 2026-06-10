@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.app.config import Settings, settings
+from app.config import Settings, settings
 
 
 def test_runtime_settings_loaded_for_tests():

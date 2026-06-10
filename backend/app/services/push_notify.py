@@ -42,7 +42,7 @@ def load_or_generate_vapid_keys() -> tuple[str, str]:
             
         logger.info("Generated new VAPID keypair and persisted to %s", KEYS_FILE)
         return private_pem, public_b64url
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to generate VAPID keys.")
         return "", ""
 

@@ -1,7 +1,7 @@
 import pytest
-from backend.app.main import app
-from backend.app.models.database import SessionLocal
-from backend.app.models.user import User
+from app.main import app
+from app.models.database import SessionLocal
+from app.models.user import User
 from fastapi.testclient import TestClient
 
 def test_startup_does_not_delete_smoke_user():
@@ -38,7 +38,7 @@ def test_startup_does_not_delete_smoke_user():
 
 
 def test_global_exception_handler_returns_generic_error():
-    from backend.app.models.database import get_db
+    from app.models.database import get_db
     
     def mock_get_db():
         raise ValueError("This is a sensitive database connection error")

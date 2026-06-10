@@ -1,9 +1,9 @@
 import logging
 import os
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
 
-from backend.app.config import settings
-from backend.app.services.redaction import redact_text, truncate_text
+from app.config import settings
+from app.services.redaction import redact_text, truncate_text
 
 logger = logging.getLogger("firecrow.services.sandbox")
 
@@ -119,7 +119,7 @@ class SandboxManager:
             logger.info(f"[SIMULATOR] Created virtual private bridge network '{net_name}'")
             profile_name, _, _, _ = self._detect_launch_profile(clone_path)
             if profile_name == "unsupported":
-                logger.warning(f"[SIMULATOR] Unsupported repository tech stack; skipped target container run.")
+                logger.warning("[SIMULATOR] Unsupported repository tech stack; skipped target container run.")
                 target_cid_sim = ""
             else:
                 logger.info(f"[SIMULATOR] Deployed target application container '{target_cid}' with path '{clone_path}' (profile: {profile_name})")

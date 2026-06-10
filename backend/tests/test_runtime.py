@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from backend.app.models import AuditJob, SessionLocal
-from backend.app.orchestrator.runtime import execute_audit_job
-from backend.app.schemas import JobStatus
+from app.models import AuditJob, SessionLocal
+from app.orchestrator.runtime import execute_audit_job
+from app.schemas import JobStatus
 
 
 def test_execute_audit_job_completes_happy_path():
@@ -68,7 +68,7 @@ def test_execute_audit_job_cancelled_before_sandbox(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_sast", cancel_after_sast)
+    monkeypatch.setattr("app.orchestrator.maestro.run_sast", cancel_after_sast)
 
     final_state = execute_audit_job(
         job_id="job-cancel-before-sandbox",
@@ -118,7 +118,7 @@ def test_execute_audit_job_cancels_during_attack_and_cleans_up(monkeypatch):
                 status=JobStatus.QUEUED,
             )
         )
-        from backend.app.models.compliance import AuthorizationAttestation
+        from app.models.compliance import AuthorizationAttestation
         db.add(
             AuthorizationAttestation(
                 organization_id="default-org",
@@ -137,8 +137,8 @@ def test_execute_audit_job_cancels_during_attack_and_cleans_up(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_dynamic_attack", cancel_during_attack)
-    monkeypatch.setattr("backend.app.orchestrator.runtime.cleanup_resources", cleanup_spy)
+    monkeypatch.setattr("app.orchestrator.maestro.run_dynamic_attack", cancel_during_attack)
+    monkeypatch.setattr("app.orchestrator.runtime.cleanup_resources", cleanup_spy)
 
     final_state = execute_audit_job(
         job_id="job-cancel-attack",
@@ -181,7 +181,7 @@ def test_execute_audit_job_cleans_up_after_mid_pipeline_exception(monkeypatch):
                 status=JobStatus.QUEUED,
             )
         )
-        from backend.app.models.compliance import AuthorizationAttestation
+        from app.models.compliance import AuthorizationAttestation
         db.add(
             AuthorizationAttestation(
                 organization_id="default-org",
@@ -200,18 +200,18 @@ def test_execute_audit_job_cleans_up_after_mid_pipeline_exception(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_ai_analyzer", failing_ai_analyzer)
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_sast", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_dependency_scan", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_semgrep_scan", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_iac_scan", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.agents.secret_history.scan_for_secrets", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.agents.authz_idor.analyze_authz", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.agents.container_scan.scan_dockerfiles", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.agents.cicd_scan.scan_cicd_files", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_dynamic_attack", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.orchestrator.maestro.run_exploit_validation", lambda *args, **kwargs: [])
-    monkeypatch.setattr("backend.app.orchestrator.runtime.cleanup_resources", cleanup_spy)
+    monkeypatch.setattr("app.orchestrator.maestro.run_ai_analyzer", failing_ai_analyzer)
+    monkeypatch.setattr("app.orchestrator.maestro.run_sast", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.orchestrator.maestro.run_dependency_scan", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.orchestrator.maestro.run_semgrep_scan", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.orchestrator.maestro.run_iac_scan", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.agents.secret_history.scan_for_secrets", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.agents.authz_idor.analyze_authz", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.agents.container_scan.scan_dockerfiles", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.agents.cicd_scan.scan_cicd_files", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.orchestrator.maestro.run_dynamic_attack", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.orchestrator.maestro.run_exploit_validation", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.orchestrator.runtime.cleanup_resources", cleanup_spy)
 
     final_state = execute_audit_job(
         job_id="job-runtime-fail",
@@ -222,7 +222,7 @@ def test_execute_audit_job_cleans_up_after_mid_pipeline_exception(monkeypatch):
 
     db = SessionLocal()
     try:
-        from backend.app.models import FindingModel
+        from app.models import FindingModel
         job = db.query(AuditJob).filter(AuditJob.id == "job-runtime-fail").first()
         assert final_state.status == JobStatus.COMPLETED
         assert job is not None
@@ -249,7 +249,7 @@ def test_execute_audit_job_marks_partial_when_reporter_fails(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.orchestrator.maestro.ReportGenerator.compile_pdf", lambda self, html, path: False)
+    monkeypatch.setattr("app.orchestrator.maestro.ReportGenerator.compile_pdf", lambda self, html, path: False)
 
     final_state = execute_audit_job(
         job_id="job-runtime-partial",

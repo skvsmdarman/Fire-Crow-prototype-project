@@ -1,8 +1,7 @@
 import os
 import logging
-from typing import List, Set, Dict, Any, Optional
+from typing import List, Set, Optional
 from pydantic import BaseModel, Field
-from backend.app.config import settings
 
 logger = logging.getLogger("firecrow.orchestrator.scan_plan")
 

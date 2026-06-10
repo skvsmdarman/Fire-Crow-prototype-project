@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Literal, Sequence
 
@@ -11,40 +10,40 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy.orm import Session
 
-from backend.app.agents import (
+from app.agents import (
     run_dynamic_attack,
     run_exploit_validation,
     run_network_scan,
     run_recon,
     run_sast,
 )
-from backend.app.agents.api_surface import api_surface_body
-from backend.app.agents.secret_history import secret_history_body
-from backend.app.agents.sbom_graph import sbom_graph_body
-from backend.app.agents.cicd_scan import cicd_scan_body
-from backend.app.agents.container_scan import container_scan_body
-from backend.app.agents.authz_idor import authz_idor_body
-from backend.app.services.attack_graph import attack_graph_body
-from backend.app.services.remediation_planner import remediation_planner_body
+from app.agents.api_surface import api_surface_body
+from app.agents.secret_history import secret_history_body
+from app.agents.sbom_graph import sbom_graph_body
+from app.agents.cicd_scan import cicd_scan_body
+from app.agents.container_scan import container_scan_body
+from app.agents.authz_idor import authz_idor_body
+from app.services.attack_graph import attack_graph_body
+from app.services.remediation_planner import remediation_planner_body
 
-from backend.app.agents.github_mcp import run_github_mcp
-from backend.app.agents.sast_semgrep import run_semgrep_scan
-from backend.app.agents.dependency_scan import run_dependency_scan
-from backend.app.agents.iac_scan import run_iac_scan
-from backend.app.agents.ai_analyzer import run_ai_analyzer
-from backend.app.agents.google_agent import run_google_agent
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, PhaseLedgerModel, AuthorizationAttestation, AuditArtifact
-from backend.app.orchestrator.runtime_context import (
+from app.agents.github_mcp import run_github_mcp
+from app.agents.sast_semgrep import run_semgrep_scan
+from app.agents.dependency_scan import run_dependency_scan
+from app.agents.iac_scan import run_iac_scan
+from app.agents.ai_analyzer import run_ai_analyzer
+from app.agents.google_agent import run_google_agent
+from app.models import AgentLog, AuditJob, FindingModel, SessionLocal, PhaseLedgerModel, AuthorizationAttestation, AuditArtifact
+from app.orchestrator.runtime_context import (
     JobCancellationRequested,
     apply_runtime_updates,
     mark_cleanup_completed,
     sync_runtime_state,
 )
-from backend.app.schemas import AuditState, Finding, JobStatus, Severity
-from backend.app.config import WORKSPACE_DIR, settings
-from backend.app.services.reporter import ReportGenerator, get_clean_repo_name
-from backend.app.services.sandbox import SandboxManager
-from backend.app.services.redaction import redact_text
+from app.schemas import AuditState, Finding, JobStatus, Severity
+from app.config import settings
+from app.services.reporter import ReportGenerator, get_clean_repo_name
+from app.services.sandbox import SandboxManager
+from app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.maestro")
 
@@ -113,8 +112,8 @@ def _write_ledger_entry(
 
 
 def persist_findings(db: Session, job_id: str, findings: Sequence[Finding]) -> None:
-    from backend.app.services.storage import storage_service
-    from backend.app.services.redaction import redact_text
+    from app.services.storage import storage_service
+    from app.services.redaction import redact_text
 
     # Retrieve job details for tenant scoping
     job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
@@ -477,7 +476,7 @@ def recon_body(db: Session, state: AuditState) -> Dict[str, Any]:
     docker_available = (manager.client is not None)
 
     # Generate ScanPlan
-    from backend.app.orchestrator.scan_plan import generate_scan_plan
+    from app.orchestrator.scan_plan import generate_scan_plan
     plan = generate_scan_plan(
         clone_path=recon_result["clone_path"],
         attestation_accepted=attestation_accepted,
@@ -575,7 +574,7 @@ def network_body(db: Session, state: AuditState) -> Dict[str, Any]:
     open_ports = run_network_scan(state.sandbox_container_id, state.sandbox_target_ip)
     log_agent_message(db, state.job_id, "NETWORK", f"Port scan completed. Active ports: {[p['port'] for p in open_ports]}")
 
-    from backend.app.config import settings
+    from app.config import settings
     if state.api_surface:
         api_endpoints = [ep["path"] for ep in state.api_surface if ep.get("path")][:settings.API_DISCOVERY_LIMIT]
     else:
@@ -725,7 +724,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     all_findings = get_reportable_findings(state)
 
     # 1. Store structured report directly in Neon/PostgreSQL
-    from backend.app.services.report_service import create_report_in_db, generate_temp_pdf_report
+    from app.services.report_service import create_report_in_db, generate_temp_pdf_report
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
     
     report = create_report_in_db(
@@ -762,7 +761,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     if state.custom_email:
         user_email = state.custom_email
     elif db_job:
-        from backend.app.models.user import User
+        from app.models.user import User
         user = db.query(User).filter(User.id == db_job.user_id).first()
         if user and user.email:
             user_email = user.email
@@ -844,7 +843,7 @@ def google_agent_body(db: Session, state: AuditState) -> Dict[str, Any]:
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
     recipient_email = "audit-recipient@firecrow.dev"
     if db_job:
-        from backend.app.models.user import User
+        from app.models.user import User
         user = db.query(User).filter(User.id == db_job.user_id).first()
         if user and user.email:
             recipient_email = user.email
@@ -918,7 +917,7 @@ def semgrep_node(state: AuditState) -> Dict[str, Any]:
     return execute_phase(state, phase_name="semgrep_scan", agent_name="SEMGREP", start_message="Running Semgrep...", body=semgrep_body)
 
 def ai_analyzer_body(db: Session, state: AuditState) -> Dict[str, Any]:
-    from backend.app.reporting.fallback_writer import generate_fallback_report
+    from app.reporting.fallback_writer import generate_fallback_report
 
     try:
         dedup, fps, chains, rems = run_ai_analyzer(

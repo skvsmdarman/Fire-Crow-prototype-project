@@ -8,16 +8,15 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings, WORKSPACE_DIR, _global_state
-from backend.app.models.compliance import ArtifactObject, Membership, RetentionPolicy
-from backend.app.models.user import User
-from backend.app.services.redaction import redact_text
-from backend.app.services.reporter import _is_r2_auth_error
+from app.config import settings, WORKSPACE_DIR, _global_state
+from app.models.compliance import ArtifactObject, Membership, RetentionPolicy
+from app.models.user import User
+from app.services.redaction import redact_text
+from app.services.reporter import _is_r2_auth_error
 
 logger = logging.getLogger("firecrow.services.storage")
 
@@ -114,7 +113,7 @@ class StorageService:
                     self._s3_disabled = True
                     self.s3_client = None
                 
-                from backend.app.config import settings
+                from app.config import settings
                 if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
                     logger.info("Falling back to local storage")
                     self._write_local_file(object_key, data)
@@ -122,7 +121,7 @@ class StorageService:
                 else:
                     raise HTTPException(status_code=500, detail="Cloud storage upload failed and local fallback is disabled.")
         else:
-            from backend.app.config import settings
+            from app.config import settings
             if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
                 self._write_local_file(object_key, data)
                 storage_provider = "local"

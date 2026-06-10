@@ -4,10 +4,10 @@ from pydantic import BaseModel
 import json
 import logging
 
-from backend.app.models import get_db, FindingModel
-from backend.app.services.auth import get_current_user
-from backend.app.api.audit_queries import get_owned_job_or_404
-from backend.app.services.safe_llm import is_llm_enabled, safe_llm_call
+from app.models import get_db, FindingModel
+from app.services.auth import get_current_user
+from app.api.audit_queries import get_owned_job_or_404
+from app.services.safe_llm import is_llm_enabled, safe_llm_call
 
 logger = logging.getLogger("firecrow.api.chat")
 router = APIRouter(prefix="/chat", tags=["Security Chat"])

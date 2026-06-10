@@ -1,10 +1,10 @@
 # Fire Crow Database Models Package
-from backend.app.models.database import Base, engine, SessionLocal, get_db
-from backend.app.models.audit_job import AuditJob, FindingModel, AgentLog, AuditArtifact, PhaseLedgerModel, AuditReport
-from backend.app.models.user import User, LoginFailure, UserSession, AuthExchangeCode, PushSubscription
-from backend.app.models.security_log import SecurityLog
-from backend.app.models.role import Role
-from backend.app.models.compliance import (
+from app.models.database import Base, engine, SessionLocal, get_db
+from app.models.audit_job import AuditJob, FindingModel, AgentLog, AuditArtifact, PhaseLedgerModel, AuditReport
+from app.models.user import User, LoginFailure, UserSession, AuthExchangeCode, PushSubscription
+from app.models.security_log import SecurityLog
+from app.models.role import Role
+from app.models.compliance import (
     Organization,
     Membership,
     DataProcessingRecord,

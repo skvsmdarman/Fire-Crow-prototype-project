@@ -1,10 +1,10 @@
 import logging
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from backend.app.config import settings
-from backend.app.services.redaction import redact_text
+from app.config import settings
+from app.services.redaction import redact_text
 
-from typing import Any, Generator
+from typing import Any
 
 logger = logging.getLogger("firecrow.models.database")
 
@@ -22,7 +22,10 @@ if "postgresql" in db_url:
             db_url, 
             connect_args=connect_args,
             pool_pre_ping=True,
-            pool_recycle=300,
+            pool_size=settings.DATABASE_POOL_SIZE,
+            max_overflow=getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
+            pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+            pool_recycle=settings.DATABASE_POOL_RECYCLE,
         )
         with test_engine.connect() as conn:
             conn.execute(select(1))
@@ -47,7 +50,14 @@ if "postgresql" in db_url:
 
 if engine is None:
     # Initialize engine for SQLite or other URL
-    engine = create_engine(db_url)
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
+        pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+        pool_recycle=settings.DATABASE_POOL_RECYCLE,
+    ) if not db_url.startswith("sqlite") else create_engine(db_url)
     logger.info("Initialized database engine using URL: %s", db_url)
 
 
@@ -234,11 +244,6 @@ def _ensure_compliance_compatibility() -> None:
     ]
 
     # Import the compliance models here to make sure they are in metadata
-    from backend.app.models.compliance import (
-        Organization, Membership, DataProcessingRecord, RetentionPolicy,
-        ArtifactObject, ComplianceEvent, PrivacyRequest, AuthorizationAttestation,
-        SecretRedactionEvent
-    )
 
     tables_to_create = []
     for table_name in new_tables:
@@ -262,7 +267,6 @@ def _ensure_session_and_failure_compatibility() -> None:
     tables_to_create = []
 
     # Import models here to make sure they are in Base.metadata
-    from backend.app.models.user import AuthExchangeCode, LoginFailure, UserSession, PushSubscription
 
     for table_name in ["login_failures", "user_sessions", "auth_exchange_codes", "push_subscriptions"]:
         if table_name not in existing_tables:

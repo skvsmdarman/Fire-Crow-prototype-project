@@ -19,10 +19,10 @@ os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
 
-from backend.app.services.limiter import limiter
+from app.services.limiter import limiter
 limiter.enabled = False
 
-from backend.app.models.database import Base, engine
+from app.models.database import Base, engine
 
 
 @pytest.fixture(autouse=True, scope="function")

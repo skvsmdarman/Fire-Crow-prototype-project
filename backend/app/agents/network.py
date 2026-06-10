@@ -2,8 +2,8 @@ import logging
 import ipaddress
 import re
 from typing import List, Dict, Any
-from backend.app.services.sandbox import SandboxManager
-from backend.app.services.redaction import redact_text
+from app.services.sandbox import SandboxManager
+from app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.network")
 

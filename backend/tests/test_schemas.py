@@ -3,8 +3,8 @@ import pytest
 
 from pydantic import ValidationError
 
-from backend.app.schemas.audit_api import SubmitJobRequest
-from backend.app.schemas import AuditState, JobStatus, Finding, Severity
+from app.schemas.audit_api import SubmitJobRequest
+from app.schemas import AuditState, JobStatus, Finding, Severity
 
 
 def test_audit_state_initialization():
@@ -61,7 +61,7 @@ def test_submit_job_request_rejects_unsafe_branch_refs(branch: str):
 
 
 def test_audit_state_dict_reducer():
-    from backend.app.schemas.audit_state import merge_dicts
+    from app.schemas.audit_state import merge_dicts
     
     d1 = {"recon": {"status": "executed"}}
     d2 = {"regex_sast": {"status": "executed"}}

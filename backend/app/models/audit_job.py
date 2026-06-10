@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
-from backend.app.models.database import Base
-from backend.app.schemas.audit_state import JobStatus, Severity
+from app.models.database import Base
+from app.schemas.audit_state import JobStatus, Severity
 
 
 def generate_uuid() -> str:

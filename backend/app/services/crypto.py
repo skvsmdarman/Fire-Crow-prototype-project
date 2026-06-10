@@ -2,7 +2,7 @@ import logging
 import base64
 import hashlib
 from cryptography.fernet import Fernet
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("firecrow.crypto")
 

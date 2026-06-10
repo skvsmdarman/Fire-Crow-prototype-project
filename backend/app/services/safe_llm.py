@@ -3,7 +3,7 @@ import logging
 import urllib.request
 from typing import Optional
 
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("firecrow.safe_llm")
 

@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState, Finding
+from app.schemas.audit_state import AuditState, Finding
 
 def generate_remediation_plan(findings: List[Finding]) -> Dict[str, Any]:
     """
@@ -40,7 +40,7 @@ def remediation_planner_body(db: Any, state: AuditState) -> Dict[str, Any]:
 
     plan = generate_remediation_plan(all_vulns)
 
-    from backend.app.orchestrator.maestro import log_agent_message
+    from app.orchestrator.maestro import log_agent_message
     log_agent_message(db, state.job_id, "REMEDIATION_PLANNER", f"Remediation plan generated with {len(plan['tasks'])} tasks.")
 
     return {
