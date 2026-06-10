@@ -66,8 +66,8 @@ export default function ChatWidget({ jobId, token }: ChatWidgetProps) {
         onClick={() => setIsOpen(!isOpen)}
         style={{
           position: 'fixed',
-          bottom: '24px',
-          right: '24px',
+          bottom: 'calc(116px + env(safe-area-inset-bottom))',
+          right: 'max(16px, env(safe-area-inset-right))',
           width: '56px',
           height: '56px',
           borderRadius: '28px',
@@ -99,9 +99,9 @@ export default function ChatWidget({ jobId, token }: ChatWidgetProps) {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             style={{
               position: 'fixed',
-              bottom: '96px',
-              right: '24px',
-              width: '380px',
+              bottom: 'calc(116px + env(safe-area-inset-bottom) + 70px)',
+              right: 'max(16px, env(safe-area-inset-right))',
+              width: 'min(380px, calc(100vw - 32px))',
               height: '500px',
               background: 'rgba(15, 15, 15, 0.85)',
               backdropFilter: 'blur(20px)',

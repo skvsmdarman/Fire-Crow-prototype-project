@@ -400,3 +400,22 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media (max-width: 760px) {
+  /* Ensure filter chips in FindingsList are easy to tap */
+  [class*="filterChip"] {
+    min-height: 44px !important;
+    padding: 8px 16px !important;
+  }
+
+  /* Ensure the PWA install prompt doesn't overlap the bottom nav */
+  .fc-install-prompt {
+    bottom: calc(116px + env(safe-area-inset-bottom)) !important;
+    right: max(16px, env(safe-area-inset-right)) !important;
+  }
+
+  /* Prevent iOS zoom on input focus by ensuring font-size is >= 16px */
+  [class*="auditForm"] input, input {
+    font-size: 16px !important;
+  }
+}
