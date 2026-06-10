@@ -69,8 +69,21 @@ async def lifespan(app: FastAPI):
     try:
         from app.models.database import SessionLocal
         from app.services.housekeeping import run_housekeeping
+        from app.models.audit_job import AuditJob
+        from app.schemas.audit_state import JobStatus
         db = SessionLocal()
         try:
+            # Mark any running/queued jobs from previous session as failed
+            stuck_jobs = db.query(AuditJob).filter(
+                AuditJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING])
+            ).all()
+            for job in stuck_jobs:
+                job.status = JobStatus.FAILED
+                job.error_message = "Job interrupted by system restart"
+            if stuck_jobs:
+                db.commit()
+                logger.info(f"Cleaned up {len(stuck_jobs)} stuck jobs from previous session.")
+
             run_housekeeping(db)
         finally:
             db.close()
