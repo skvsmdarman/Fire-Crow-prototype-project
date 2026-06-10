@@ -289,6 +289,7 @@ def _oauth_redirect_url(request: Request, route_name: str) -> str:
     url = request.url_for(route_name)
     proto = request.headers.get("x-forwarded-proto")
     if proto:
+        proto = proto.split(",")[0].strip()
         url = url.replace(scheme=proto)
     elif not settings.DEBUG or settings.FRONTEND_URL.startswith("https://"):
         url = url.replace(scheme="https")
