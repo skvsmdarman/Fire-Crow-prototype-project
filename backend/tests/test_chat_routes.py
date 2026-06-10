@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.models import AuditJob, FindingModel, SessionLocal
-from backend.app.schemas import JobStatus, Severity
+from app.main import app
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.models import AuditJob, FindingModel, SessionLocal
+from app.schemas import JobStatus, Severity
 
 client = TestClient(app)
 
@@ -49,7 +49,7 @@ def test_chat_route_returns_503_when_disabled(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.api.routes_chat.is_llm_enabled", lambda feature: False)
+    monkeypatch.setattr("app.api.routes_chat.is_llm_enabled", lambda feature: False)
 
     response = client.post(
         "/api/v1/chat/ask",
@@ -89,8 +89,8 @@ def test_chat_route_returns_safe_llm_response(monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr("backend.app.api.routes_chat.is_llm_enabled", lambda feature: True)
-    monkeypatch.setattr("backend.app.api.routes_chat.safe_llm_call", lambda *args, **kwargs: "Focus on the SQL injection finding first.")
+    monkeypatch.setattr("app.api.routes_chat.is_llm_enabled", lambda feature: True)
+    monkeypatch.setattr("app.api.routes_chat.safe_llm_call", lambda *args, **kwargs: "Focus on the SQL injection finding first.")
 
     response = client.post(
         "/api/v1/chat/ask",

@@ -1,7 +1,7 @@
 import os
 import json
-from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState
+from typing import Any, Dict
+from app.schemas.audit_state import AuditState
 
 def generate_sbom(clone_path: str) -> Dict[str, Any]:
     """
@@ -52,7 +52,7 @@ def sbom_graph_body(db: Any, state: AuditState) -> Dict[str, Any]:
     sbom = generate_sbom(state.clone_path)
     components = sbom.get("components", [])
 
-    from backend.app.orchestrator.maestro import log_agent_message
+    from app.orchestrator.maestro import log_agent_message
     log_agent_message(db, state.job_id, "SBOM_GRAPH", f"Generated SBOM with {len(components)} components.")
 
     return {

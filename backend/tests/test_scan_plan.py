@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 import pytest
-from backend.app.orchestrator.scan_plan import generate_scan_plan
+from app.orchestrator.scan_plan import generate_scan_plan
 
 @pytest.fixture
 def temp_repo():

@@ -1,7 +1,7 @@
 import os
 import re
 from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState
+from app.schemas.audit_state import AuditState
 
 def detect_api_endpoints(clone_path: str) -> List[Dict[str, Any]]:
     """
@@ -137,7 +137,7 @@ def api_surface_body(db: Any, state: AuditState) -> Dict[str, Any]:
     endpoints = detect_api_endpoints(state.clone_path)
     risk_summary = analyze_route_risk(endpoints)
 
-    from backend.app.orchestrator.maestro import log_agent_message
+    from app.orchestrator.maestro import log_agent_message
     log_agent_message(db, state.job_id, "API_SURFACE", f"Detected {len(endpoints)} API endpoints.")
 
     return {

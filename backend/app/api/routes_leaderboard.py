@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from backend.app.models import get_db, AuditJob, FindingModel
-from backend.app.schemas.audit_state import Severity
-from backend.app.services.auth import get_current_user
+from app.models import get_db, AuditJob, FindingModel
+from app.schemas.audit_state import Severity
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 

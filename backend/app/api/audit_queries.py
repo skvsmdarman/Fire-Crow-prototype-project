@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.models import AuditJob, User, Membership
+from app.models import AuditJob, User, Membership
 
 
 def get_owned_job_or_404(db: Session, job_id: str, user_id: str) -> AuditJob:

@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 import logging
-from sqlalchemy import select, desc, func
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from backend.app.models.audit_job import AuditJob, AgentLog, AuditArtifact
+from app.models.audit_job import AuditJob, AgentLog, AuditArtifact
 
 logger = logging.getLogger("firecrow.services.housekeeping")
 

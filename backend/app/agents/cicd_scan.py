@@ -1,8 +1,8 @@
 import os
 import re
 from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState, Finding, Severity
-from backend.app.services.evidence_normalizer import normalize_finding, to_finding_model
+from app.schemas.audit_state import AuditState, Finding, Severity
+from app.services.evidence_normalizer import normalize_finding, to_finding_model
 
 def scan_cicd_files(clone_path: str) -> List[Finding]:
     findings = []
@@ -63,7 +63,7 @@ def scan_cicd_files(clone_path: str) -> List[Finding]:
 def cicd_scan_body(db: Any, state: AuditState) -> Dict[str, Any]:
     findings = scan_cicd_files(state.clone_path)
 
-    from backend.app.orchestrator.maestro import log_agent_message, persist_findings
+    from app.orchestrator.maestro import log_agent_message, persist_findings
     if findings:
         persist_findings(db, state.job_id, findings)
 

@@ -5,9 +5,8 @@ import subprocess
 import uuid
 from typing import Any, List
 
-from backend.app.config import settings
-from backend.app.schemas import Finding, Severity
-from backend.app.services.redaction import redact_text, truncate_text
+from app.schemas import Finding, Severity
+from app.services.redaction import redact_text, truncate_text
 
 logger = logging.getLogger("firecrow.agents.semgrep")
 

@@ -3,17 +3,17 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
-from backend.app.orchestrator.maestro import cleanup_resources, maestro_graph
-from backend.app.orchestrator.runtime_context import (
+from app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
+from app.orchestrator.maestro import cleanup_resources, maestro_graph
+from app.orchestrator.runtime_context import (
     JobCancellationRequested,
     get_runtime_state,
     get_runtime_tracker,
     initialize_runtime_tracker,
     reset_runtime_tracker,
 )
-from backend.app.schemas import AuditState, JobStatus
-from backend.app.services.auth import decrypt_provider_token
+from app.schemas import AuditState, JobStatus
+from app.services.auth import decrypt_provider_token
 
 logger = logging.getLogger("firecrow.orchestrator.runtime")
 
@@ -71,7 +71,7 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
             if not isinstance(exc, JobCancellationRequested):
                 logger.exception("Orchestrator graph execution or state validation failed: %s", exc)
 
-                from backend.app.orchestrator.runtime_context import get_runtime_tracker as get_tracker
+                from app.orchestrator.runtime_context import get_runtime_tracker as get_tracker
                 tracker = get_tracker()
                 if tracker:
                     tracker_state = tracker.state
@@ -88,7 +88,7 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
                         sandbox_container_id=tracker_state.get("sandbox_container_id", ""),
                     )
                     # Ensure get_runtime_state() returns this fallback if accessed downstream
-                    from backend.app.orchestrator.runtime_context import sync_runtime_state
+                    from app.orchestrator.runtime_context import sync_runtime_state
                     sync_runtime_state(result_state)
     except Exception as exc:
         execution_error = exc
@@ -112,7 +112,7 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         result_state = tracked_state
         reset_runtime_tracker(tracker_token)
         try:
-            from backend.app.services.housekeeping import run_housekeeping
+            from app.services.housekeeping import run_housekeeping
             run_housekeeping(db)
         except Exception as hk_err:
             logger.exception("Failed to run DB housekeeping after job execution: %s", hk_err)
@@ -189,8 +189,8 @@ def _persist_final_job_state(
 
     # Trigger Push Notification
     try:
-        from backend.app.models import PushSubscription
-        from backend.app.services.push_notify import send_web_push
+        from app.models import PushSubscription
+        from app.services.push_notify import send_web_push
         import json
         
         subscriptions = db.query(PushSubscription).filter(PushSubscription.user_id == job.user_id).all()

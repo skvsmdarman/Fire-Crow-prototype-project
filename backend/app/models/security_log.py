@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, Text
-from backend.app.models.database import Base
+from app.models.database import Base
 
 class SecurityLog(Base):
     __tablename__ = "security_logs"

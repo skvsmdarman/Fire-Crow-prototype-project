@@ -1,8 +1,8 @@
 import logging
 from celery import Celery
 
-from backend.app.config import settings
-from backend.app.orchestrator.runtime import execute_audit_job
+from app.config import settings
+from app.orchestrator.runtime import execute_audit_job
 
 logger = logging.getLogger("firecrow.celery")
 
@@ -44,7 +44,7 @@ def run_audit_job_task(self, job_id: str, user_id: str, repo_url: str, repo_bran
 
 @celery_app.task(name="heartbeat")
 def heartbeat():
-    from backend.app.services.auth import _get_redis_client
+    from app.services.auth import _get_redis_client
     redis_client = _get_redis_client()
     if redis_client:
         redis_client.setex("celery:heartbeat", 60, "alive")

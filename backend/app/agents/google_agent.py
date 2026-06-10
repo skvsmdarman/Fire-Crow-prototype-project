@@ -3,9 +3,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
-from backend.app.schemas import Finding, Severity
-from backend.app.config import settings, WORKSPACE_DIR
-from backend.app.services.redaction import redact_text
+from app.schemas import Finding, Severity
+from app.config import settings, WORKSPACE_DIR
+from app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.google_agent")
 

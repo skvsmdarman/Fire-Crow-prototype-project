@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import logging
 
-from backend.app.models import get_db, PushSubscription
-from backend.app.services.auth import get_current_user
-from backend.app.services.push_notify import load_or_generate_vapid_keys
+from app.models import get_db, PushSubscription
+from app.services.auth import get_current_user
+from app.services.push_notify import load_or_generate_vapid_keys
 
 logger = logging.getLogger("firecrow.api.push")
 router = APIRouter(prefix="/push", tags=["Push Notifications"])

@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings
-from backend.app.models import (
+from app.config import settings
+from app.models import (
     AuditJob,
     FindingModel,
     User,
@@ -17,8 +17,8 @@ from backend.app.models import (
     UserSession,
     SecurityLog,
 )
-from backend.app.services.auth import get_current_user
-from backend.app.services.housekeeping import run_housekeeping
+from app.services.auth import get_current_user
+from app.services.housekeeping import run_housekeeping
 
 
 router = APIRouter(prefix="/system", tags=["System"])
@@ -147,7 +147,7 @@ async def get_database_stats(
             db.rollback()
             return 0
 
-    from backend.app.models.database import check_pending_migrations
+    from app.models.database import check_pending_migrations
     pending_migrations = check_pending_migrations()
 
     row_counts = {

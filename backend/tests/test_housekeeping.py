@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
-from backend.app.models.database import SessionLocal
-from backend.app.models.audit_job import AuditJob, AgentLog, AuditArtifact
-from backend.app.services.housekeeping import run_housekeeping, MAX_JOBS_PER_USER
+from app.models.database import SessionLocal
+from app.models.audit_job import AuditJob, AgentLog, AuditArtifact
+from app.services.housekeeping import run_housekeeping, MAX_JOBS_PER_USER
 
 
 def test_housekeeping_pruning():

@@ -3,9 +3,9 @@ import os
 import html
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from backend.app.config import settings, WORKSPACE_DIR, _global_state
-from backend.app.schemas import Finding, Severity
-from backend.app.services.redaction import redact_text
+from app.config import settings, WORKSPACE_DIR, _global_state
+from app.schemas import Finding, Severity
+from app.services.redaction import redact_text
 
 # Ensure WeasyPrint can find GTK/Pango libraries on Windows
 if os.name == "nt" and "WEASYPRINT_DLL_DIRECTORIES" not in os.environ:

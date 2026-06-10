@@ -5,17 +5,17 @@ from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.main import app
-from backend.app.models import AuthExchangeCode, SecurityLog, SessionLocal, User
-from backend.app.services.auth import (
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.main import app
+from app.models import AuthExchangeCode, SecurityLog, SessionLocal, User
+from app.services.auth import (
     AUTH_COOKIE_NAME,
     create_access_token,
     create_exchange_code,
     legacy_hash_password_for_tests,
     verify_access_token,
 )
-from backend.app.config import settings
+from app.config import settings
 
 client = TestClient(app)
 
@@ -105,7 +105,7 @@ def test_logout_revokes_token_with_redis_configured(monkeypatch):
             self.revoked[key] = (ttl, value)
 
     fake_redis = FakeRedis()
-    monkeypatch.setattr("backend.app.services.auth._get_redis_client", lambda: fake_redis)
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: fake_redis)
     monkeypatch.setattr(settings, "DEBUG", False)
     monkeypatch.setattr(settings, "REDIS_URL", "redis://cache.firecrow.test:6379/0")
 
@@ -289,7 +289,7 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
                 )
             return FakeResponse([])
 
-    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
     monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.firecrow.test")
@@ -357,7 +357,7 @@ def test_github_oauth_callback_uses_request_origin_when_frontend_url_missing(mon
                 )
             return FakeResponse([])
 
-    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
     monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "")
@@ -404,7 +404,7 @@ def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):
         async def get(self, *args, **kwargs):
             return FakeResponse({"id": "google-123", "email": "GoogleUser@Example.com"})
 
-    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-client")
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.firecrow.test")
@@ -546,7 +546,7 @@ def test_user_activity_logging():
     user_id = reg_response.json()["user_id"]
     token = reg_response.json()["access_token"]
 
-    from backend.app.api.routes_auth import TERMS_VERSION
+    from app.api.routes_auth import TERMS_VERSION
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
@@ -632,3 +632,46 @@ def test_user_activity_logging():
         assert activity_history[0]["action"] == "logout"
     finally:
         db.close()
+
+def test_redis_miss_falls_back_to_db(monkeypatch):
+    class FakeRedis:
+        def exists(self, key: str) -> int:
+            return 0  # Cache miss
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            pass
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: fake_redis)
+
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("redis_miss"))
+    token = reg_response.json()["access_token"]
+
+    # Log out (this should write to DB)
+    logout_response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    assert logout_response.status_code == 200
+
+    # Test that /me rejects it despite Redis missing the key, because it falls back to DB
+    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+def test_redis_outage_falls_back_to_db(monkeypatch):
+    class CrashingRedis:
+        def exists(self, key: str) -> int:
+            raise Exception("Connection timeout")
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            raise Exception("Connection timeout")
+
+    crashing_redis = CrashingRedis()
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: crashing_redis)
+
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("redis_outage"))
+    token = reg_response.json()["access_token"]
+
+    # Log out
+    client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+
+    # Token should still be revoked
+    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401

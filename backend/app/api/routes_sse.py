@@ -6,11 +6,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import AsyncGenerator
 
-from backend.app.api.audit_queries import get_owned_job_or_404
-from backend.app.models import get_db, AuditJob, AgentLog
-from backend.app.schemas import JobStatus
-from backend.app.services.auth import get_current_user
-from backend.app.services.redaction import redact_text
+from app.api.audit_queries import get_owned_job_or_404
+from app.models import get_db, AuditJob, AgentLog
+from app.schemas import JobStatus
+from app.services.auth import get_current_user
+from app.services.redaction import redact_text
 from collections import defaultdict
 import uuid
 
@@ -59,7 +59,7 @@ async def stream_audit_logs(
             while connection_active:
                 # We create a new DB session inside the loop to avoid keeping the transaction open long-term
                 # and to fetch the latest state updates.
-                from backend.app.models import SessionLocal
+                from app.models import SessionLocal
                 loop_db = SessionLocal()
                 try:
                     # Refresh job status

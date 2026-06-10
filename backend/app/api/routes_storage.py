@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from backend.app.models import get_db
-from backend.app.services.auth import get_current_user
-from backend.app.services.storage import storage_service
+from app.models import get_db
+from app.services.auth import get_current_user
+from app.services.storage import storage_service
 
 router = APIRouter(prefix="/storage", tags=["Storage"])
 

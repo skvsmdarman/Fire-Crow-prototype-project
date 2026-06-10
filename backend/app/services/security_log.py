@@ -3,8 +3,8 @@ from typing import Any, Optional
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from backend.app.models.security_log import SecurityLog
-from backend.app.services.redaction import safe_json_dumps
+from app.models.security_log import SecurityLog
+from app.services.redaction import safe_json_dumps
 
 
 def get_client_ip(request: Request) -> Optional[str]:

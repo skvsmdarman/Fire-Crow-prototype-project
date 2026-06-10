@@ -3,7 +3,7 @@ import subprocess
 import shutil
 import logging
 from typing import List, Tuple, Optional
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("firecrow.agents.recon")
 

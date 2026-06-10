@@ -1,10 +1,10 @@
 import logging
 import uuid
 from typing import List, Dict, Any
-from backend.app.schemas import Finding, Severity
-from backend.app.services.sandbox import SandboxManager
-from backend.app.services.redaction import redact_text, truncate_text
-from backend.app.agents.network import is_allowed_sandbox_target
+from app.schemas import Finding, Severity
+from app.services.sandbox import SandboxManager
+from app.services.redaction import redact_text, truncate_text
+from app.agents.network import is_allowed_sandbox_target
 
 logger = logging.getLogger("firecrow.agents.attack")
 

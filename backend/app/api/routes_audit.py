@@ -6,14 +6,14 @@ from pathlib import Path
 import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from backend.app.services.limiter import limiter
+from app.services.limiter import limiter
 from sqlalchemy.orm import Session
 from typing import List
 from urllib.parse import unquote, urlparse
 
-from backend.app.api.audit_queries import get_owned_job_or_404
-from backend.app.config import WORKSPACE_DIR, settings
-from backend.app.models import (
+from app.api.audit_queries import get_owned_job_or_404
+from app.config import WORKSPACE_DIR, settings
+from app.models import (
     AgentLog,
     AuditArtifact,
     AuditJob,
@@ -24,7 +24,7 @@ from backend.app.models import (
     get_db,
 )
 from sqlalchemy import or_
-from backend.app.schemas import (
+from app.schemas import (
     JobDetailResponse,
     JobResponse,
     JobStatus,
@@ -32,11 +32,11 @@ from backend.app.schemas import (
     build_job_detail_response,
     build_job_response,
 )
-from backend.app.orchestrator.runtime import execute_audit_job
-from backend.app.services.auth import get_current_user
-from backend.app.services.redaction import redact_text
-from backend.app.services.safe_llm import is_llm_enabled, safe_llm_call
-from backend.app.workers.celery_app import run_audit_job_task, celery_app
+from app.orchestrator.runtime import execute_audit_job
+from app.services.auth import get_current_user
+from app.services.redaction import redact_text
+from app.services.safe_llm import is_llm_enabled, safe_llm_call
+from app.workers.celery_app import run_audit_job_task, celery_app
 
 logger = logging.getLogger("firecrow.api.audit")
 router = APIRouter(prefix="/audit", tags=["Security Auditing"])
@@ -68,7 +68,7 @@ def _dispatch_audit_job(
     repo_branch: str,
     custom_email: str = "",
 ) -> None:
-    from backend.app.services.auth import _get_redis_client
+    from app.services.auth import _get_redis_client
     redis_client = _get_redis_client()
     
     celery_alive = False
@@ -169,7 +169,7 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
 
 
 def _persisted_report_html_response(db: Session, job_id: str) -> HTMLResponse | None:
-    from backend.app.models.audit_job import AuditReport
+    from app.models.audit_job import AuditReport
     report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
     if report and report.html_content:
         return HTMLResponse(content=report.html_content)
@@ -229,7 +229,7 @@ async def submit_audit(
             detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
         )
 
-    from backend.app.services.auth import _get_redis_client
+    from app.services.auth import _get_redis_client
     redis_client = _get_redis_client()
     celery_alive = False
     if redis_client and redis_client.get("celery:heartbeat"):
@@ -382,8 +382,8 @@ async def download_report(
         job = get_owned_job_or_404(db, job_id, user_id)
 
         # 1. Try structured database report first (on-the-fly compiling)
-        from backend.app.models.audit_job import AuditReport
-        from backend.app.services.report_service import generate_temp_pdf_report
+        from app.models.audit_job import AuditReport
+        from app.services.report_service import generate_temp_pdf_report
         
         report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
         if report and report.html_content:
@@ -415,7 +415,7 @@ async def download_report(
 
         if job.report_pdf_url.startswith("artifact://"):
             artifact_id = job.report_pdf_url.split("://")[1]
-            from backend.app.services.storage import storage_service
+            from app.services.storage import storage_service
             try:
                 if storage_service.is_s3_active():
                     presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)  # type: ignore
@@ -511,8 +511,8 @@ async def email_report(
             raise HTTPException(status_code=422, detail=str(e))
 
     import shutil
-    from backend.app.schemas.audit_state import Severity
-    from backend.app.services.reporter import ReportGenerator
+    from app.schemas.audit_state import Severity
+    from app.services.reporter import ReportGenerator
 
     # 1. Resolves the user job details & compiled findings counts
     job = get_owned_job_or_404(db, job_id, user_id)
@@ -548,8 +548,8 @@ async def email_report(
         )
 
     # 3. Resolves the report and generates a temporary PDF if structured DB report exists
-    from backend.app.models.audit_job import AuditReport
-    from backend.app.services.report_service import generate_temp_pdf_report
+    from app.models.audit_job import AuditReport
+    from app.services.report_service import generate_temp_pdf_report
     
     report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
     
@@ -570,7 +570,7 @@ async def email_report(
         pdf_file_path = None
         if job.report_pdf_url.startswith("artifact://"):
             artifact_id = job.report_pdf_url.split("://")[1]
-            from backend.app.services.storage import storage_service
+            from app.services.storage import storage_service
             try:
                 file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
                 pdf_file_path = file_path
@@ -607,7 +607,7 @@ async def email_report(
         email_url = job.report_pdf_url
         if job.report_pdf_url.startswith("artifact://"):
             artifact_id = job.report_pdf_url.split("://")[1]
-            from backend.app.services.storage import storage_service
+            from app.services.storage import storage_service
 
             if storage_service.is_s3_active():
                 try:
@@ -678,7 +678,7 @@ async def get_attack_graph(
     user_id: str = Depends(get_current_user)
 ):
     job = get_owned_job_or_404(db, job_id, user_id)
-    from backend.app.models import AuditArtifact
+    from app.models import AuditArtifact
     artifact = db.query(AuditArtifact).filter(
         AuditArtifact.job_id == job_id,
         AuditArtifact.artifact_type == "attack_graph"

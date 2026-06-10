@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, List, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, field_validator, Field
 import re
-from backend.app.schemas.audit_state import JobStatus
+from app.schemas.audit_state import JobStatus
 
 if TYPE_CHECKING:
-    from backend.app.models.audit_job import AuditJob, FindingModel
+    from app.models.audit_job import AuditJob, FindingModel
 
 
 class SubmitJobRequest(BaseModel):

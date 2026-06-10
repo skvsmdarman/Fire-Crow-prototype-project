@@ -14,12 +14,11 @@ from sqlalchemy.orm import Session
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from backend.app.services.limiter import limiter
+from app.services.limiter import limiter
 
-from backend.app.config import settings, WORKSPACE_DIR
-from backend.app.models.database import Base, engine, ensure_database_compatibility, get_db
-from backend.app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router
-from backend.app.services.redaction import redact_text
+from app.config import settings, WORKSPACE_DIR
+from app.models.database import Base, engine, ensure_database_compatibility, get_db
+from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router
 
 logger = logging.getLogger("firecrow.main")
 
@@ -50,7 +49,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Running in non-debug/production mode; checking for pending migrations.")
         try:
-            from backend.app.models.database import check_pending_migrations
+            from app.models.database import check_pending_migrations
             if check_pending_migrations():
                 logger.error(
                     "SECURITY CRITICAL: Pending database migrations detected. "
@@ -63,14 +62,13 @@ async def lifespan(app: FastAPI):
             logger.error("Error running database migration startup check: %s", str(e))
 
     # Ensure workspace directories exist
-    from pathlib import Path
     for dir_name in ["workspace/reports", "workspace/temp", "workspace/storage", "workspace/scans"]:
         (WORKSPACE_DIR / dir_name).mkdir(parents=True, exist_ok=True)
 
     # Run database storage housekeeping
     try:
-        from backend.app.models.database import SessionLocal
-        from backend.app.services.housekeeping import run_housekeeping
+        from app.models.database import SessionLocal
+        from app.services.housekeeping import run_housekeeping
         db = SessionLocal()
         try:
             run_housekeeping(db)
@@ -235,7 +233,7 @@ async def health_ready(db: Session = Depends(get_db)):
 
     redis_ok = True
     try:
-        from backend.app.services.auth import _get_redis_client
+        from app.services.auth import _get_redis_client
         client = _get_redis_client()
         if client is not None:
             client.ping()
@@ -273,7 +271,7 @@ async def health_deep(db: Session = Depends(get_db)):
         storage_ok = False
 
     s3_ok = True
-    from backend.app.services.storage import storage_service
+    from app.services.storage import storage_service
     if storage_service.s3_client is not None:
         try:
             storage_service.s3_client.list_buckets()

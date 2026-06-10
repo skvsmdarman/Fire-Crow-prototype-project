@@ -1,5 +1,5 @@
-from backend.app.orchestrator.maestro import ai_analyzer_body
-from backend.app.schemas.audit_state import AuditState, Finding, Severity
+from app.orchestrator.maestro import ai_analyzer_body
+from app.schemas.audit_state import AuditState, Finding, Severity
 from unittest.mock import MagicMock
 
 def test_maestro_ai_analyzer_routing():
