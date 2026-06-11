@@ -208,12 +208,12 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
     html_body = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
         <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
-            <span style="font-size: 24px; font-weight: bold; color: #0f172a;">🤖 Google AI Security Agent</span>
+            <span style="font-size: 24px; font-weight: bold; color: #0f172a;">🤖 Firecrow Agent</span>
             <div style="font-size: 14px; color: #64748b; margin-top: 5px;">Repository Pull Request Risk Evaluation</div>
         </div>
         
         <p style="font-size: 16px; line-height: 1.6; color: #334155;">Hello Security Team,</p>
-        <p style="font-size: 16px; line-height: 1.6; color: #334155;">The <strong>Google Security Agent</strong> has finished evaluating PR merge risks for repository: <br><code style="background-color: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-size: 14px;">{safe_repo_url}</code></p>
+        <p style="font-size: 16px; line-height: 1.6; color: #334155;">The <strong>Firecrow Agent</strong> has finished evaluating PR merge risks for repository: <br><code style="background-color: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-size: 14px;">{safe_repo_url}</code></p>
         
         <div style="margin: 25px 0; padding: 15px; border-radius: 8px; border-left: 5px solid {risk_color}; background-color: #f8fafc;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -232,7 +232,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
             <a href="{dashboard_url}" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
         </div>
         
-        <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 30px; text-align: center;">This analysis was autonomously formulated by the Fire Crow Google Security Agent orchestrator.</p>
+        <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 30px; text-align: center;">This analysis was autonomously formulated by the Firecrow Agent.</p>
     </div>
     """
 
@@ -242,10 +242,10 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
     # 1. Try Google SMTP
     if settings.SMTP_USER and settings.SMTP_PASSWORD:
         try:
-            logger.info("Google Agent sending PR Risk email to %s via Google SMTP", recipient_email)
+            logger.info("Firecrow Agent sending PR Risk email to %s via Google SMTP", recipient_email)
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"🤖 Google Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}"
-            msg["From"] = f"Google Security Agent <{settings.SMTP_USER}>"
+            msg["Subject"] = f"🤖 Firecrow Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}"
+            msg["From"] = f"Firecrow Agent <{settings.SMTP_USER}>"
             msg["To"] = recipient_email
             msg.attach(MIMEText(html_body, "html"))
             
@@ -263,12 +263,12 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
     if not delivered and settings.RESEND_API_KEY:
         try:
             import resend
-            logger.info("Google Agent sending PR Risk email to %s via Resend", recipient_email)
+            logger.info("Firecrow Agent sending PR Risk email to %s via Resend", recipient_email)
             resend.api_key = settings.RESEND_API_KEY
             resend.Emails.send({
-                "from": f"Google Security Agent <{settings.SENDER_EMAIL}>",
+                "from": f"Firecrow Agent <{settings.SENDER_EMAIL}>",
                 "to": [recipient_email],
-                "subject": f"🤖 Google Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
+                "subject": f"🤖 Firecrow Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
                 "html": html_body
             })
             delivered = True
@@ -280,7 +280,7 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
     if not delivered and settings.BREVO_API_KEY:
         try:
             import httpx
-            logger.info("Google Agent sending PR Risk email to %s via Brevo", recipient_email)
+            logger.info("Firecrow Agent sending PR Risk email to %s via Brevo", recipient_email)
             response = httpx.post(
                 "https://api.brevo.com/v3/smtp/email",
                 headers={
@@ -289,9 +289,9 @@ Output your evaluation in this exact JSON format (and ONLY output this raw JSON 
                     "accept": "application/json"
                 },
                 json={
-                    "sender": {"email": settings.SENDER_EMAIL, "name": "Google Security Agent"},
+                    "sender": {"email": settings.SENDER_EMAIL, "name": "Firecrow Agent"},
                     "to": [{"email": recipient_email}],
-                    "subject": f"🤖 Google Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
+                    "subject": f"🤖 Firecrow Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
                     "htmlContent": html_body
                 },
                 timeout=15.0
