@@ -98,6 +98,15 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     assert retrieved_job is not None
     assert retrieved_job.user_id == user_id
 
+    # Test setting attributes on retrieved models (descriptor check)
+    retrieved_job.status = JobStatus.RUNNING
+    db_session.add(retrieved_job)
+    db_session.commit()
+
+    # Verify it updated in database
+    updated_job = db_session.query(AuditJob).filter(AuditJob.id == job_id).first()
+    assert updated_job.status == JobStatus.RUNNING
+
     with neo4j_driver.session() as session:
         res = session.run(
             "MATCH (j:AuditJob {id: $job_id})-[:OWNED_BY]->(u:User {id: $user_id}) RETURN j, u",

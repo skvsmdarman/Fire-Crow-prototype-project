@@ -316,9 +316,13 @@ if True:
                 props[key] = value
         return props
 
+    class DummyInstanceState:
+        def _modified_event(self, dict_, attr, old):
+            pass
+
     def node_to_model(node, model_class):
         instance = model_class.__new__(model_class)
-        instance._sa_instance_state = None
+        instance._sa_instance_state = DummyInstanceState()
         
         properties = dict(node)
         datetime_fields = set()
