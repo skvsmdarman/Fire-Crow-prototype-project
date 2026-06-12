@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
@@ -24,9 +23,6 @@ class Settings(BaseSettings):
         default="postgresql://postgres:postgres@localhost:5432/firecrow",
         validation_alias="DATABASE_URL"
     )
-    NEO4J_URI: Optional[str] = Field(default=None, validation_alias="NEO4J_URI")
-    NEO4J_USERNAME: Optional[str] = Field(default=None, validation_alias="NEO4J_USERNAME")
-    NEO4J_PASSWORD: Optional[str] = Field(default=None, validation_alias="NEO4J_PASSWORD")
     REDIS_URL: str = Field(
         default="",
         validation_alias="REDIS_URL"
