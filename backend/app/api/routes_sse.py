@@ -34,11 +34,25 @@ async def stream_audit_logs(
         last_seen_log_id = 0
         connection_active = True
         last_heartbeat_time = datetime.now(timezone.utc).timestamp()
+        stream_start_time = datetime.now(timezone.utc).timestamp()
+        # Maximum stream duration: 20 minutes. If the job hasn't finished by
+        # then, the frontend will fall back to polling the job status endpoint.
+        MAX_STREAM_DURATION_SEC = 1200
 
         # Send initial connection success event
         yield f"event: connect\ndata: {json.dumps({'status': 'connected', 'job_id': job_id})}\n\n"
 
         while connection_active:
+            # Guard against infinite streaming on stuck jobs
+            elapsed = datetime.now(timezone.utc).timestamp() - stream_start_time
+            if elapsed > MAX_STREAM_DURATION_SEC:
+                logger.warning(
+                    "SSE stream for job %s exceeded max duration (%ds). Closing.",
+                    job_id, MAX_STREAM_DURATION_SEC,
+                )
+                yield f"event: error\ndata: {json.dumps({'error': 'Stream timeout exceeded. The job may still be running on the server.'})}\n\n"
+                break
+
             # We create a new DB session inside the loop to avoid keeping the transaction open long-term
             # and to fetch the latest state updates.
             from backend.app.models import SessionLocal

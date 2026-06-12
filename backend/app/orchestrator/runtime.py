@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -83,7 +84,42 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
                     execution_error = cleanup_error
 
         terminal_status = _resolve_terminal_status(db, job_id, tracked_state, execution_error)
-        _persist_final_job_state(db, job_id, tracked_state, terminal_status, execution_error)
+
+        # Persist final state with retry — this is critical for the SSE stream
+        # to detect the terminal status and unblock the frontend.
+        persist_succeeded = False
+        for attempt in range(3):
+            try:
+                _persist_final_job_state(db, job_id, tracked_state, terminal_status, execution_error)
+                persist_succeeded = True
+                break
+            except Exception as persist_error:
+                logger.error(
+                    "Failed to persist final state for job %s (attempt %d/3): %s",
+                    job_id, attempt + 1, persist_error,
+                )
+                if attempt < 2:
+                    time.sleep(1)
+
+        if not persist_succeeded:
+            # Last-resort: try a minimal status-only update with a fresh session
+            try:
+                emergency_db = SessionLocal()
+                emergency_job = emergency_db.query(AuditJob).filter(AuditJob.id == job_id).first()
+                if emergency_job:
+                    emergency_job.status = terminal_status
+                    emergency_job.finished_at = datetime.now(timezone.utc)
+                    emergency_job.error_message = "Job completed but failed to persist full state. Check server logs."
+                    emergency_db.commit()
+                    logger.warning("Emergency persist succeeded for job %s with status %s", job_id, terminal_status)
+                emergency_db.close()
+            except Exception as emergency_error:
+                logger.critical(
+                    "CRITICAL: All attempts to persist final state for job %s failed. "
+                    "Job will remain stuck in running state. Error: %s",
+                    job_id, emergency_error,
+                )
+
         tracked_state.status = terminal_status
         result_state = tracked_state
         reset_runtime_tracker(tracker_token)
