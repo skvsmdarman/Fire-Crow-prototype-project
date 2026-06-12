@@ -367,6 +367,32 @@ if True:
                 session.execute_write(self._commit_tx)
 
         def _commit_tx(self, tx):
+            # Resolve SQLAlchemy python-side defaults first
+            for obj in self.new_objects:
+                model_class = type(obj)
+                if hasattr(model_class, "__table__"):
+                    for col in model_class.__table__.columns:
+                        col_name = col.name
+                        if getattr(obj, col_name, None) is None:
+                            if col.default is not None:
+                                if col.default.is_callable:
+                                    try:
+                                        val = col.default.arg()
+                                    except TypeError:
+                                        try:
+                                            val = col.default.arg(None)
+                                        except Exception:
+                                            val = None
+                                else:
+                                    val = col.default.arg
+                                if val is not None:
+                                    setattr(obj, col_name, val)
+                            elif col_name == "id" and col.primary_key:
+                                from sqlalchemy import String
+                                if isinstance(col.type, String):
+                                    import uuid
+                                    setattr(obj, col_name, str(uuid.uuid4()))
+
             for obj in self.new_objects:
                 label = type(obj).__name__
                 if label == "AgentLog" and getattr(obj, "id", None) is None:

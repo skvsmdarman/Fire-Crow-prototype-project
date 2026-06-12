@@ -67,6 +67,19 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     assert retrieved.email == "test_neo4j@example.com"
     assert isinstance(retrieved.created_at, datetime)
 
+    # 2b. Add a SecurityLog without setting id or timestamp (test default resolution)
+    sec_log = SecurityLog(
+        user_id=user_id,
+        action="login_success",
+        ip_address="127.0.0.1",
+        user_agent="pytest"
+    )
+    db_session.add(sec_log)
+    db_session.commit()
+
+    assert sec_log.id is not None
+    assert sec_log.timestamp is not None
+
     # 3. Add an AuditJob owned by the user
     job_id = f"test_neo4j_job_{uuid.uuid4().hex[:6]}"
     job = AuditJob(
@@ -183,6 +196,7 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     db_session.delete(finding)
     db_session.delete(log)
     db_session.delete(job)
+    db_session.delete(sec_log)
     db_session.delete(user)
     db_session.commit()
 
