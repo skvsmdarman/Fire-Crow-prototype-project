@@ -285,9 +285,15 @@ if settings.NEO4J_URI:
         return props
 
     def node_to_model(node, model_class):
-        instance = model_class.__new__(model_class)
-        instance._sa_instance_state = None
-        
+        from sqlalchemy.orm.instrumentation import manager_of_class
+
+        # Use SQLAlchemy's own mechanism so that _sa_instance_state is a real
+        # InstanceState object (not None). This is critical: any attribute
+        # assignment through a SQLAlchemy descriptor (e.g. user.email = "x")
+        # calls state._modified_event(...), which would crash if state is None.
+        manager = manager_of_class(model_class)
+        instance = manager.new_instance()
+
         properties = dict(node)
         datetime_fields = set()
         if hasattr(model_class, "__table__"):
@@ -295,7 +301,9 @@ if settings.NEO4J_URI:
                 from sqlalchemy import DateTime
                 if isinstance(col.type, DateTime):
                     datetime_fields.add(col.name)
-                    
+
+        # Populate via __dict__ to bypass change-tracking on initial load —
+        # the instance is transient/detached so there is no session to notify.
         for key, value in properties.items():
             if key in datetime_fields and isinstance(value, str):
                 try:
@@ -304,12 +312,12 @@ if settings.NEO4J_URI:
                     instance.__dict__[key] = value
             else:
                 instance.__dict__[key] = value
-                
+
         if hasattr(model_class, "__table__"):
             for col in model_class.__table__.columns:
                 if col.name not in instance.__dict__:
                     instance.__dict__[col.name] = None
-                    
+
         return instance
 
     class Neo4jSession:
