@@ -42,15 +42,21 @@ class SandboxManager:
                 logger.info("Docker daemon connected. Sandbox manager running in active mode.")
             except Exception as e:
                 self.unavailable_reason = "Docker daemon is unavailable."
-                self.mock_mode = True
-                logger.warning(
-                    "Could not connect to Docker daemon: %s. Falling back to sandbox simulation mode.",
-                    redact_text(str(e)),
-                )
+                if settings.DEBUG:
+                    self.mock_mode = True
+                    logger.warning(
+                        "Could not connect to Docker daemon: %s. Falling back to DEBUG simulation mode.",
+                        redact_text(str(e)),
+                    )
+                else:
+                    logger.error("Docker daemon unavailable in production; refusing sandbox simulation.", exc_info=True)
         else:
             self.unavailable_reason = "Docker python SDK is not installed."
-            self.mock_mode = True
-            logger.warning("Docker python SDK not installed. Running in sandbox simulation mode.")
+            if settings.DEBUG:
+                self.mock_mode = True
+                logger.warning("Docker python SDK not installed. Running in DEBUG simulation mode.")
+            else:
+                logger.error("Docker python SDK missing in production; refusing sandbox simulation.")
 
     def _allow_user_dockerfile_build(self) -> bool:
         return settings.FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD

@@ -31,28 +31,12 @@ async def system_status(
 
     user = db.query(User).filter(User.id == user_id).first()
     total_jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).count()
-
-    # Count findings for this user's jobs.
-    # The Neo4j ORM layer supports .join() but we use a safer two-step
-    # approach that works reliably across both PostgreSQL and Neo4j.
-    try:
-        total_findings = (
-            db.query(FindingModel)
-            .join(AuditJob, FindingModel.job_id == AuditJob.id)
-            .filter(AuditJob.user_id == user_id)
-            .count()
-        )
-    except (AttributeError, Exception):
-        # Fallback: fetch user's job IDs then count findings by those IDs
-        user_jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).all()
-        user_job_ids = [j.id for j in user_jobs]
-        if user_job_ids:
-            total_findings = sum(
-                db.query(FindingModel).filter(FindingModel.job_id == jid).count()
-                for jid in user_job_ids
-            )
-        else:
-            total_findings = 0
+    total_findings = (
+        db.query(FindingModel)
+        .join(AuditJob, FindingModel.job_id == AuditJob.id)
+        .filter(AuditJob.user_id == user_id)
+        .count()
+    )
 
     payload = {
         "api": "online",

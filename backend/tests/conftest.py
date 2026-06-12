@@ -16,7 +16,6 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
-os.environ["NEO4J_URI"] = ""
 
 from backend.app.services.limiter import limiter
 limiter.enabled = False

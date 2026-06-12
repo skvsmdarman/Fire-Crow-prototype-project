@@ -1,52 +1,33 @@
 import pytest
 import uuid
-import os
-from dotenv import dotenv_values
 from datetime import datetime, timezone
 from sqlalchemy import or_, and_
-from neo4j import GraphDatabase
-from backend.app.models.database import Neo4jSession
+from backend.app.config import settings
+from backend.app.models.database import Neo4jSession, SessionLocal
 from backend.app.models.user import User
 from backend.app.models.audit_job import AuditJob, AgentLog, FindingModel
 from backend.app.models.security_log import SecurityLog
 from backend.app.schemas.audit_state import JobStatus, Severity
 
-# Load credentials directly from .env.local to bypass conftest.py override
-env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env.local")
-config = dotenv_values(env_path)
-NEO4J_URI = config.get("NEO4J_URI")
-NEO4J_USERNAME = config.get("NEO4J_USERNAME")
-NEO4J_PASSWORD = config.get("NEO4J_PASSWORD")
-
-# Skip all tests in this file if Neo4j is not configured in .env.local
+# Skip all tests in this file if Neo4j is not configured
 pytestmark = pytest.mark.skipif(
-    not NEO4J_URI,
-    reason="Neo4j is not configured in .env.local"
+    not settings.NEO4J_URI,
+    reason="Neo4j is not configured in settings.NEO4J_URI"
 )
 
 @pytest.fixture(scope="module")
-def neo4j_driver():
-    driver = GraphDatabase.driver(
-        NEO4J_URI,
-        auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
-    )
-    driver.verify_connectivity()
-    yield driver
-    driver.close()
-
-@pytest.fixture(scope="module")
-def db_session(neo4j_driver):
-    db = Neo4jSession(neo4j_driver)
+def db_session():
+    db = SessionLocal()
     yield db
     # Clean up created test nodes
-    with neo4j_driver.session() as session:
+    with db.driver.session() as session:
         session.run("MATCH (n:User) WHERE n.username STARTS WITH 'test_neo4j_user_' DETACH DELETE n")
         session.run("MATCH (j:AuditJob) WHERE j.id STARTS WITH 'test_neo4j_job_' DETACH DELETE j")
         session.run("MATCH (f:FindingModel) WHERE f.id STARTS WITH 'test_neo4j_finding_' DETACH DELETE f")
         session.run("MATCH (l:AgentLog) WHERE l.job_id STARTS WITH 'test_neo4j_job_' DETACH DELETE l")
         session.run("MATCH (s:SecurityLog) WHERE s.user_id STARTS WITH 'test_neo4j_user_' DETACH DELETE s")
 
-def test_neo4j_crud_operations(db_session, neo4j_driver):
+def test_neo4j_crud_operations(db_session):
     # 1. Create a user
     user_id = f"test_neo4j_user_{uuid.uuid4().hex[:6]}"
     username = f"test_neo4j_user_{uuid.uuid4().hex[:6]}"
@@ -67,19 +48,6 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     assert retrieved.email == "test_neo4j@example.com"
     assert isinstance(retrieved.created_at, datetime)
 
-    # 2b. Add a SecurityLog without setting id or timestamp (test default resolution)
-    sec_log = SecurityLog(
-        user_id=user_id,
-        action="login_success",
-        ip_address="127.0.0.1",
-        user_agent="pytest"
-    )
-    db_session.add(sec_log)
-    db_session.commit()
-
-    assert sec_log.id is not None
-    assert sec_log.timestamp is not None
-
     # 3. Add an AuditJob owned by the user
     job_id = f"test_neo4j_job_{uuid.uuid4().hex[:6]}"
     job = AuditJob(
@@ -98,16 +66,7 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     assert retrieved_job is not None
     assert retrieved_job.user_id == user_id
 
-    # Test setting attributes on retrieved models (descriptor check)
-    retrieved_job.status = JobStatus.RUNNING
-    db_session.add(retrieved_job)
-    db_session.commit()
-
-    # Verify it updated in database
-    updated_job = db_session.query(AuditJob).filter(AuditJob.id == job_id).first()
-    assert updated_job.status == JobStatus.RUNNING
-
-    with neo4j_driver.session() as session:
+    with db_session.driver.session() as session:
         res = session.run(
             "MATCH (j:AuditJob {id: $job_id})-[:OWNED_BY]->(u:User {id: $user_id}) RETURN j, u",
             job_id=job_id, user_id=user_id
@@ -142,7 +101,7 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     assert log.id is not None
     assert log.id > 0
 
-    with neo4j_driver.session() as session:
+    with db_session.driver.session() as session:
         # Check logs and findings relationships
         res_log = session.run(
             "MATCH (l:AgentLog {id: $log_id})-[:LOGGED_FOR]->(j:AuditJob {id: $job_id}) RETURN l, j",
@@ -180,6 +139,9 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     assert len(retrieved_ne) == 1
 
     # Test pattern matching (like)
+    # Use f".*{username[5:10]}.*" for Neo4j's regex implementation fallback mapping or SQL LIKE wildcards
+    # In database.py: escaped = re.escape(val_str).replace(r'\%', '.*')
+    # Let's test with "%username_substring%"
     substring = username[5:10]
     retrieved_like = db_session.query(User).filter(User.username.like(f"%{substring}%")).all()
     assert len(retrieved_like) > 0
@@ -205,7 +167,6 @@ def test_neo4j_crud_operations(db_session, neo4j_driver):
     db_session.delete(finding)
     db_session.delete(log)
     db_session.delete(job)
-    db_session.delete(sec_log)
     db_session.delete(user)
     db_session.commit()
 

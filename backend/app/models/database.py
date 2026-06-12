@@ -144,11 +144,6 @@ def _ensure_user_compatibility() -> None:
 
 def ensure_database_compatibility() -> None:
     if settings.NEO4J_URI:
-        import sqlalchemy.orm
-        try:
-            sqlalchemy.orm.configure_mappers()
-        except Exception as e:
-            logger.warning("Failed to configure SQLAlchemy mappers in ensure_database_compatibility: %s", str(e))
         logger.info("Ensuring database compatibility in Neo4j (setting up unique constraints)...")
         with neo4j_driver.session() as session:
             constraints = [
@@ -208,50 +203,13 @@ def check_pending_migrations() -> bool:
         return False
 
 # Create sessionmaker
-if True:
+if settings.NEO4J_URI:
     import uuid
     from datetime import datetime
     from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList, UnaryExpression
     from sqlalchemy.sql.operators import eq, ne, or_ as or_op, and_ as and_op
-    import sqlalchemy.orm
-    try:
-        sqlalchemy.orm.configure_mappers()
-    except Exception as e:
-        logger.warning("Failed to configure SQLAlchemy mappers in Neo4j mode: %s", str(e))
 
-    def sql_like_to_regex(pattern: str) -> str:
-        regex_parts = []
-        i = 0
-        n = len(pattern)
-        special_chars = set(".^$*+?{}[]\\|()")
-        while i < n:
-            char = pattern[i]
-            if char == '\\':
-                if i + 1 < n:
-                    next_char = pattern[i+1]
-                    if next_char in special_chars:
-                        regex_parts.append('\\' + next_char)
-                    else:
-                        regex_parts.append(next_char)
-                    i += 2
-                else:
-                    regex_parts.append('\\\\')
-                    i += 1
-            elif char == '%':
-                regex_parts.append('.*')
-                i += 1
-            elif char == '_':
-                regex_parts.append('.')
-                i += 1
-            else:
-                if char in special_chars:
-                    regex_parts.append('\\' + char)
-                else:
-                    regex_parts.append(char)
-                i += 1
-        return "".join(regex_parts)
-
-    def evaluate_sqlalchemy_expr(expr, primary_table=None, joined_tables=None):
+    def evaluate_sqlalchemy_expr(expr):
         if expr is None:
             return "", {}
             
@@ -261,7 +219,7 @@ if True:
             parts = []
             combined_params = {}
             for clause in clauses:
-                clause_str, clause_params = evaluate_sqlalchemy_expr(clause, primary_table, joined_tables)
+                clause_str, clause_params = evaluate_sqlalchemy_expr(clause)
                 if clause_str:
                     parts.append(f"({clause_str})")
                     combined_params.update(clause_params)
@@ -275,24 +233,9 @@ if True:
             op = expr.operator
             
             col_name = getattr(left, "name", None) or str(left)
-            var_name = "n"
             if "." in col_name:
-                parts = col_name.split(".")
-                table_name = parts[0]
-                col_name = parts[-1]
+                col_name = col_name.split(".")[-1]
                 
-                if primary_table and table_name == primary_table:
-                    var_name = "n"
-                elif joined_tables and table_name in joined_tables:
-                    TABLE_TO_VAR = {
-                        "findings": "f",
-                        "audit_jobs": "j",
-                        "users": "u",
-                        "agent_logs": "l",
-                        "security_logs": "s",
-                    }
-                    var_name = TABLE_TO_VAR.get(table_name, table_name[0])
-                    
             val = right.value if hasattr(right, "value") else right
             if hasattr(right, "effective_value"):
                 val = right.effective_value
@@ -306,25 +249,25 @@ if True:
             
             if op == eq:
                 if val is None:
-                    return f"{var_name}.{col_name} IS NULL", {}
-                return f"{var_name}.{col_name} = ${param_name}", {param_name: val}
+                    return f"n.{col_name} IS NULL", {}
+                return f"n.{col_name} = ${param_name}", {param_name: val}
             elif op == ne:
                 if val is None:
-                    return f"{var_name}.{col_name} IS NOT NULL", {}
-                return f"{var_name}.{col_name} <> ${param_name}", {param_name: val}
+                    return f"n.{col_name} IS NOT NULL", {}
+                return f"n.{col_name} <> ${param_name}", {param_name: val}
             elif op.__name__ in ("in_op", "notin_op"):
                 is_in = op.__name__ == "in_op"
                 if not isinstance(val, (list, set, tuple)):
                     val = [val]
                 val_list = [v.value if hasattr(v, "value") else v for v in val]
                 op_str = "IN" if is_in else "NOT IN"
-                return f"{var_name}.{col_name} {op_str} ${param_name}", {param_name: val_list}
+                return f"n.{col_name} {op_str} ${param_name}", {param_name: val_list}
             elif op.__name__ in ("like_op", "ilike_op"):
                 val_str = str(val)
-                regex_val = sql_like_to_regex(val_str)
-                if op.__name__ == "ilike_op":
-                    regex_val = f"(?i){regex_val}"
-                return f"{var_name}.{col_name} =~ ${param_name}", {param_name: regex_val}
+                import re
+                escaped = re.escape(val_str).replace(r'\%', '.*')
+                regex_val = f"(?i){escaped}" if op.__name__ == "ilike_op" else escaped
+                return f"n.{col_name} =~ ${param_name}", {param_name: regex_val}
                 
         return "", {}
 
@@ -341,13 +284,9 @@ if True:
                 props[key] = value
         return props
 
-    class DummyInstanceState:
-        def _modified_event(self, dict_, attr, old):
-            pass
-
     def node_to_model(node, model_class):
         instance = model_class.__new__(model_class)
-        instance._sa_instance_state = DummyInstanceState()
+        instance._sa_instance_state = None
         
         properties = dict(node)
         datetime_fields = set()
@@ -396,32 +335,6 @@ if True:
                 session.execute_write(self._commit_tx)
 
         def _commit_tx(self, tx):
-            # Resolve SQLAlchemy python-side defaults first
-            for obj in self.new_objects:
-                model_class = type(obj)
-                if hasattr(model_class, "__table__"):
-                    for col in model_class.__table__.columns:
-                        col_name = col.name
-                        if getattr(obj, col_name, None) is None:
-                            if col.default is not None:
-                                if col.default.is_callable:
-                                    try:
-                                        val = col.default.arg()
-                                    except TypeError:
-                                        try:
-                                            val = col.default.arg(None)
-                                        except Exception:
-                                            val = None
-                                else:
-                                    val = col.default.arg
-                                if val is not None:
-                                    setattr(obj, col_name, val)
-                            elif col_name == "id" and col.primary_key:
-                                from sqlalchemy import String
-                                if isinstance(col.type, String):
-                                    import uuid
-                                    setattr(obj, col_name, str(uuid.uuid4()))
-
             for obj in self.new_objects:
                 label = type(obj).__name__
                 if label == "AgentLog" and getattr(obj, "id", None) is None:
@@ -494,14 +407,6 @@ if True:
         def expire_all(self):
             pass
 
-        def execute(self, statement, *args, **kwargs):
-            with self.driver.session() as session:
-                session.run("RETURN 1")
-            class DummyResult:
-                def scalar(self):
-                    return 1
-            return DummyResult()
-
         def query(self, model):
             return Neo4jQuery(self.driver, model)
 
@@ -510,15 +415,9 @@ if True:
             self.driver = driver
             self.model = model
             self.filters = []
-            self.joined_models = []
             self.order_by_clause = ""
             self.limit_val = None
             self.offset_val = None
-
-        def join(self, target_model, on_clause=None):
-            if target_model not in self.joined_models:
-                self.joined_models.append(target_model)
-            return self
 
         def filter(self, *exprs):
             for expr in exprs:
@@ -562,36 +461,10 @@ if True:
 
         def count(self):
             label = self.model.__name__
-            primary_table = getattr(self.model, "__tablename__", None)
-            joined_tables = {getattr(m, "__tablename__", None): m for m in self.joined_models}
-            
-            match_clause = f"MATCH (n:{label})"
-            RELATIONSHIP_MAP = {
-                ("FindingModel", "AuditJob"): "-[:BELONGS_TO]->",
-                ("AgentLog", "AuditJob"): "-[:LOGGED_FOR]->",
-                ("AuditJob", "User"): "-[:OWNED_BY]->",
-                ("AuditJob", "FindingModel"): "<-[:BELONGS_TO]-",
-                ("AuditJob", "AgentLog"): "<-[:LOGGED_FOR]-",
-                ("User", "AuditJob"): "<-[:OWNED_BY]-",
-            }
-            TABLE_TO_VAR = {
-                "findings": "f",
-                "audit_jobs": "j",
-                "users": "u",
-                "agent_logs": "l",
-                "security_logs": "s",
-            }
-            for m in self.joined_models:
-                target_label = m.__name__
-                target_table = getattr(m, "__tablename__", "")
-                target_var = TABLE_TO_VAR.get(target_table, target_table[0])
-                rel_str = RELATIONSHIP_MAP.get((label, target_label), "-[:RELATED_TO]-")
-                match_clause += f"{rel_str}({target_var}:{target_label})"
-
             where_clauses = []
             combined_params = {}
             for expr in self.filters:
-                clause, params = evaluate_sqlalchemy_expr(expr, primary_table, list(joined_tables.keys()))
+                clause, params = evaluate_sqlalchemy_expr(expr)
                 if clause:
                     where_clauses.append(clause)
                     combined_params.update(params)
@@ -599,7 +472,7 @@ if True:
             where_str = " AND ".join(where_clauses)
             where_clause = f"WHERE {where_str}" if where_str else ""
             
-            query = f"{match_clause} {where_clause} RETURN count(n) as count"
+            query = f"MATCH (n:{label}) {where_clause} RETURN count(n) as count"
             with self.driver.session() as session:
                 res = session.run(query, **combined_params)
                 record = res.single()
@@ -607,36 +480,10 @@ if True:
 
         def _execute(self):
             label = self.model.__name__
-            primary_table = getattr(self.model, "__tablename__", None)
-            joined_tables = {getattr(m, "__tablename__", None): m for m in self.joined_models}
-            
-            match_clause = f"MATCH (n:{label})"
-            RELATIONSHIP_MAP = {
-                ("FindingModel", "AuditJob"): "-[:BELONGS_TO]->",
-                ("AgentLog", "AuditJob"): "-[:LOGGED_FOR]->",
-                ("AuditJob", "User"): "-[:OWNED_BY]->",
-                ("AuditJob", "FindingModel"): "<-[:BELONGS_TO]-",
-                ("AuditJob", "AgentLog"): "<-[:LOGGED_FOR]-",
-                ("User", "AuditJob"): "<-[:OWNED_BY]-",
-            }
-            TABLE_TO_VAR = {
-                "findings": "f",
-                "audit_jobs": "j",
-                "users": "u",
-                "agent_logs": "l",
-                "security_logs": "s",
-            }
-            for m in self.joined_models:
-                target_label = m.__name__
-                target_table = getattr(m, "__tablename__", "")
-                target_var = TABLE_TO_VAR.get(target_table, target_table[0])
-                rel_str = RELATIONSHIP_MAP.get((label, target_label), "-[:RELATED_TO]-")
-                match_clause += f"{rel_str}({target_var}:{target_label})"
-
             where_clauses = []
             combined_params = {}
             for expr in self.filters:
-                clause, params = evaluate_sqlalchemy_expr(expr, primary_table, list(joined_tables.keys()))
+                clause, params = evaluate_sqlalchemy_expr(expr)
                 if clause:
                     where_clauses.append(clause)
                     combined_params.update(params)
@@ -648,7 +495,7 @@ if True:
             limit_clause = f"LIMIT {self.limit_val}" if self.limit_val is not None else ""
             offset_clause = f"SKIP {self.offset_val}" if self.offset_val is not None else ""
             
-            query = f"{match_clause} {where_clause} RETURN n {order_clause} {offset_clause} {limit_clause}"
+            query = f"MATCH (n:{label}) {where_clause} RETURN n {order_clause} {offset_clause} {limit_clause}"
             results = []
             with self.driver.session() as session:
                 res = session.run(query, **combined_params)
@@ -664,24 +511,23 @@ if True:
         def close(self):
             pass
 
-    if settings.NEO4J_URI:
-        SessionLocal = Neo4jSessionLocal()
+    SessionLocal = Neo4jSessionLocal()
 
-        def get_db():
-            db = Neo4jSession(neo4j_driver)
-            try:
-                yield db
-            finally:
-                db.close()
-    else:
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    def get_db():
+        db = Neo4jSession(neo4j_driver)
+        try:
+            yield db
+        finally:
+            db.close()
+else:
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-        def get_db():
-            db = SessionLocal()
-            try:
-                yield db
-            finally:
-                db.close()
+    def get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
 
 
 class Base(DeclarativeBase):

@@ -56,8 +56,13 @@ def get_clean_repo_name(repo_url: str) -> str:
     repo_name = re.sub(r'[^a-zA-Z0-9_\-]', '', repo_name)
     return repo_name or "repo"
 
-# Force-disable WeasyPrint to optimize memory footprint on Heroku/stateless environments
-WEASYPRINT_AVAILABLE = False
+# Attempt importing weasyprint and resend
+try:
+    import weasyprint
+    WEASYPRINT_AVAILABLE = True
+except Exception as e:
+    logger.warning(f"WeasyPrint is not available on this platform: {str(e)}. PDF generation will fall back to simulated files.")
+    WEASYPRINT_AVAILABLE = False
 
 try:
     import resend
@@ -652,22 +657,10 @@ class ReportGenerator:
         Uploads report to Cloudflare R2 bucket.
         Falls back to local file URI if R2 credentials are not set.
         """
-        upload_path = pdf_path
-        content_type = "application/pdf"
-        
-        # If WeasyPrint is disabled, upload the HTML report instead of the dummy PDF
-        if not WEASYPRINT_AVAILABLE:
-            html_path = pdf_path.replace(".pdf", ".html")
-            if os.path.exists(html_path):
-                upload_path = html_path
-                content_type = "text/html"
-                
-        filename = os.path.basename(upload_path)
+        filename = os.path.basename(pdf_path)
         if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
             logger.info("Cloudflare R2 environment variables not fully configured. Serving locally.")
-            # Note: We return the dummy PDF filename for compatibility with routing which expects .pdf URL format.
-            # download_report automatically maps .pdf request paths to .html files on the server disk if they exist.
-            return f"/reports/{os.path.basename(pdf_path)}"
+            return f"/reports/{filename}"
 
         try:
             import boto3  # type: ignore
@@ -688,7 +681,7 @@ class ReportGenerator:
             )
 
             key = f"reports/{filename}"
-            s3.upload_file(upload_path, self.r2_bucket, key, ExtraArgs={"ContentType": content_type})
+            s3.upload_file(pdf_path, self.r2_bucket, key, ExtraArgs={"ContentType": "application/pdf"})
             
             # Generate pre-signed URL valid for 7 days
             url = s3.generate_presigned_url(
