@@ -163,7 +163,8 @@ async def submit_audit(
         user_id=user_id,
         repo_url=payload.repo_url,
         repo_branch=payload.repo_branch,
-        status=JobStatus.QUEUED
+        status=JobStatus.QUEUED,
+        auto_push=payload.auto_push if payload.auto_push is not None else False
     )
     db.add(job)
     db.commit()
@@ -394,6 +395,24 @@ async def email_report(
     return {"message": "Report email sent successfully", "recipient": recipient}
 
 
+class UpdateAutoPushRequest(BaseModel):
+    auto_push: bool
+
+
+@router.patch("/job/{job_id}/auto-push")
+async def update_job_auto_push(
+    job_id: str,
+    payload: UpdateAutoPushRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    """Update auto-push preference for a queued or running job."""
+    job = get_owned_job_or_404(db, job_id, user_id)
+    job.auto_push = payload.auto_push
+    db.commit()
+    return {"message": "Auto-push preference updated", "auto_push": job.auto_push}
+
+
 # GitHub Repositories List and Bulk Scan Schemas
 class GitHubRepoResponse(BaseModel):
     name: str
@@ -406,6 +425,7 @@ class SubmitBulkJobRequest(BaseModel):
     repo_urls: List[str]
     repo_branch: Optional[str] = "main"
     custom_email: Optional[str] = None
+    auto_push: Optional[bool] = False
 
 
 @router.get("/github-repos", response_model=List[GitHubRepoResponse])
@@ -563,7 +583,8 @@ async def submit_bulk_audit(
             user_id=user_id,
             repo_url=repo_url,
             repo_branch=branch,
-            status=JobStatus.QUEUED
+            status=JobStatus.QUEUED,
+            auto_push=payload.auto_push if payload.auto_push is not None else False
         )
         db.add(job)
         db.commit()

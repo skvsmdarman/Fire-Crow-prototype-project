@@ -14,6 +14,7 @@ class SubmitJobRequest(BaseModel):
     repo_url: str = Field(..., max_length=2048)
     repo_branch: Optional[str] = Field("main", max_length=255)
     custom_email: Optional[str] = Field(None, max_length=255)
+    auto_push: Optional[bool] = Field(False)
 
     @field_validator("repo_url")
     @classmethod
@@ -56,6 +57,7 @@ class JobResponse(BaseModel):
     cancel_requested: bool
     cancel_requested_at: Optional[str] = None
     report_pdf_url: Optional[str] = None
+    auto_push: bool
     error_message: Optional[str] = None
 
 
@@ -90,6 +92,7 @@ def build_job_response(job: AuditJob) -> JobResponse:
         cancel_requested=job.cancel_requested,
         cancel_requested_at=job.cancel_requested_at.isoformat() if job.cancel_requested_at else None,
         report_pdf_url=job.report_pdf_url,
+        auto_push=job.auto_push,
         error_message=job.error_message,
     )
 

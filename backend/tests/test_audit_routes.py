@@ -404,3 +404,38 @@ def test_health_does_not_leak_database_exception():
     assert response.status_code == 200
     assert response.json() == {"status": "degraded", "database": "unavailable"}
     assert "secret" not in response.text
+
+
+def test_update_job_auto_push():
+    headers, user_id = _auth_session()
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditJob(
+                id="job-toggle-test",
+                user_id=user_id,
+                repo_url="https://example.com/repo",
+                repo_branch="main",
+                status=JobStatus.RUNNING,
+                auto_push=False
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # Toggle to True
+    response = client.patch(
+        "/api/v1/audit/job/job-toggle-test/auto-push",
+        json={"auto_push": True},
+        headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["auto_push"] is True
+
+    db = SessionLocal()
+    try:
+        job = db.query(AuditJob).filter(AuditJob.id == "job-toggle-test").first()
+        assert job.auto_push is True
+    finally:
+        db.close()

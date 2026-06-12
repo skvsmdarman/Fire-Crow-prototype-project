@@ -532,13 +532,26 @@ def reporter_node(state: AuditState) -> Dict[str, Any]:
 
 
 def github_mcp_body(db: Session, state: AuditState) -> Dict[str, Any]:
+    db.expire_all()
+    job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
+    auto_push = False
+    if job:
+        auto_push = job.auto_push
+
     all_findings = get_reportable_findings(state)
+    
+    if not auto_push:
+        log_agent_message(db, state.job_id, "GITHUB_MCP", "Auto-push of security fixes is disabled. Skipping branch and PR creation.")
+        remediations = None
+    else:
+        log_agent_message(db, state.job_id, "GITHUB_MCP", "Auto-push of security fixes is enabled. Proceeding with branch/PR creation.")
+        remediations = state.remediations
         
     result = run_github_mcp(
         job_id=state.job_id,
         repo_url=state.repo_url,
         findings=all_findings,
-        remediations=state.remediations,
+        remediations=remediations,
         github_token=state.github_access_token or None,
     )
     for log_msg in result.get("github_mcp_logs", []):

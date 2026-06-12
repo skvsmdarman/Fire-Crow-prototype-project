@@ -25,6 +25,7 @@ class AuditJob(Base):
     cancel_requested: Mapped[bool] = mapped_column(default=False, nullable=False)
     cancel_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     report_pdf_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    auto_push: Mapped[bool] = mapped_column(default=False, nullable=False)
     error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relationships
