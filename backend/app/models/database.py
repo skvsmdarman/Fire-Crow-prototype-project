@@ -334,13 +334,38 @@ if settings.NEO4J_URI:
             with self.driver.session() as session:
                 session.execute_write(self._commit_tx)
 
+        def _resolve_pk_defaults(self, obj):
+            """
+            Invoke SQLAlchemy column default callables for any primary-key
+            field that is still None.  This mirrors what SQLAlchemy would do
+            during an INSERT but which our Neo4j path skips entirely.
+            """
+            model_class = type(obj)
+            if not hasattr(model_class, "__table__"):
+                return
+            for col in model_class.__table__.columns:
+                if not col.primary_key:
+                    continue
+                # Only fix when the attribute is missing or None
+                current = obj.__dict__.get(col.name)
+                if current is not None:
+                    continue
+                if col.default is not None and callable(col.default.arg):
+                    obj.__dict__[col.name] = col.default.arg(None)
+
         def _commit_tx(self, tx):
+            # 1. Resolve auto-increment AgentLog IDs (integer PK, not uuid)
             for obj in self.new_objects:
                 label = type(obj).__name__
                 if label == "AgentLog" and getattr(obj, "id", None) is None:
                     res = tx.run("MATCH (n:AgentLog) RETURN max(n.id) as max_id")
                     max_id = res.single()["max_id"]
                     obj.id = (max_id or 0) + 1
+
+            # 2. Resolve callable SQLAlchemy column defaults for all other PKs
+            #    (e.g. SecurityLog.id, FindingModel.id, AuditJob.id use uuid lambdas)
+            for obj in self.new_objects:
+                self._resolve_pk_defaults(obj)
 
             for obj in self.new_objects:
                 label = type(obj).__name__
