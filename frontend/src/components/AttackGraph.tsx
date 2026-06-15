@@ -6,7 +6,6 @@ import { buildApiUrl } from '../shared/api/baseUrl';
 
 interface AttackGraphProps {
   jobId: string;
-  token: string;
 }
 
 interface AttackGraphNode {
@@ -20,14 +19,14 @@ interface AttackGraphResponse {
   edges: Edge[];
 }
 
-export default function AttackGraph({ jobId, token }: AttackGraphProps) {
+export default function AttackGraph({ jobId }: AttackGraphProps) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(buildApiUrl(`/audit/job/${jobId}/graph`), {
-      headers: { Authorization: `Bearer ${token}` }
+      credentials: "include",
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -50,7 +49,7 @@ export default function AttackGraph({ jobId, token }: AttackGraphProps) {
         setEdges([]);
         setError('Attack graph unavailable for this audit yet.');
       });
-  }, [jobId, token]);
+  }, [jobId]);
 
   if (error) {
     return <div style={{ padding: '20px', color: 'var(--muted)', fontSize: '13px', textAlign: 'center' }}>{error}</div>;

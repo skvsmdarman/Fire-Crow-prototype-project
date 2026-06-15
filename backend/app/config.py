@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     AUTH_COOKIE_NAME: str = Field(default="fc_access_token", validation_alias="AUTH_COOKIE_NAME")
     AUTH_COOKIE_SECURE: bool = Field(default=True, validation_alias="AUTH_COOKIE_SECURE")
     AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
-    AUTH_COOKIE_SAMESITE: str = Field(default="lax", validation_alias="AUTH_COOKIE_SAMESITE")
+    AUTH_COOKIE_SAMESITE: str = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
 
 
     # --- Database & Cache ---

@@ -22,12 +22,8 @@ export async function request<T>(path: string, options: FetchOptions = {}): Prom
     reqHeaders.set("Content-Type", "application/json");
   }
 
-  if (typeof window !== "undefined") {
-    const token = window.localStorage.getItem("fc_token");
-    if (token) {
-      reqHeaders.set("Authorization", `Bearer ${token}`);
-    }
-  }
+  // Auth is handled by the HttpOnly session cookie (set by the backend).
+  // No Authorization header needed — the cookie is sent via credentials: "include".
 
   let response: Response;
   try {

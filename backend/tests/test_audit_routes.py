@@ -4,6 +4,7 @@ import pytest
 from app.main import app
 from app.api.routes_auth import PRIVACY_POLICY_VERSION
 from app.models import AgentLog, AuditArtifact, AuditJob, FindingModel, SessionLocal, User, get_db
+from app.models.role import Role
 from app.schemas import JobStatus, Severity
 
 client = TestClient(app)
@@ -425,9 +426,14 @@ def test_system_status_admin_gets_operational_details():
     headers, user_id = _auth_session("admin-auditor")
     db = SessionLocal()
     try:
+        role = db.query(Role).filter(Role.name == "admin").first()
+        if not role:
+            role = Role(name="admin", description="Admin", can_start_scans=True, can_view_reports=True)
+            db.add(role)
+            db.flush()
         user = db.query(User).filter(User.id == user_id).first()
         assert user is not None
-        user.role_id = "admin"
+        user.role_id = role.id
         db.commit()
     finally:
         db.close()

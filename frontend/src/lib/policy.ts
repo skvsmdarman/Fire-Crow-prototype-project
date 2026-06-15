@@ -17,19 +17,13 @@ export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
     return;
   }
 
-  const token = window.localStorage.getItem("fc_token");
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
+  // Auth is handled by the HttpOnly session cookie — no token in localStorage.
   await fetch(buildApiUrl("/auth/policy-events"), {
     method: "POST",
     credentials: "include",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       event_type: input.eventType,
       href: input.href,

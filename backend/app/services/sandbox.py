@@ -32,8 +32,10 @@ class SandboxManager:
         self.unavailable_reason = ""
         
         if settings.FIRE_CROW_MOCK_SANDBOX:
+            if not settings.DEBUG:
+                raise RuntimeError("FIRE_CROW_MOCK_SANDBOX is not allowed in production (DEBUG=False).")
             self.mock_mode = True
-            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in sandbox simulation mode.")
+            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in sandbox simulation mode (DEBUG only).")
         elif DOCKER_AVAILABLE:
             try:
                 self.client = docker.from_env()  # type: ignore
@@ -50,6 +52,7 @@ class SandboxManager:
                     )
                 else:
                     logger.error("Docker daemon unavailable in production; refusing sandbox simulation.", exc_info=True)
+                    raise RuntimeError("Docker daemon is required for sandbox operations in production.")
         else:
             self.unavailable_reason = "Docker python SDK is not installed."
             if settings.DEBUG:
@@ -57,6 +60,7 @@ class SandboxManager:
                 logger.warning("Docker python SDK not installed. Running in DEBUG simulation mode.")
             else:
                 logger.error("Docker python SDK missing in production; refusing sandbox simulation.")
+                raise RuntimeError("Docker python SDK is required for sandbox operations in production.")
 
     def _container_security_options(self, job_id: str, role: str) -> dict[str, Any]:
         return {
@@ -116,6 +120,8 @@ class SandboxManager:
         kali_ip = "172.20.0.5"
 
         if self.mock_mode:
+            if not settings.DEBUG:
+                raise RuntimeError("Sandbox simulation mode is not allowed in production.")
             logger.info(f"[SIMULATOR] Created virtual private bridge network '{net_name}'")
             profile_name, _, _, _ = self._detect_launch_profile(clone_path)
             if profile_name == "unsupported":
@@ -129,7 +135,11 @@ class SandboxManager:
 
         if not self.client:
             logger.error("Docker client not initialized. %s", self.unavailable_reason)
-            return False, "", "", "", ""
+            if settings.DEBUG:
+                self.mock_mode = True
+                logger.warning("Falling back to DEBUG simulation mode due to missing Docker client.")
+                return self.provision_sandbox(job_id, clone_path, entry_points)
+            raise RuntimeError("Docker client is required for sandbox operations in production.")
 
         client = self.client
 

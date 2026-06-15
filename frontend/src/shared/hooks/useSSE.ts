@@ -11,12 +11,11 @@ export interface LogLine {
 
 interface UseSSEOptions {
   authenticated: boolean;
-  token: string | null;
   onJobStatusChange?: () => void;
   maxLogs?: number;
 }
 
-export function useSSE({ authenticated, token, onJobStatusChange, maxLogs = 500 }: UseSSEOptions) {
+export function useSSE({ authenticated, onJobStatusChange, maxLogs = 500 }: UseSSEOptions) {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [streamActive, setStreamActive] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -45,10 +44,8 @@ export function useSSE({ authenticated, token, onJobStatusChange, maxLogs = 500 
       abortControllerRef.current = controller;
 
       try {
-        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
         const response = await fetch(`${API_BASE_URL}/audit/${jobId}/stream`, {
           credentials: "include",
-          headers,
           signal: controller.signal,
         });
 
@@ -118,7 +115,7 @@ export function useSSE({ authenticated, token, onJobStatusChange, maxLogs = 500 
         setStreamActive(false);
       }
     },
-    [authenticated, token, stopLogStream, maxLogs]
+    [authenticated, stopLogStream, maxLogs]
   );
 
   return {

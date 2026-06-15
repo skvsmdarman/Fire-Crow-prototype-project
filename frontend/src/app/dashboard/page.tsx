@@ -139,16 +139,16 @@ export default function Dashboard() {
     runAudit,
     loadJobs,
     loadJobDetail,
-  } = useAudits(authSession.token);
+  } = useAudits(isAuthenticated);
 
   const prevStatusesRef = React.useRef<Record<string, string>>({});
   const { toast } = useToast();
 
   useEffect(() => {
-    if (authSession.token) {
-      subscribeUserToPush(authSession.token);
+    if (isAuthenticated) {
+      subscribeUserToPush();
     }
-  }, [authSession.token]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     jobs.forEach((job) => {
@@ -180,7 +180,6 @@ export default function Dashboard() {
 
   const { logs, streamActive, startLogStream, stopLogStream } = useSSE({
     authenticated: isAuthenticated,
-    token: authSession.token,
     onJobStatusChange: () => {
       void loadJobs();
       if (selectedJobId) void loadJobDetail(selectedJobId);
@@ -222,16 +221,14 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!selectedJobId || !authSession.token || !systemStatus?.llm_features?.dashboard_insight) {
+    if (!selectedJobId || !isAuthenticated || !systemStatus?.llm_features?.dashboard_insight) {
       return () => {
         cancelled = true;
       };
     }
 
     apiClient
-      .get<AuditInsightResponse>(ENDPOINTS.audit.insight(selectedJobId), {
-        headers: { Authorization: `Bearer ${authSession.token}` },
-      })
+      .get<AuditInsightResponse>(ENDPOINTS.audit.insight(selectedJobId))
       .then((response) => {
         if (!cancelled) {
           setJobInsight({ ...response, jobId: selectedJobId });
@@ -246,7 +243,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [authSession.token, selectedJobId, systemStatus?.llm_features?.dashboard_insight]);
+  }, [isAuthenticated, selectedJobId, systemStatus?.llm_features?.dashboard_insight]);
 
   // Use a polling interval to update the job list when a job is actively running
   useEffect(() => {
@@ -286,7 +283,7 @@ export default function Dashboard() {
   const openReportUrl = async (jobId: string) => {
     try {
       const response = await fetch(`${API_BASE_URL}${ENDPOINTS.audit.report(jobId)}`, {
-        headers: authSession.token ? { Authorization: `Bearer ${authSession.token}` } : {},
+        credentials: "include",
       });
       if (response.ok) {
         const blob = await response.blob();
@@ -361,14 +358,14 @@ export default function Dashboard() {
         <AnimatePresence mode="wait">
           <motion.div key={active} initial={{ opacity: 0, scale: 0.98, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: -10 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
             {active === "Overview" && <OverviewSection jobs={jobs} findings={findings} criticalCount={criticalCount} setActive={setActive} />}
-            {active === "Audits" && <AuditsSection jobs={jobs} selected={selectedJob} insight={selectedJobInsight} onSelect={setSelectedJobId} newUrl={newAuditUrl} setNewUrl={setNewAuditUrl} newBranch={newAuditBranch} setNewBranch={setNewAuditBranch} onJobStarted={runAudit} openReportUrl={openReportUrl} streamActive={streamActive} logs={logs} token={authSession.token || ""} />}
+            {active === "Audits" && <AuditsSection jobs={jobs} selected={selectedJob} insight={selectedJobInsight} onSelect={setSelectedJobId} newUrl={newAuditUrl} setNewUrl={setNewAuditUrl} newBranch={newAuditBranch} setNewBranch={setNewAuditBranch} onJobStarted={runAudit} openReportUrl={openReportUrl} streamActive={streamActive} logs={logs} />}
             {active === "Findings" && <FindingsSection findings={filteredFindings} all={findings} filter={filter} setFilter={setFilter} expanded={expandedFinding} setExpanded={setExpandedFinding} selected={selectedJob} />}
              {active === "Reports" && <ReportsSection jobs={completedJobs} openReportUrl={openReportUrl} />}
             {active === "Leaderboard" && (
               <div>
                 <PageHeader kicker="Workspace Security" title="Leaderboard" />
                 <div style={{ padding: "24px 32px", maxWidth: 800 }}>
-                  <Leaderboard token={authSession.token || ""} />
+                  <Leaderboard />
                 </div>
               </div>
             )}
@@ -377,7 +374,7 @@ export default function Dashboard() {
         </AnimatePresence>
       </main>
       {systemStatus?.llm_features?.chat_assistant ? (
-        <ChatWidget jobId={selectedJobId} token={authSession.token || ""} />
+        <ChatWidget jobId={selectedJobId} />
       ) : null}
     </div>
   );
@@ -469,7 +466,7 @@ function OverviewSection({ jobs, findings, criticalCount, setActive }: { jobs: J
   );
 }
 
-function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, newBranch, setNewBranch, onJobStarted, openReportUrl, streamActive, logs, token }: { jobs: Job[]; selected: Job | null; insight: AuditInsightResponse | null; onSelect: (id: string) => void; newUrl: string; setNewUrl: (s: string) => void; newBranch: string; setNewBranch: (s: string) => void; onJobStarted: (p: {repo_url: string; repo_branch: string; attestation_accepted: boolean; authorization_scope: string;}) => Promise<Job | null>; openReportUrl: (id: string) => void; streamActive: boolean; logs: LogLine[]; token: string; }) {
+function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, newBranch, setNewBranch, onJobStarted, openReportUrl, streamActive, logs }: { jobs: Job[]; selected: Job | null; insight: AuditInsightResponse | null; onSelect: (id: string) => void; newUrl: string; setNewUrl: (s: string) => void; newBranch: string; setNewBranch: (s: string) => void; onJobStarted: (p: {repo_url: string; repo_branch: string; attestation_accepted: boolean; authorization_scope: string;}) => Promise<Job | null>; openReportUrl: (id: string) => void; streamActive: boolean; logs: LogLine[]; }) {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -589,7 +586,7 @@ function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, n
               {selected.status === "completed" ? (
                 <div style={{ marginTop: 20 }}>
                   <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Attack Graph</div>
-                  <AttackGraph jobId={selected.id} token={token} />
+                  <AttackGraph jobId={selected.id} />
                 </div>
               ) : null}
             </div>

@@ -19,11 +19,15 @@ export function useAuthSession() {
   );
 
   const login = useCallback((payload: AuthSessionPayload) => {
-    persistAuthSession(payload);
+    // Only persist non-sensitive metadata. The access token is in an HttpOnly cookie.
+    persistAuthSession({
+      user_id: payload.user_id,
+      username: payload.username,
+    });
   }, []);
 
   const logout = useCallback(async () => {
-    if (session.hasDashboardSession || session.hasConsoleSession || session.token) {
+    if (session.hasDashboardSession || session.hasConsoleSession) {
       try {
         await apiClient.post(ENDPOINTS.auth.logout);
       } catch (error) {
@@ -31,7 +35,7 @@ export function useAuthSession() {
       }
     }
     clearStoredAuthSession();
-  }, [session.hasConsoleSession, session.hasDashboardSession, session.token]);
+  }, [session.hasConsoleSession, session.hasDashboardSession]);
 
   const validateSession = useCallback(async (): Promise<boolean> => {
     try {
@@ -59,7 +63,6 @@ export function useAuthSession() {
   }, []);
 
   return {
-    token: session.token,
     userId: session.userId,
     username: session.username,
     workspace: session.workspace,

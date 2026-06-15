@@ -28,11 +28,10 @@ export default function AuditRunPage() {
     loadingDetail,
     detailError,
     cancelAudit,
-  } = useAudits(session.token);
+  } = useAudits(session.hasDashboardSession);
 
   const { logs, streamActive, startLogStream, stopLogStream } = useSSE({
-    authenticated: !!session.token,
-    token: session.token,
+    authenticated: session.hasDashboardSession,
     onJobStatusChange: () => {
       if (jobId) {
         void loadJobDetail(jobId);
@@ -41,14 +40,14 @@ export default function AuditRunPage() {
   });
 
   useEffect(() => {
-    if (jobId && session.token) {
+    if (jobId && session.hasDashboardSession) {
       void loadJobDetail(jobId);
       void startLogStream(jobId);
     }
     return () => {
       stopLogStream();
     };
-  }, [jobId, session.token, loadJobDetail, startLogStream, stopLogStream]);
+  }, [jobId, session.hasDashboardSession, loadJobDetail, startLogStream, stopLogStream]);
 
   const { toast } = useToast();
   const prevStatusRef = React.useRef<string | null>(null);

@@ -29,8 +29,11 @@ JWT_ISSUER = "firecrow-api"
 JWT_AUDIENCE = "firecrow-web"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 ACCESS_TOKEN_EXPIRE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+REFRESH_TOKEN_EXPIRE_SECONDS = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 OAUTH_STATE_EXPIRE_MINUTES = 15
 AUTH_COOKIE_NAME = "fc_access_token"
+REFRESH_COOKIE_NAME = "fc_refresh_token"
 
 _password_hasher = PasswordHasher(
     time_cost=2,
@@ -143,6 +146,71 @@ def create_access_token(
         db.commit()
 
     return token
+
+
+def create_refresh_token(
+    user_id: str,
+    username: Optional[str] = None,
+    *,
+    db: Optional[Session] = None,
+    token_family: Optional[str] = None,
+) -> str:
+    """Create a long-lived refresh token for session renewal."""
+    now, not_before, expire, jti = _claims(timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+    family = token_family or str(uuid.uuid4())
+    to_encode = {
+        "sub": user_id,
+        "username": username,
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "iat": _timestamp(now),
+        "nbf": _timestamp(not_before),
+        "exp": _timestamp(expire),
+        "jti": jti,
+        "token_family": family,
+        "type": "refresh",
+    }
+    token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+    if db is not None:
+        from app.models.user import UserSession
+        session_obj = UserSession(
+            id=jti,
+            user_id=user_id,
+            token_family=family,
+            ip_hash="refresh",
+            user_agent_hash="refresh",
+            created_at=now,
+            expires_at=expire,
+            is_revoked=False,
+        )
+        db.add(session_obj)
+        db.commit()
+
+    return token
+
+
+def verify_refresh_token(token: str, *, db: Optional[Session] = None) -> Optional[dict]:
+    """Verify a refresh token and return its payload if valid."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM],
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+            leeway=5,
+        )
+    except jwt.PyJWTError:
+        return None
+
+    if payload.get("type") != "refresh":
+        return None
+
+    if is_token_revoked(payload, db=db):
+        return None
+
+    return payload
 
 
 def create_oauth_state(

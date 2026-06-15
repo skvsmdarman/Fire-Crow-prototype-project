@@ -1,3 +1,4 @@
+import { buildApiUrl } from "../../shared/api/baseUrl";
 import { ENDPOINTS } from "../../shared/api/endpoints";
 
 export interface PolicyEventInput {
@@ -15,25 +16,16 @@ export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
     return;
   }
 
-  // Weasy, background fire-and-forget request using keepalive
-  const headers: Record<string, string> = {};
-  const token = window.localStorage.getItem("fc_token");
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+  // Background fire-and-forget request using keepalive.
+  // The auth cookie (HttpOnly) is sent automatically via credentials: "include" —
+  // no token handling needed here.
+  const url = buildApiUrl(ENDPOINTS.auth.policyEvents);
 
-  // We can use standard fetch or apiClient. Here we do fetch with keepalive to allow page transitions
-  // But using the dynamic API base URL from apiClient
-  const baseUrl = window.localStorage.getItem("fc_api_url") || ""; 
-  // Let's import API_BASE_URL to resolve it cleanly
-  const apiBase = baseUrl || (process.env.NEXT_PUBLIC_API_URL || "/api/v1");
-
-  await fetch(`${apiBase}${ENDPOINTS.auth.policyEvents}`, {
+  await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...headers,
     },
     body: JSON.stringify({
       event_type: input.eventType,

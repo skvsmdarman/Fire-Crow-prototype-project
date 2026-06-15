@@ -12,19 +12,13 @@ interface LeaderboardEntry {
   critical_count: number;
 }
 
-interface LeaderboardProps {
-  token: string;
-}
-
-export default function Leaderboard({ token }: LeaderboardProps) {
+export default function Leaderboard() {
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiClient
-      .get<LeaderboardEntry[]>(ENDPOINTS.leaderboard.list, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      .get<LeaderboardEntry[]>(ENDPOINTS.leaderboard.list)
       .then((data) => {
         setData(Array.isArray(data) ? data : []);
         setLoading(false);
@@ -33,7 +27,7 @@ export default function Leaderboard({ token }: LeaderboardProps) {
         console.error(err);
         setLoading(false);
       });
-  }, [token]);
+  }, []);
 
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'var(--green)';

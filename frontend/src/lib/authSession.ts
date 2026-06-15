@@ -5,7 +5,6 @@ export interface AuthSessionPayload {
 }
 
 export interface StoredAuthSession {
-  token: string | null;
   userId: string | null;
   username: string | null;
   workspace: string | null;
@@ -14,9 +13,8 @@ export interface StoredAuthSession {
 }
 
 const AUTH_SESSION_EVENT = "firecrow-auth-session";
-const AUTH_STORAGE_KEYS = ["fc_token", "fc_user_id", "fc_username", "fc_workspace"] as const;
+const AUTH_STORAGE_KEYS = ["fc_user_id", "fc_username", "fc_workspace"] as const;
 const EMPTY_SESSION: StoredAuthSession = {
-  token: null,
   userId: null,
   username: null,
   workspace: null,
@@ -31,13 +29,11 @@ function buildStoredAuthSession(): StoredAuthSession {
     return EMPTY_SESSION;
   }
 
-  const token = window.localStorage.getItem("fc_token");
   const userId = window.localStorage.getItem("fc_user_id");
   const username = window.localStorage.getItem("fc_username") ?? window.localStorage.getItem("fc_workspace");
   const workspace = window.localStorage.getItem("fc_workspace") ?? username;
 
   return {
-    token,
     userId,
     username,
     workspace,
@@ -48,7 +44,6 @@ function buildStoredAuthSession(): StoredAuthSession {
 
 function isSameSession(left: StoredAuthSession, right: StoredAuthSession): boolean {
   return (
-    left.token === right.token &&
     left.userId === right.userId &&
     left.username === right.username &&
     left.workspace === right.workspace &&
@@ -108,13 +103,8 @@ export function persistAuthSession(session: AuthSessionPayload): void {
     return;
   }
 
-  if (session.access_token !== undefined) {
-    if (session.access_token) {
-      window.localStorage.setItem("fc_token", session.access_token);
-    } else {
-      window.localStorage.removeItem("fc_token");
-    }
-  }
+  // NOTE: The access token is stored in an HttpOnly cookie by the backend.
+  // We deliberately do NOT persist it in localStorage to prevent XSS token theft.
   window.localStorage.setItem("fc_user_id", session.user_id);
   window.localStorage.setItem("fc_username", session.username);
   window.localStorage.setItem("fc_workspace", session.username);

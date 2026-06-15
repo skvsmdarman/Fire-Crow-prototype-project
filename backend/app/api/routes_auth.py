@@ -15,9 +15,12 @@ from app.models.database import get_db
 from app.models.user import User
 from app.services.auth import (
     ACCESS_TOKEN_EXPIRE_SECONDS,
+    REFRESH_TOKEN_EXPIRE_SECONDS,
+    REFRESH_COOKIE_NAME,
     create_access_token,
     create_exchange_code,
     create_oauth_state,
+    create_refresh_token,
     encrypt_provider_token,
     get_current_token_payload,
     get_current_user,
@@ -28,6 +31,7 @@ from app.services.auth import (
     verify_and_consume_exchange_code,
     verify_oauth_state,
     verify_password,
+    verify_refresh_token,
     check_login_lockout,
     record_login_failure,
     clear_login_failures,
@@ -230,6 +234,21 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    cookie_secure = settings.AUTH_COOKIE_SECURE
+    if settings.DEBUG:
+        cookie_secure = _cookie_secure()
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=REFRESH_TOKEN_EXPIRE_SECONDS,
+        httponly=settings.AUTH_COOKIE_HTTPONLY,
+        secure=cookie_secure,
+        samesite=settings.AUTH_COOKIE_SAMESITE,  # type: ignore
+        path="/",
+    )
+
+
 def _request_origin(request: Request) -> str:
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
     forwarded_host = request.headers.get("x-forwarded-host", "")
@@ -314,11 +333,72 @@ async def exchange_token(
             detail="Invalid or expired exchange code"
         )
     _set_session_cookie(response, data["access_token"])
+    refresh_token = create_refresh_token(user_id=data["user_id"], username=data["username"], db=db)
+    _set_refresh_cookie(response, refresh_token)
     return TokenResponse(
         access_token=data["access_token"],
         token_type="bearer",
         username=data["username"],
         user_id=data["user_id"],
+    )
+
+
+class RefreshPayload(BaseModel):
+    refresh_token: Optional[str] = None
+
+
+@router.post("/refresh")
+@limiter.limit("10/minute")
+async def refresh_token(
+    request: Request,
+    response: Response,
+    payload: RefreshPayload | None = None,
+    db: Session = Depends(get_db),
+):
+    # Get refresh token from cookie or body
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if payload and payload.refresh_token:
+        refresh_token = payload.refresh_token
+    
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token not provided",
+        )
+    
+    token_data = verify_refresh_token(refresh_token, db=db)
+    if not token_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+    
+    user_id = token_data.get("sub")
+    raw_username = token_data.get("username")
+    username: str = raw_username if isinstance(raw_username, str) and raw_username else (user_id or "")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token payload",
+        )
+    
+    # Create new access token
+    access_token = create_access_token(
+        user_id=user_id,
+        username=username,
+        db=db,
+    )
+    _set_session_cookie(response, access_token)
+    
+    # Optionally rotate refresh token (create new one)
+    new_refresh_token = create_refresh_token(user_id=user_id, username=username, db=db)
+    _set_refresh_cookie(response, new_refresh_token)
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        username=username,
+        user_id=user_id,
     )
 
 
@@ -429,6 +509,8 @@ async def register(
         user_agent=request.headers.get("user-agent"),
     )
     _set_session_cookie(response, token)
+    refresh_token = create_refresh_token(user_id=new_user.id, username=new_user.username, db=db)
+    _set_refresh_cookie(response, refresh_token)
 
     record_security_event(
         db,
@@ -517,6 +599,8 @@ async def login(
         user_agent=request.headers.get("user-agent"),
     )
     _set_session_cookie(response, token)
+    refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
+    _set_refresh_cookie(response, refresh_token)
 
     record_security_event(
         db,
@@ -575,6 +659,7 @@ async def logout(
         details={"source": "frontend"},
     )
     response.delete_cookie(settings.AUTH_COOKIE_NAME, path="/")
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
     return {"status": "logged_out"}
 
 
@@ -754,6 +839,7 @@ async def github_callback(
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
 
     record_security_event(
         db,
@@ -783,6 +869,7 @@ async def github_callback(
     code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
     response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
     _set_session_cookie(response, token)
+    _set_refresh_cookie(response, refresh_token)
     return response
 
 
@@ -918,6 +1005,7 @@ async def google_callback(
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
 
     record_security_event(
         db,
@@ -946,4 +1034,5 @@ async def google_callback(
     code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
     response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
     _set_session_cookie(response, token)
+    _set_refresh_cookie(response, refresh_token)
     return response

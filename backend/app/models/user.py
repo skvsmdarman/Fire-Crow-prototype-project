@@ -1,10 +1,15 @@
-from sqlalchemy import String, DateTime, Text, Float
-from sqlalchemy.orm import Mapped, mapped_column
+from __future__ import annotations
+
+from sqlalchemy import String, DateTime, Text, Float, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import uuid
 
 from app.models.database import Base
+
+if TYPE_CHECKING:
+    from app.models.role import Role
 
 
 class User(Base):
@@ -16,7 +21,7 @@ class User(Base):
     credit_balance: Mapped[float] = mapped_column(Float, default=10.0, nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     tenant_id: Mapped[Optional[str]] = mapped_column(String(255), index=True, nullable=True)
-    role_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    role_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("roles.id"), nullable=True)
     github_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     github_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     github_token_scopes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -31,6 +36,14 @@ class User(Base):
     last_logout_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     activity_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    role: Mapped[Optional["Role"]] = relationship("Role", foreign_keys=[role_id], lazy="joined")
+
+    @property
+    def is_admin(self) -> bool:
+        if not self.role:
+            return False
+        return self.role.name.lower() in {"admin", "owner", "security_admin", "platform_admin", "superadmin"}
 
 
 class LoginFailure(Base):

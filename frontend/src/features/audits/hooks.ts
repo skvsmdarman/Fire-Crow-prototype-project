@@ -3,7 +3,7 @@ import { Job, JobDetail, SubmitAuditBody } from "./types";
 import { fetchJobs, fetchJobDetail, submitAudit, cancelJob } from "./api";
 import { useToast } from "../../components/ui/Toast";
 
-export function useAudits(token: string | null) {
+export function useAudits(isAuthenticated: boolean) {
   const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
@@ -18,7 +18,7 @@ export function useAudits(token: string | null) {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     setLoadingJobs(true);
     setJobsError(null);
     try {
@@ -30,10 +30,10 @@ export function useAudits(token: string | null) {
     } finally {
       setLoadingJobs(false);
     }
-  }, [token]);
+  }, [isAuthenticated]);
 
   const loadJobDetail = useCallback(async (jobId: string) => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     setLoadingDetail(true);
     setDetailError(null);
     try {
@@ -45,11 +45,11 @@ export function useAudits(token: string | null) {
     } finally {
       setLoadingDetail(false);
     }
-  }, [token]);
+  }, [isAuthenticated]);
 
   const runAudit = useCallback(
     async (body: SubmitAuditBody) => {
-      if (!token) {
+      if (!isAuthenticated) {
         setSubmitError("Connect a workspace before launching an audit.");
         return null;
       }
@@ -73,12 +73,12 @@ export function useAudits(token: string | null) {
         setSubmitting(false);
       }
     },
-    [token, loadJobs, toast]
+    [isAuthenticated, loadJobs, toast]
   );
 
   const cancelAudit = useCallback(
     async (jobId: string) => {
-      if (!token) return;
+      if (!isAuthenticated) return;
       toast("Requesting job cancellation...", "info");
       try {
         await cancelJob(jobId);
@@ -92,11 +92,11 @@ export function useAudits(token: string | null) {
         toast(error.message || "Unable to cancel job.", "error");
       }
     },
-    [token, selectedJobId, loadJobs, loadJobDetail, toast]
+    [isAuthenticated, selectedJobId, loadJobs, loadJobDetail, toast]
   );
 
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       const timer = setTimeout(() => {
         void loadJobs();
       }, 0);
@@ -109,7 +109,7 @@ export function useAudits(token: string | null) {
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [token, loadJobs]);
+  }, [isAuthenticated, loadJobs]);
 
   useEffect(() => {
     if (selectedJobId) {

@@ -25,8 +25,9 @@ router = APIRouter(prefix="/system", tags=["System"])
 
 
 def _is_admin(user: User | None) -> bool:
-    role = (user.role_id or "").lower() if user else ""
-    return role in {"admin", "owner", "security_admin", "platform_admin"}
+    if not user:
+        return False
+    return user.is_admin
 
 
 async def require_admin(

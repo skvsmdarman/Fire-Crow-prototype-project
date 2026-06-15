@@ -76,8 +76,9 @@ export default function SignInPage() {
         if (!active) {
           return;
         }
+        // Only persist non-sensitive metadata. The access token is in an HttpOnly cookie
+        // set by the backend during the exchange.
         login({
-          access_token: session.access_token,
           user_id: session.user_id,
           username: session.username,
         });

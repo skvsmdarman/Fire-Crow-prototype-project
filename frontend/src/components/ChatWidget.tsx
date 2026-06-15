@@ -5,7 +5,6 @@ import { buildApiUrl } from '../shared/api/baseUrl';
 
 interface ChatWidgetProps {
   jobId: string | null;
-  token: string;
 }
 
 interface Message {
@@ -13,7 +12,7 @@ interface Message {
   text: string;
 }
 
-export default function ChatWidget({ jobId, token }: ChatWidgetProps) {
+export default function ChatWidget({ jobId }: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { sender: 'ai', text: 'Ask about this audit if the optional AI assistant feature is enabled for your workspace.' }
@@ -38,9 +37,9 @@ export default function ChatWidget({ jobId, token }: ChatWidgetProps) {
     try {
       const res = await fetch(buildApiUrl('/chat/ask'), {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ job_id: jobId, message: userMsg })
       });

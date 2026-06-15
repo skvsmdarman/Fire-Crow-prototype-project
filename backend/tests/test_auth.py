@@ -173,7 +173,7 @@ def test_registration_and_login_flow():
         assert f"{AUTH_COOKIE_NAME}=" in reg_cookie
         assert "HttpOnly" in reg_cookie
         assert "Secure" in reg_cookie
-        assert "SameSite=lax" in reg_cookie
+        assert "SameSite=strict" in reg_cookie
 
         login_ok = client.post(
             "/api/v1/auth/login",
@@ -188,7 +188,7 @@ def test_registration_and_login_flow():
         assert f"{AUTH_COOKIE_NAME}=" in login_cookie
         assert "HttpOnly" in login_cookie
         assert "Secure" in login_cookie
-        assert "SameSite=lax" in login_cookie
+        assert "SameSite=strict" in login_cookie
 
         login_fail = client.post(
             "/api/v1/auth/login",
@@ -316,7 +316,7 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     assert f"{AUTH_COOKIE_NAME}=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    assert "SameSite=strict" in set_cookie
 
     db = SessionLocal()
     try:
@@ -431,7 +431,7 @@ def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     assert f"{AUTH_COOKIE_NAME}=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    assert "SameSite=strict" in set_cookie
 
 
 def test_policy_event_logging_records_security_log():
@@ -513,7 +513,7 @@ def test_oauth_code_exchange():
         assert f"{AUTH_COOKIE_NAME}=" in set_cookie
         assert "HttpOnly" in set_cookie
         assert "Secure" in set_cookie
-        assert "SameSite=lax" in set_cookie
+        assert "SameSite=strict" in set_cookie
 
         db.expire_all()
         consumed_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
+from app.config import settings
 from app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
 from app.orchestrator.maestro import cleanup_resources, maestro_graph
 from app.orchestrator.runtime_context import (
@@ -16,6 +18,8 @@ from app.schemas import AuditState, JobStatus
 from app.services.auth import decrypt_provider_token
 
 logger = logging.getLogger("firecrow.orchestrator.runtime")
+
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
 def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str, custom_email: str = "") -> AuditState:
@@ -64,8 +68,30 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         db.commit()
 
         try:
-            graph_result = maestro_graph.invoke(initial_state)
+            future = _executor.submit(maestro_graph.invoke, initial_state)
+            graph_result = future.result(timeout=settings.MAX_SCAN_DURATION)
             result_state = AuditState.model_validate(graph_result)
+        except FuturesTimeoutError:
+            execution_error = TimeoutError(f"Orchestration exceeded maximum scan duration of {settings.MAX_SCAN_DURATION}s")
+            logger.error("Audit job %s timed out after %ds", job_id, settings.MAX_SCAN_DURATION)
+            
+            from app.orchestrator.runtime_context import get_runtime_tracker as get_tracker
+            tracker = get_tracker()
+            if tracker:
+                tracker_state = tracker.state
+
+                result_state = AuditState(
+                    job_id=job_id,
+                    user_id=user_id,
+                    repo_url=repo_url,
+                    repo_branch=repo_branch,
+                    status=JobStatus.FAILED,
+                    errors=[{"phase": "orchestration", "message": f"Scan timed out after {settings.MAX_SCAN_DURATION}s"}],
+                    custom_email=custom_email,
+                    sandbox_container_id=tracker_state.get("sandbox_container_id", ""),
+                )
+                from app.orchestrator.runtime_context import sync_runtime_state
+                sync_runtime_state(result_state)
         except Exception as exc:
             execution_error = exc
             if not isinstance(exc, JobCancellationRequested):

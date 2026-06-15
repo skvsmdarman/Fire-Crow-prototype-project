@@ -16,7 +16,7 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export async function subscribeUserToPush(token: string) {
+export async function subscribeUserToPush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.warn('Push notifications are not supported in this browser.');
     return;
@@ -36,7 +36,7 @@ export async function subscribeUserToPush(token: string) {
 
     // Fetch VAPID public key from backend
     const res = await fetch(buildApiUrl('/push/vapid-public-key'), {
-      headers: { Authorization: `Bearer ${token}` }
+      credentials: "include",
     });
     if (!res.ok) throw new Error('Failed to fetch VAPID public key');
     const { public_key } = await res.json();
@@ -57,9 +57,9 @@ export async function subscribeUserToPush(token: string) {
     // Send subscription to backend
     const subscribeRes = await fetch(buildApiUrl('/push/subscribe'), {
       method: 'POST',
+      credentials: "include",
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
         endpoint: subscription.endpoint,

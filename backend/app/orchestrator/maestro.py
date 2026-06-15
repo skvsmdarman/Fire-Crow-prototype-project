@@ -726,6 +726,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     # 1. Store structured report directly in Neon/PostgreSQL
     from app.services.report_service import create_report_in_db, generate_temp_pdf_report
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
+    job_user_id = db_job.user_id if db_job else None
     
     report = create_report_in_db(
         db=db,
@@ -735,6 +736,13 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         findings=all_findings,
         scanner_execution=state.scanner_execution
     )
+
+    html_content = report.html_content or ""
+    report_url = f"/api/v1/audit/job/{state.job_id}/report"
+
+    # Persist report_pdf_url directly on the job so it survives session resets
+    if db_job:
+        db_job.report_pdf_url = report_url
 
     # Legacy fallback: also create the html artifact if needed
     repo_name = get_clean_repo_name(state.repo_url)
@@ -746,7 +754,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
             job_id=state.job_id,
             artifact_type="report_html",
             name=pdf_filename.replace(".pdf", ".html"),
-            data_text=report.html_content or "",
+            data_text=html_content,
         )
     )
     db.commit()
@@ -754,15 +762,15 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     # 2. Compile temporary PDF ONLY if email delivery with attachment is enabled
     pdf_path = None
     if settings.REPORT_EMAIL_ATTACH_PDF:
-        pdf_path = generate_temp_pdf_report(report.html_content or "", state.job_id)
+        pdf_path = generate_temp_pdf_report(html_content, state.job_id)
 
     # 3. Determine recipient email
     user_email = ""
     if state.custom_email:
         user_email = state.custom_email
-    elif db_job:
+    elif job_user_id:
         from app.models.user import User
-        user = db.query(User).filter(User.id == db_job.user_id).first()
+        user = db.query(User).filter(User.id == job_user_id).first()
         if user and user.email:
             user_email = user.email
 
@@ -796,7 +804,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         log_agent_message(db, state.job_id, "REPORTER", "Audit report successfully generated and emailed.")
 
     return {
-        "report_pdf_url": f"/api/v1/audit/job/{state.job_id}/report",
+        "report_pdf_url": report_url,
         "report_delivered": True,
         "status": JobStatus.COMPLETED,
     }

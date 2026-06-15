@@ -51,9 +51,12 @@ def run_housekeeping(db: Session) -> dict[str, int]:
             if deleted_logs > 0 or deleted_artifacts > 0:
                 logger.info("Pruned %d logs and %d artifacts from old finished jobs.", deleted_logs, deleted_artifacts)
 
-        # 2. Delete entire jobs older than RETENTION_DAYS_JOB
+        # 2. Delete entire jobs older than RETENTION_DAYS_JOB (skip legal hold)
         job_cutoff = now - timedelta(days=RETENTION_DAYS_JOB)
-        expired_jobs = db.query(AuditJob).filter(AuditJob.created_at < job_cutoff).all()
+        expired_jobs = db.query(AuditJob).filter(
+            AuditJob.created_at < job_cutoff,
+            AuditJob.legal_hold == False
+        ).all()
         for job in expired_jobs:
             db.delete(job)
             deleted_counts["deleted_jobs_expiry"] += 1
@@ -61,12 +64,15 @@ def run_housekeeping(db: Session) -> dict[str, int]:
         if deleted_counts["deleted_jobs_expiry"] > 0:
             logger.info("Deleted %d expired audit jobs (older than %d days).", deleted_counts["deleted_jobs_expiry"], RETENTION_DAYS_JOB)
 
-        # 3. Limit total jobs per user to MAX_JOBS_PER_USER
+        # 3. Limit total jobs per user to MAX_JOBS_PER_USER (skip legal hold)
         # Group jobs by user_id to count them
         users_with_jobs = db.query(AuditJob.user_id).group_by(AuditJob.user_id).all()
         for (user_id,) in users_with_jobs:
             # Get all jobs for this user, ordered by creation date descending
-            user_jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).order_by(desc(AuditJob.created_at)).all()
+            user_jobs = db.query(AuditJob).filter(
+                AuditJob.user_id == user_id,
+                AuditJob.legal_hold == False
+            ).order_by(desc(AuditJob.created_at)).all()
             if len(user_jobs) > MAX_JOBS_PER_USER:
                 overflow_jobs = user_jobs[MAX_JOBS_PER_USER:]
                 for job in overflow_jobs:

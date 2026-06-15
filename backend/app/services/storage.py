@@ -168,7 +168,7 @@ class StorageService:
         if not user:
             return False
             
-        if user.role in ["admin", "superadmin"]:  # type: ignore
+        if user.is_admin:
             return True
             
         membership = db.query(Membership).filter(
