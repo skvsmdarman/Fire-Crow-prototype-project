@@ -3,6 +3,7 @@ import logging
 import uuid
 import argparse
 import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from pathlib import Path
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
