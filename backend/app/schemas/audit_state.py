@@ -77,6 +77,8 @@ class AuditState(BaseModel):
     tech_stack: list[str] = []
     entry_points: list[str] = []
     dependency_manifests: list[str] = []
+    repo_security: dict[str, Any] = {}
+    threat_model: dict[str, Any] = {}
     sbom: dict[str, Any] = {}
     dependency_vulns: Annotated[list[Finding], operator.add] = []
     iac_findings: Annotated[list[Finding], operator.add] = []
@@ -136,6 +138,10 @@ class AuditState(BaseModel):
     # --- REMEDIATION outputs ---
     remediation_plan: dict[str, Any] = {}
     remediation_tasks: list[dict[str, Any]] = []
+
+    # --- CROSS-VALIDATION outputs ---
+    validated_findings: Annotated[list[Finding], operator.add] = []
+    correlation_report: list[dict[str, Any]] = []
 
     # --- SCORING outputs ---
     scored_findings: Annotated[list[Finding], operator.add] = []

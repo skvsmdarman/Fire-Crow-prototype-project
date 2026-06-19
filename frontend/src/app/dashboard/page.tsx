@@ -550,7 +550,7 @@ function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, n
               <div style={{ marginBottom: 16 }}>
                 <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Pipeline</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {["Recon", "SAST", "Deps", "IaC", "Sandbox", "Report"].map((stage) => {
+                  {["Recon", "Threat", "SAST", "Deps", "Config", "IaC", "Sandbox", "Report"].map((stage) => {
                     const done = selected.status === "completed" || selected.status === "partial";
                     const current = selected.status === "running";
                     return (
@@ -809,6 +809,23 @@ function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }
                 <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: on ? theme.green : theme.amber }}>{on ? "configured" : "not configured"}</span>
               </div>
             ))
+          )}
+        </div>
+
+        {/* Scanner Capabilities */}
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500 }}>Scanner Capabilities</div>
+          {!systemStatus?.scanner_capabilities ? (
+            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Scanner capabilities not available.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+              {Object.entries(systemStatus.scanner_capabilities).map(([scanner, available]) => (
+                <div key={scanner} style={{ padding: "12px 18px", borderBottom: `1px solid ${theme.border}`, borderRight: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="mono" style={{ fontSize: 11, color: theme.text, textTransform: "capitalize" }}>{scanner.replace("_", " ")}</span>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: available ? theme.green : theme.muted, flexShrink: 0 }} />
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

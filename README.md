@@ -39,11 +39,20 @@ Fire Crow's graph dynamically invokes a suite of analyzers based on the reposito
 2. **`authz_idor`**: Flags potential Insecure Direct Object Reference (IDOR) vulnerabilities based on routing parameters and risk tags.
 3. **`cicd_scan`**: Inspects `.github/workflows` for risky configurations (e.g., untrusted `pull_request_target`).
 4. **`container_scan`**: Analyzes `Dockerfile` rules for dangerous capabilities and bad practices.
-5. **`sbom_graph`**: Captures dependency manifest mappings and outputs CycloneDX-compatible SBOM artifacts.
-6. **`secret_history`**: Scans commit history heuristically to spot hardcoded secrets, supporting auto-redaction.
-7. **`attack_graph`**: Builds a node-edge correlation matrix indicating chained attack paths across files.
-8. **`remediation_planner`**: Analyzes findings to generate actionable fix plans and code snippets.
-9. **`evidence_normalizer` & `confidence`**: Normalizes disparate tool outputs and intelligently upscores finding confidence.
+5. **`config_scan`**: Scans configuration files (Dockerfile, Kubernetes, Terraform) using specialized linters (hadolint, kube-linter, tfsec).
+6. **`sbom_graph`**: Captures dependency manifest mappings and outputs CycloneDX-compatible SBOM artifacts.
+7. **`secret_history`**: Scans commit history heuristically to spot hardcoded secrets, supporting auto-redaction.
+8. **`sast`**: Performs static application security testing including:
+   - Regex-based scanning for secrets and unsafe code patterns
+   - **Bandit integration** for Python-specific security issues (when available)
+   - **ESLint integration** for JavaScript/TypeScript security scanning (when available)
+   - Configurable fallback to enhanced regex scanning
+9. **`threat_model`**: Generates prioritized attack vectors and assets based on tech stack and entry points.
+10. **`dynamic_attack`**: Enhanced with SSRF, XXE, SSTI, JWT tampering, and rate limit testing.
+11. **`cross_validation`**: Correlates findings from static and dynamic analysis, flags false positives.
+12. **`attack_graph`**: Builds a node-edge correlation matrix indicating chained attack paths across files.
+13. **`remediation_planner`**: Analyzes findings to generate actionable fix plans and code snippets.
+14. **`evidence_normalizer` & `confidence`**: Normalizes disparate tool outputs and intelligently upscores finding confidence.
 
 ## ⚙️ Local Development Setup
 

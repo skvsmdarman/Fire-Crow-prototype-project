@@ -2,7 +2,10 @@ import os
 import subprocess
 import shutil
 import logging
-from typing import List, Tuple, Optional
+import json
+import urllib.request
+import urllib.error
+from typing import List, Tuple, Optional, Dict, Any
 from app.config import settings
 
 logger = logging.getLogger("firecrow.agents.recon")
@@ -132,6 +135,120 @@ def detect_tech_stack(target_dir: str) -> Tuple[List[str], List[str], List[str]]
     return tech_stack, dependency_manifests, entry_points
 
 
+def check_github_repo_security(repo_url: str, github_token: Optional[str] = None) -> Dict[str, Any]:
+    """
+    If GitHub token is available, use GitHub API to check repository security settings.
+    Returns a dict with security findings and repo metadata.
+    """
+    result = {
+        "is_github": False,
+        "repo_security_findings": [],
+        "repo_metadata": {}
+    }
+    
+    # Extract owner/repo from URL
+    if "github.com" not in repo_url.lower():
+        return result
+    
+    result["is_github"] = True
+    
+    # Parse owner/repo from URL
+    import re
+    match = re.search(r'github\.com[/:]([^/]+)/([^/.]+)', repo_url)
+    if not match:
+        return result
+    
+    owner = match.group(1)
+    repo = match.group(2)
+    
+    token = github_token or settings.GITHUB_TOKEN
+    if not token:
+        logger.info("No GitHub token available, skipping repo security checks")
+        result["repo_metadata"]["warning"] = "No GitHub token available for security checks"
+        return result
+    
+    api_base = f"https://api.github.com/repos/{owner}/{repo}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    def make_request(url: str) -> Optional[Dict]:
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as e:
+            logger.warning(f"GitHub API error for {url}: {e.code}")
+            return None
+        except Exception as e:
+            logger.warning(f"GitHub API request failed: {str(e)}")
+            return None
+    
+    # 1. Check repository visibility and basic info
+    repo_info = make_request(api_base)
+    if repo_info:
+        result["repo_metadata"]["visibility"] = "private" if repo_info.get("private") else "public"
+        result["repo_metadata"]["default_branch"] = repo_info.get("default_branch", "main")
+        result["repo_metadata"]["has_security_policy"] = repo_info.get("security_policy_url") is not None
+    
+    # 2. Check for SECURITY.md
+    security_md = make_request(f"{api_base}/contents/SECURITY.md")
+    if security_md:
+        result["repo_metadata"]["has_security_md"] = True
+    else:
+        result["repo_metadata"]["has_security_md"] = False
+        result["repo_security_findings"].append({
+            "type": "missing_security_policy",
+            "severity": "medium",
+            "message": "Repository does not have a SECURITY.md file"
+        })
+    
+    # 3. Check branch protection rules
+    branch_protection = make_request(f"{api_base}/branches/{branch}/protection")
+    if branch_protection:
+        result["repo_metadata"]["branch_protection_enabled"] = True
+        # Check for required reviews
+        required_reviews = branch_protection.get("required_pull_request_reviews", {})
+        if not required_reviews or required_reviews.get("required_approving_review_count", 0) < 1:
+            result["repo_security_findings"].append({
+                "type": "weak_branch_protection",
+                "severity": "medium",
+                "message": "Branch protection does not require code review approvals"
+            })
+    else:
+        result["repo_metadata"]["branch_protection_enabled"] = False
+        result["repo_security_findings"].append({
+            "type": "no_branch_protection",
+            "severity": "high",
+            "message": "No branch protection rules configured"
+        })
+    
+    # 4. Check secret scanning settings
+    secret_scanning = make_request(f"{api_base}/vulnerability-alerts")
+    if secret_scanning:
+        result["repo_metadata"]["secret_scanning_enabled"] = True
+    else:
+        result["repo_metadata"]["secret_scanning_enabled"] = False
+        result["repo_security_findings"].append({
+            "type": "secret_scanning_disabled",
+            "severity": "medium",
+            "message": "Secret scanning alerts are not enabled"
+        })
+    
+    # 5. Check if force push is allowed
+    if branch_protection:
+        allow_force_pushes = branch_protection.get("allow_force_pushes", True)
+        if allow_force_pushes:
+            result["repo_security_findings"].append({
+                "type": "force_push_allowed",
+                "severity": "medium",
+                "message": "Force pushes are allowed on protected branch"
+            })
+    
+    return result
+
+
 def run_recon(job_id: str, repo_url: str, branch: str, github_token: Optional[str] = None) -> dict:
     """
     Main entry point for RECON agent.
@@ -150,6 +267,7 @@ def run_recon(job_id: str, repo_url: str, branch: str, github_token: Optional[st
             "tech_stack": ["Python", "Docker", "FastAPI"],
             "dependency_manifests": ["requirements.txt"],
             "entry_points": ["main.py", "Dockerfile"],
+            "repo_security": {"is_github": False, "repo_security_findings": [], "repo_metadata": {}},
             "error": None
         }
 
@@ -160,15 +278,20 @@ def run_recon(job_id: str, repo_url: str, branch: str, github_token: Optional[st
             "tech_stack": [],
             "dependency_manifests": [],
             "entry_points": [],
+            "repo_security": {},
             "error": "Failed to clone repository. Verify the URL and branch name."
         }
 
     tech_stack, dependency_manifests, entry_points = detect_tech_stack(target_dir)
+    
+    # Check GitHub repo security settings
+    repo_security = check_github_repo_security(repo_url, github_token)
 
     return {
         "clone_path": target_dir,
         "tech_stack": tech_stack,
         "dependency_manifests": dependency_manifests,
         "entry_points": entry_points,
+        "repo_security": repo_security,
         "error": None
     }

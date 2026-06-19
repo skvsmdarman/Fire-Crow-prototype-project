@@ -68,4 +68,14 @@ export interface SystemStatus {
     pr_description: boolean;
   };
   agents: SystemAgent[];
+  scanner_capabilities?: {
+    bandit: boolean;
+    eslint: boolean;
+    hadolint: boolean;
+    kube_linter: boolean;
+    tfsec: boolean;
+    semgrep: boolean;
+    nuclei: boolean;
+    sqlmap: boolean;
+  };
 }

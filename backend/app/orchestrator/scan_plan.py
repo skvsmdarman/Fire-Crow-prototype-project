@@ -86,12 +86,18 @@ def generate_scan_plan(
 
     if has_docker:
         enabled_scanners.add("container_scan")
+        enabled_scanners.add("config_scan")
     
     if has_terraform:
         enabled_scanners.add("iac")
+        enabled_scanners.add("config_scan")
 
     if has_cicd:
         enabled_scanners.add("cicd_scan")
+
+    # Always enable threat model and cross validation
+    enabled_scanners.add("threat_model")
+    enabled_scanners.add("cross_validation")
 
     # 3. Active testing validation
     active_testing_allowed = True
