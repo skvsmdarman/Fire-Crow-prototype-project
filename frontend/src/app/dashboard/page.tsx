@@ -20,6 +20,7 @@ import ChatWidget from "../../components/ChatWidget";
 import Leaderboard from "../../components/Leaderboard";
 import { subscribeUserToPush } from "../../lib/pushNotifications";
 import { PRODUCT_NAME, PRODUCT_TAGLINE, GITHUB_SCOPE_DESCRIPTIONS } from "../../shared/config/app";
+import styles from "./page.module.css";
 
 const AttackGraph = dynamic(() => import("../../components/AttackGraph"), { ssr: false });
 
@@ -303,59 +304,44 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh", background: "#050505", overflow: "hidden" }}>
-      {/* Sidebar with Glassmorphism */}
-      <aside style={{ 
-        borderRight: `1px solid rgba(255,255,255,0.05)`, 
-        padding: "24px 0", 
-        display: "flex", 
-        flexDirection: "column", 
-        position: "sticky", 
-        top: 0, 
-        height: "100vh", 
-        background: "rgba(10, 10, 10, 0.4)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-        boxShadow: "10px 0 30px rgba(0,0,0,0.5)",
-        zIndex: 10
-      }}>
-        <div style={{ padding: "0 24px 32px", borderBottom: `1px solid rgba(255,255,255,0.05)` }}>
-          <Logo />
+    <div className={styles.shell}>
+      {/* Sidebar */}
+      <aside className={styles.sidebar}>
+        <div className={styles.brandBlock}>
+          <span className={styles.brandMark}>FC</span>
+          <div>
+            <p className={styles.brandName}>{PRODUCT_NAME}</p>
+            <span className={styles.brandSubtitle}>{PRODUCT_TAGLINE}</span>
+          </div>
         </div>
-        <nav style={{ flex: 1, padding: "20px 16px" }}>
+        <nav className={styles.navStack}>
           {SECTIONS.map(s => (
-            <button key={s} onClick={() => setActive(s)} style={{ 
-                width: "100%", textAlign: "left", padding: "12px 16px", borderRadius: 10, 
-                fontSize: 14, fontWeight: active === s ? 500 : 400, 
-                color: active === s ? theme.text : theme.muted, 
-                background: active === s ? "linear-gradient(90deg, rgba(255,107,43,0.1), transparent)" : "transparent",
-                borderLeft: active === s ? `3px solid ${theme.orange}` : "3px solid transparent",
-                marginBottom: 4, display: "flex", alignItems: "center", gap: 12, 
-                transition: "all .2s cubic-bezier(0.4, 0, 0.2, 1)" 
-              }}
-              onMouseEnter={e => { if (active !== s) { e.currentTarget.style.color = theme.text; e.currentTarget.style.background = "rgba(255,255,255,0.02)"; } }}
-              onMouseLeave={e => { if (active !== s) { e.currentTarget.style.color = theme.muted; e.currentTarget.style.background = "transparent"; } }}>
-              <SectionIcon name={s} active={active === s} />
-              {s}
+            <button
+              key={s}
+              onClick={() => setActive(s)}
+              className={`${styles.navItem} ${active === s ? styles.navItemActive : ""}`}
+            >
+              {active === s && <span className={styles.activeIndicator} />}
+              <div className={styles.navItemContent}>
+                <span className={`${active === s ? styles.navIconActive : ""}`}>
+                  <SectionIcon name={s} active={active === s} />
+                </span>
+                <span className={styles.navLabel}>{s}</span>
+              </div>
             </button>
           ))}
         </nav>
-        <div style={{ padding: "20px 16px", borderTop: `1px solid rgba(255,255,255,0.05)` }}>
-          <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: `1px solid rgba(255,255,255,0.05)`, marginBottom: 12, backdropFilter: "blur(10px)" }}>
-            <div style={{ fontSize: 11, color: theme.muted, marginBottom: 4 }}>Workspace</div>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{authSession.workspace || "acme-corp"}</div>
-            <div className="mono" style={{ fontSize: 9, color: theme.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{authSession.userId || "usr_unknown"}</div>
-          </div>
-          <button onClick={handleSignOut} style={{ width: "100%", padding: "10px", border: `1px solid rgba(255,255,255,0.05)`, borderRadius: 10, background: "transparent", color: theme.muted, fontSize: 13, textAlign: "center", transition: "all .2s" }} onMouseEnter={e => { e.currentTarget.style.color = theme.text; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }} onMouseLeave={e => { e.currentTarget.style.color = theme.muted; e.currentTarget.style.background = "transparent"; }}>Sign out</button>
+        <div className={styles.workspaceCard}>
+          <div className={styles.authCardAccent} />
+          <span className={styles.sectionKicker}>Workspace</span>
+          <div className={styles.workspaceName}>{authSession.workspace || "acme-corp"}</div>
+          <div className={styles.workspaceId}>{authSession.userId || "usr_unknown"}</div>
         </div>
+        <button onClick={handleSignOut} className={styles.ghostAction}>Sign out</button>
       </aside>
 
       {/* Main Area */}
-      <main style={{ 
-        overflowY: "auto", 
-        background: "radial-gradient(circle at top left, rgba(255,107,43,0.05), transparent 50%), radial-gradient(circle at bottom right, rgba(59,158,255,0.03), transparent 50%)",
-        minHeight: "100vh"
-      }}>
+      <main className={styles.mainSurface}>
         <AnimatePresence mode="wait">
           <motion.div key={active} initial={{ opacity: 0, scale: 0.98, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: -10 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
             {active === "Overview" && <OverviewSection jobs={jobs} findings={findings} criticalCount={criticalCount} setActive={setActive} />}
@@ -383,22 +369,25 @@ export default function Dashboard() {
 
 function PageHeader({ kicker, title, action }: { kicker: string; title: string; action?: React.ReactNode }) {
   return (
-    <div style={{ padding: "40px 48px 24px", borderBottom: `1px solid rgba(255,255,255,0.05)`, display: "flex", justifyContent: "space-between", alignItems: "flex-end", background: "rgba(10,10,10,0.6)", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 5 }}>
+    <div className={styles.topbar}>
       <div>
-        <p className="mono" style={{ fontSize: 10, color: theme.orange, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 6 }}>{kicker}</p>
-        <h1 style={{ fontSize: 26, fontWeight: 500, letterSpacing: "-0.02em" }}>{title}</h1>
+        <p className={`mono ${styles.sectionKicker}`}>{kicker}</p>
+        <h1>{title}</h1>
       </div>
-      {action}
+      {action && <div className={styles.headerActions}>{action}</div>}
     </div>
   );
 }
 
 function MetricCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: boolean }) {
   return (
-    <div style={{ background: theme.surface, border: `1px solid ${accent ? theme.orangeBorder : theme.border}`, borderRadius: 8, padding: "18px 20px" }}>
-      <div style={{ fontSize: 11, color: theme.muted, marginBottom: 12 }}>{label}</div>
-      <div style={{ fontSize: 30, fontWeight: 500, fontFamily: "'IBM Plex Mono', monospace", color: accent ? theme.orange : theme.text }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: theme.muted, marginTop: 6 }}>{sub}</div>}
+    <div className={`${styles.metricCard} ${accent ? "accent" : ""}`}>
+      <div className={styles.metricHeader}>
+        <span>{label}</span>
+        {accent && <span className={styles.metricAccent} style={{ background: "var(--red)", boxShadow: "0 0 0 4px rgba(255,48,71,0.12)" }} />}
+      </div>
+      <span className={styles.metricValue}>{value}</span>
+      {sub && <p className={styles.metricNote}>{sub}</p>}
     </div>
   );
 }
@@ -418,42 +407,56 @@ function OverviewSection({ jobs, findings, criticalCount, setActive }: { jobs: J
           <MetricCard label="Latest Report" value={latestCompleted ? "Ready" : "None"} sub={latestCompleted ? shortRepoName(latestCompleted.repo_url) : "no completed audits"} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className={styles.workGrid}>
           {/* Recent runs */}
-          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>Recent audits</span>
-              <button onClick={() => setActive("Audits")} style={{ fontSize: 11, color: theme.orange, background: "none", border: "none", cursor: "pointer" }}>View all →</button>
-            </div>
-            {jobs.slice(0, 4).map(j => (
-              <div key={j.id} style={{ padding: "12px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{shortRepoName(j.repo_url)}</div>
-                  <div className="mono" style={{ fontSize: 10, color: theme.muted }}>{j.repo_branch} · {formatDateTime(j.created_at)}</div>
-                </div>
-                <StatusPill status={j.status} />
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div>
+                <span className={`mono ${styles.sectionKicker}`}>History</span>
+                <h2>Recent audits</h2>
               </div>
-            ))}
-            {jobs.length === 0 && <div style={{ padding: "20px", color: theme.muted, fontSize: 13, textAlign: "center" }}>No audits run yet.</div>}
+              <button onClick={() => setActive("Audits")} className={styles.ghostAction}>View all →</button>
+            </div>
+            {jobs.length === 0 ? (
+              <div className={styles.emptyState}>No audits run yet.</div>
+            ) : (
+              <div className={styles.jobList}>
+                {jobs.slice(0, 4).map(j => (
+                  <div key={j.id} className={styles.jobRow}>
+                    <div className={styles.jobInfo}>
+                      <svg className={styles.jobIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      <div className={styles.jobMetaBlock}>
+                        <strong>{shortRepoName(j.repo_url)}</strong>
+                        <small>{j.repo_branch} · {formatDateTime(j.created_at)}</small>
+                      </div>
+                    </div>
+                    <StatusPill status={j.status} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Severity distribution */}
-          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}` }}>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>Severity distribution</span>
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div>
+                <span className={`mono ${styles.sectionKicker}`}>Distribution</span>
+                <h2>Severity breakdown</h2>
+              </div>
             </div>
-            <div style={{ padding: "16px 18px" }}>
-              {findings.length === 0 ? <div style={{ color: theme.muted, fontSize: 13, textAlign: "center" }}>No findings available.</div> :
-              [["critical", theme.red], ["high", theme.orange], ["medium", theme.amber], ["low", theme.blue], ["info", theme.muted]].map(([sev, color]) => {
+            <div className={styles.panel}>
+              {findings.length === 0 ? <div className={styles.emptyState}>No findings available.</div> :
+              [["critical", "var(--red)"], ["high", "var(--orange)"], ["medium", "var(--amber)"], ["low", "var(--blue)"], ["info", "var(--muted)"]].map(([sev, color]) => {
                 const count = findings.filter(f => f.severity === sev).length;
                 const pct = findings.length > 0 ? Math.round((count / findings.length) * 100) : 0;
                 return (
                   <div key={sev} style={{ marginBottom: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span className="mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color }}>{sev}</span>
-                      <span className="mono" style={{ fontSize: 10, color: theme.muted }}>{count}</span>
+                      <span className="mono" style={{ fontSize: 10, color: "var(--muted)" }}>{count}</span>
                     </div>
-                    <div style={{ height: 3, background: theme.dim, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ height: 3, background: "var(--dim)", borderRadius: 2, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 2, transition: "width .6s ease" }} />
                     </div>
                   </div>
@@ -489,78 +492,99 @@ function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, n
   return (
     <div>
       <PageHeader kicker="Security Auditing" title="Audits" />
-      <div style={{ padding: "24px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+      <div className={styles.sectionBody}>
         {/* New audit form & list */}
         <div>
-          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}` }}>
-              <p className="mono" style={{ fontSize: 10, color: theme.orange, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 4 }}>New audit</p>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>Start a scan</span>
-            </div>
-            <form onSubmit={handleSubmit} style={{ padding: "18px" }}>
-              <label style={{ display: "block", fontSize: 11, color: theme.muted, marginBottom: 6 }}>Repository URL</label>
-              <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://github.com/org/repository" style={{ width: "100%", background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 6, padding: "10px 12px", fontSize: 12, color: theme.text, marginBottom: 12, outline: "none" }} />
-              <label style={{ display: "block", fontSize: 11, color: theme.muted, marginBottom: 6 }}>Branch</label>
-              <input value={newBranch} onChange={e => setNewBranch(e.target.value)} placeholder="main" style={{ width: "100%", background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 6, padding: "10px 12px", fontSize: 12, color: theme.text, marginBottom: 16, outline: "none" }} />
-              <div style={{ padding: "10px 12px", background: "#1a1200", border: "1px solid #2a1f00", borderRadius: 6, marginBottom: 16 }}>
-                <span style={{ fontSize: 11, color: "#aa8800", lineHeight: 1.6 }}>Only audit repositories you own or are authorized to test.</span>
+          <div className={styles.panel} style={{ marginBottom: 16 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <span className={`mono ${styles.sectionKicker}`}>New audit</span>
+                <h2>Start a scan</h2>
               </div>
-              <button type="submit" disabled={submitting || !newUrl.trim()} style={{ width: "100%", padding: "11px", background: submitting ? theme.dim : theme.orange, color: submitting ? theme.muted : "#160800", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: submitting ? "not-allowed" : "pointer", transition: "background .2s" }}>
+            </div>
+            <form onSubmit={handleSubmit} className={styles.auditForm}>
+              <div>
+                <span className={styles.sectionKicker} style={{ fontSize: 9, marginBottom: 6, display: "block" }}>Repository URL</span>
+                <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://github.com/org/repository" className={styles.urlInput} />
+              </div>
+              <div>
+                <span className={styles.sectionKicker} style={{ fontSize: 9, marginBottom: 6, display: "block" }}>Branch</span>
+                <input value={newBranch} onChange={e => setNewBranch(e.target.value)} placeholder="main" className={styles.urlInput} />
+              </div>
+              <div style={{ padding: "10px 12px", background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.15)", borderRadius: 10, fontSize: 11, color: "var(--amber)", lineHeight: 1.6 }}>
+                Only audit repositories you own or are authorized to test.
+              </div>
+              <button type="submit" disabled={submitting || !newUrl.trim()} className={styles.submitButton}>
                 {submitting ? "Queuing audit…" : "Start audit →"}
               </button>
             </form>
           </div>
 
-          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500, display: "flex", justifyContent: "space-between" }}>
-              <span>Recent jobs</span>
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div>
+                <span className={`mono ${styles.sectionKicker}`}>History</span>
+                <h2>Recent jobs</h2>
+              </div>
             </div>
-            {jobs.length === 0 ? <div style={{ padding: "20px", color: theme.muted, fontSize: 12, textAlign: "center" }}>No audits.</div> :
-            jobs.map((j: Job) => (
-              <button key={j.id} onClick={() => onSelect(j.id)} style={{ width: "100%", textAlign: "left", padding: "13px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: selected?.id === j.id ? "#1a1a1a" : "transparent", transition: "background .15s", borderLeft: selected?.id === j.id ? `2px solid ${theme.orange}` : "2px solid transparent" }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3 }}>{shortRepoName(j.repo_url)}</div>
-                  <div className="mono" style={{ fontSize: 10, color: theme.muted }}>{j.repo_branch} · {formatDateTime(j.created_at)}</div>
-                </div>
-                <StatusPill status={j.status} />
-              </button>
-            ))}
+            {jobs.length === 0 ? <div className={styles.emptyState}>No audits.</div> :
+            <div className={styles.jobList}>
+              {jobs.map((j: Job) => (
+                <button
+                  key={j.id}
+                  onClick={() => onSelect(j.id)}
+                  className={`${styles.jobRow} ${selected?.id === j.id ? styles.jobRowActive : ""}`}
+                >
+                  {selected?.id === j.id && <span className={styles.activeJobIndicator} />}
+                  <div className={styles.jobInfo}>
+                    <svg className={styles.jobIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    <div className={styles.jobMetaBlock}>
+                      <strong>{shortRepoName(j.repo_url)}</strong>
+                      <small>{j.repo_branch} · {formatDateTime(j.created_at)}</small>
+                    </div>
+                  </div>
+                  <StatusPill status={j.status} />
+                </button>
+              ))}
+            </div>
+            }
           </div>
         </div>
 
         {/* Job detail */}
         {selected && (
-          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
               <div>
-                <p className="mono" style={{ fontSize: 10, color: theme.muted, marginBottom: 2 }}>Selected audit</p>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{shortRepoName(selected.repo_url)}</span>
+                <span className={`mono ${styles.sectionKicker}`}>Selected audit</span>
+                <h2>{shortRepoName(selected.repo_url)}</h2>
               </div>
               <StatusPill status={selected.status} />
             </div>
-            <div style={{ padding: "18px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div className={styles.auditSummaryGrid}>
                 {[["Branch", selected.repo_branch], ["Created", formatDateTime(selected.created_at)]].map(([l, v]) => (
-                  <div key={l as string} style={{ background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 6, padding: "12px 14px" }}>
-                    <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>{l}</div>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{v}</div>
+                  <div key={l as string} className={styles.auditSummaryItem}>
+                    <span>{l}</span>
+                    <strong>{v}</strong>
                   </div>
                 ))}
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Pipeline</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {["Recon", "Threat", "SAST", "Deps", "Config", "IaC", "Sandbox", "Report"].map((stage) => {
-                    const done = selected.status === "completed" || selected.status === "partial";
-                    const current = selected.status === "running";
-                    return (
-                      <div key={stage} style={{ padding: "4px 10px", borderRadius: 4, background: done ? "rgba(46,204,113,0.08)" : current ? theme.orangeDim : "#161616", border: `1px solid ${done ? "rgba(46,204,113,0.2)" : current ? theme.orangeBorder : theme.border}` }}>
-                        <span className="mono" style={{ fontSize: 9, color: done ? theme.green : current ? theme.orange : theme.muted }}>{stage}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className={styles.auditStatusStrip}>
+                <span className={`mono ${styles.sectionKicker}`} style={{ width: "100%", marginBottom: 4 }}>Pipeline</span>
+                {["Recon", "Threat", "SAST", "Deps", "Config", "IaC", "Sandbox", "Report"].map((stage) => {
+                  const done = selected.status === "completed" || selected.status === "partial";
+                  const current = selected.status === "running";
+                  return (
+                    <span key={stage} style={{
+                      color: done ? "var(--green)" : current ? "var(--orange)" : "var(--muted)",
+                      background: done ? "rgba(0,230,118,0.08)" : current ? "var(--orangeDim)" : "rgba(255,255,255,0.03)",
+                    }}>
+                      {done ? "✓ " : current ? "● " : ""}{stage}
+                    </span>
+                  );
+                })}
               </div>
 
               {insight?.enabled && insight.insight && (
@@ -611,60 +635,72 @@ function FindingsSection({ findings, all, filter, setFilter, expanded, setExpand
   return (
     <div>
       <PageHeader kicker="Vulnerability Intelligence" title="Findings" />
-      <div style={{ padding: "24px 32px" }}>
+      <div className={styles.sectionBody}>
         {selected ? (
-          <div style={{ marginBottom: 20, padding: 12, background: theme.surface, borderRadius: 6, border: `1px solid ${theme.border}` }}>
-            <span style={{ fontSize: 12, color: theme.muted }}>Findings for </span>
+          <div style={{ marginBottom: 20, padding: "12px 16px", background: "var(--surface)", borderRadius: "var(--card-radius)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>Findings for </span>
             <span style={{ fontSize: 13, fontWeight: 500 }}>{shortRepoName(selected.repo_url)}</span>
-            <span className="mono" style={{ fontSize: 10, color: theme.muted, marginLeft: 10 }}>Branch {selected.repo_branch}</span>
+            <span className="mono" style={{ fontSize: 10, color: "var(--muted)", marginLeft: "auto" }}>Branch {selected.repo_branch}</span>
           </div>
         ) : (
-          <div style={{ marginBottom: 20, padding: 12, background: theme.surface, borderRadius: 6, border: `1px solid ${theme.border}` }}>
-            <span style={{ fontSize: 12, color: theme.muted }}>Select an audit from the Audits tab to view findings.</span>
+          <div className={styles.emptyState} style={{ marginBottom: 20 }}>
+            Select an audit from the Audits tab to view findings.
           </div>
         )}
 
         {/* Filter rail */}
         <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
           {["all", "critical", "high", "medium", "low", "info"].map(s => (
-            <button key={s} onClick={() => setFilter(s)} style={{ padding: "5px 12px", borderRadius: 4, border: `1px solid ${filter === s ? theme.orange : theme.border}`, background: filter === s ? theme.orangeDim : "transparent", fontSize: 11, fontWeight: 500, color: filter === s ? theme.orange : theme.muted, cursor: "pointer", transition: "all .15s", display: "flex", alignItems: "center", gap: 6 }}>
+            <button key={s} onClick={() => setFilter(s)} style={{
+              padding: "6px 14px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+              border: `1px solid ${filter === s ? "var(--orange)" : "var(--border)"}`,
+              background: filter === s ? "var(--orangeDim)" : "transparent",
+              color: filter === s ? "var(--orange)" : "var(--muted)",
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+              transition: "all .15s",
+            }}>
               <span style={{ textTransform: "capitalize" }}>{s}</span>
-              <span className="mono" style={{ fontSize: 10 }}>{counts[s]}</span>
+              <span className="mono" style={{ fontSize: 10, opacity: 0.7 }}>{counts[s]}</span>
             </button>
           ))}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className={styles.findingList}>
           {findings.map((f: Finding) => (
-            <div key={f.id} style={{ background: theme.surface, border: `1px solid ${expanded === f.id ? theme.orangeBorder : theme.border}`, borderRadius: 8, overflow: "hidden", transition: "border-color .2s" }}>
-              <button onClick={() => setExpanded(expanded === f.id ? null : f.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: "transparent", textAlign: "left" }}>
-                <SeverityPill severity={f.severity} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{f.title}</div>
-                  <div className="mono" style={{ fontSize: 10, color: theme.muted }}>{f.agent_source}</div>
+            <div key={f.id} className={`${styles.findingRowContainer} ${expanded === f.id ? styles.findingExpanded : ""}`}>
+              <button onClick={() => setExpanded(expanded === f.id ? null : f.id)} className={styles.findingRowHeader}>
+                <div className={styles.findingRowMain}>
+                  <SeverityPill severity={f.severity} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p className={styles.findingTitle}>{f.title}</p>
+                    <span className={styles.findingAgent}>{f.agent_source}</span>
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-                  {f.cvss_score !== null && <span className="mono" style={{ fontSize: 10, color: theme.muted }}>CVSS {f.cvss_score?.toFixed(1)}</span>}
-                  <span style={{ color: theme.muted, fontSize: 12, transition: "transform .2s", transform: expanded === f.id ? "rotate(180deg)" : "none" }}>▾</span>
+                <div className={styles.findingRowMeta}>
+                  {f.cvss_score !== null && <span className={styles.findingCvss}>CVSS {f.cvss_score?.toFixed(1)}</span>}
+                  <span className={`${styles.expandArrow} ${expanded === f.id ? styles.arrowRotated : ""}`}>▾</span>
                 </div>
               </button>
               <AnimatePresence initial={false}>
                 {expanded === f.id && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
-                    <div style={{ borderTop: `1px solid ${theme.border}`, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-                      <div>
-                        <div className="mono" style={{ fontSize: 9, color: theme.orange, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>Risk explanation</div>
-                        <p style={{ fontSize: 13, color: "#b0b0b0", lineHeight: 1.6 }}>{f.description}</p>
-                      </div>
-                      {f.remediation && (
-                        <div>
-                          <div className="mono" style={{ fontSize: 9, color: theme.orange, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>Recommended fix</div>
-                          <div style={{ background: theme.bg, borderRadius: 6, padding: "12px 14px", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: theme.green, lineHeight: 1.6 }}>{f.remediation}</div>
+                    <div className={styles.findingDetailPanel}>
+                      <div className={styles.findingDetailContent}>
+                        <div className={styles.detailSection}>
+                          <h4>Risk explanation</h4>
+                          <p className={styles.findingDescription}>{f.description}</p>
                         </div>
-                      )}
-                      <div>
-                        <div className="mono" style={{ fontSize: 9, color: theme.orange, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>Evidence</div>
-                        <p style={{ fontSize: 13, color: theme.muted, lineHeight: 1.6 }}>{f.evidence || "No evidence snippet provided."}</p>
+                        {f.remediation && (
+                          <div className={styles.detailSection}>
+                            <h4>Recommended fix</h4>
+                            <div className={styles.remediationContent}>{f.remediation}</div>
+                          </div>
+                        )}
+                        <div className={styles.detailSection}>
+                          <h4>Evidence</h4>
+                          <p className={styles.evidenceBlock} style={{ margin: 0, fontSize: 12, lineHeight: 1.6 }}>{f.evidence || "No evidence snippet provided."}</p>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -672,7 +708,7 @@ function FindingsSection({ findings, all, filter, setFilter, expanded, setExpand
               </AnimatePresence>
             </div>
           ))}
-          {findings.length === 0 && <div style={{ textAlign: "center", padding: 40, color: theme.muted, fontSize: 13 }}>No findings match this filter.</div>}
+          {findings.length === 0 && <div className={styles.emptyState}>No findings match this filter.</div>}
         </div>
       </div>
     </div>
@@ -683,22 +719,22 @@ function ReportsSection({ jobs, openReportUrl }: { jobs: Job[]; openReportUrl: (
   return (
     <div>
       <PageHeader kicker="Audit Output" title="Reports" />
-      <div style={{ padding: "24px 32px" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {jobs.length === 0 ? <div style={{ color: theme.muted, fontSize: 13 }}>No completed audits yet.</div> :
+      <div className={styles.sectionBody}>
+        <div className={styles.reportList}>
+          {jobs.length === 0 ? <div className={styles.emptyState}>No completed audits yet.</div> :
           jobs.map(j => (
-            <div key={j.id} style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "18px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div key={j.id} className={styles.reportRow}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                   <StatusPill status={j.status} />
-                  <span style={{ fontSize: 15, fontWeight: 500 }}>{shortRepoName(j.repo_url)}</span>
+                  <h3>{shortRepoName(j.repo_url)}</h3>
                 </div>
-                <div className="mono" style={{ fontSize: 10, color: theme.muted }}>Branch {j.repo_branch} · finished {j.finished_at ? formatDateTime(j.finished_at) : "-"}</div>
+                <p>Branch {j.repo_branch} · finished {j.finished_at ? formatDateTime(j.finished_at) : "-"}</p>
               </div>
               {j.report_pdf_url ? (
-                <button onClick={() => openReportUrl(j.id)} style={{ padding: "8px 16px", border: `1px solid ${theme.border}`, borderRadius: 6, background: "transparent", color: theme.text, fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Open report ↓</button>
+                <button onClick={() => openReportUrl(j.id)} className={styles.ghostAction}>Open report ↓</button>
               ) : (
-                <span style={{ color: theme.muted, fontSize: 12 }}>No PDF artifact</span>
+                <span className={styles.reportMissing}>No PDF artifact</span>
               )}
             </div>
           ))}
@@ -779,11 +815,16 @@ function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }
   return (
     <div>
       <PageHeader kicker="Configuration" title="Settings" />
-      <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 640 }}>
+      <div className={styles.sectionBody} style={{ maxWidth: 640 }}>
         
         {/* System Status */}
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500 }}>System status</div>
+        <div className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <div>
+              <span className={`mono ${styles.sectionKicker}`}>Status</span>
+              <h2>System status</h2>
+            </div>
+          </div>
           {[
             ["API", systemStatus ? systemStatus.api : "checking", systemStatus?.api === "online" ? theme.green : theme.amber],
             ["Database", systemStatus ? systemStatus.database : "checking", systemStatus?.database === "connected" ? theme.green : theme.amber],
@@ -797,33 +838,43 @@ function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }
         </div>
 
         {/* Integrations */}
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500 }}>Integrations</div>
+        <div className={styles.statusCard}>
+          <div className={styles.statusCardHeader}>
+            <span>Integrations</span>
+          </div>
           {!systemStatus ? (
-            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Loading integrations...</div>
+            <div className={styles.emptyState} style={{ border: "none" }}>Loading integrations...</div>
           ) : !systemStatus.integrations ? (
-            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Only accessible to administrators.</div>
+            <div className={styles.emptyState} style={{ border: "none" }}>Only accessible to administrators.</div>
           ) : (
-            Object.entries(systemStatus.integrations).map(([l, on]) => (
-              <div key={l} style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 13, color: theme.text }}>{l.replace("_", " ")}</span>
-                <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: on ? theme.green : theme.amber }}>{on ? "configured" : "not configured"}</span>
-              </div>
-            ))
+            <div className={styles.integrationList}>
+              {Object.entries(systemStatus.integrations).map(([l, on]) => (
+                <div key={l} className={styles.integrationRow}>
+                  <span>{l.replace("_", " ")}</span>
+                  <strong className={on ? styles.integrationOn : styles.integrationOff}>
+                    {on ? "configured" : "not configured"}
+                  </strong>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
         {/* Scanner Capabilities */}
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500 }}>Scanner Capabilities</div>
+        <div className={styles.statusCard}>
+          <div className={styles.statusCardHeader}>
+            <span>Scanner Capabilities</span>
+          </div>
           {!systemStatus?.scanner_capabilities ? (
-            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>Scanner capabilities not available.</div>
+            <div className={styles.emptyState} style={{ border: "none" }}>Scanner capabilities not available.</div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+            <div className={styles.agentGrid} style={{ marginTop: 4 }}>
               {Object.entries(systemStatus.scanner_capabilities).map(([scanner, available]) => (
-                <div key={scanner} style={{ padding: "12px 18px", borderBottom: `1px solid ${theme.border}`, borderRight: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="mono" style={{ fontSize: 11, color: theme.text, textTransform: "capitalize" }}>{scanner.replace("_", " ")}</span>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: available ? theme.green : theme.muted, flexShrink: 0 }} />
+                <div key={scanner} className={styles.statusCard} style={{ border: "none", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", borderRadius: 0 }}>
+                  <div className={styles.statusCardHeader}>
+                    <span>{scanner.replace("_", " ")}</span>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: available ? "var(--green)" : "var(--muted)", flexShrink: 0 }} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -831,125 +882,118 @@ function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }
         </div>
 
         {/* GitHub Permissions */}
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={theme.text}><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.84c.85.004 1.7.115 2.5.337 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10.02 10.02 0 0 0 22 12c0-5.52-4.48-10-10-10z"/></svg>
-            GitHub Permissions
-          </div>
-          {!systemStatus?.github_permissions ? (
-            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>GitHub permissions not available.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {systemStatus.github_permissions.scopes.map((scope) => {
-                const desc = GITHUB_SCOPE_DESCRIPTIONS[scope] || systemStatus.github_permissions?.descriptions[scope] || scope;
-                return (
-                  <div key={scope} style={{ padding: "10px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span className="mono" style={{ fontSize: 11, color: theme.orange, fontWeight: 500 }}>{scope}</span>
-                    <span style={{ fontSize: 11, color: theme.muted, textAlign: "right", maxWidth: "70%" }}>{desc}</span>
-                  </div>
-                );
-              })}
-              <div style={{ padding: "10px 18px", fontSize: 11, color: theme.muted, lineHeight: 1.5 }}>
-                Labels are automatically created for security findings (firecrow, critical, high, medium, low, security, needs-triage).
+        <div className={styles.integrationList} style={{ marginTop: 0 }}>
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--text)"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.84c.85.004 1.7.115 2.5.337 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10.02 10.02 0 0 0 22 12c0-5.52-4.48-10-10-10z"/></svg>
+                <span className={`mono ${styles.sectionKicker}`}>GitHub Permissions</span>
               </div>
             </div>
-          )}
+            {!systemStatus?.github_permissions ? (
+              <div className={styles.emptyState}>GitHub permissions not available.</div>
+            ) : (
+              <div className={styles.integrationList}>
+                {systemStatus.github_permissions.scopes.map((scope) => {
+                  const desc = GITHUB_SCOPE_DESCRIPTIONS[scope] || systemStatus.github_permissions?.descriptions[scope] || scope;
+                  return (
+                    <div key={scope} className={styles.integrationRow}>
+                      <span className="mono" style={{ color: "var(--orange)", fontWeight: 500 }}>{scope}</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "right", maxWidth: "70%" }}>{desc}</span>
+                    </div>
+                  );
+                })}
+                <div className={styles.integrationRow} style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>
+                  Labels are automatically created for security findings (firecrow, critical, high, medium, low, security, needs-triage).
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Admin Database Management */}
         {isAdmin && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 8, color: theme.text, display: "flex", alignItems: "center", gap: 8 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22c5.523 0 10-2.239 10-5V7c0-2.761-4.477-5-10-5S2 4.239 2 7v10c0 2.761 4.477 5 10 5z"/><path d="M22 7c0 2.761-4.477 5-10 5S2 12 2 7"/><path d="M2 12c0 2.761 4.477 5 10 5s10-2.239 10-5"/></svg>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8 }}>
+            <div className={`mono ${styles.sectionKicker}`} style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="2"><path d="M12 22c5.523 0 10-2.239 10-5V7c0-2.761-4.477-5-10-5S2 4.239 2 7v10c0 2.761 4.477 5 10 5z"/><path d="M22 7c0 2.761-4.477 5-10 5S2 12 2 7"/><path d="M2 12c0 2.761 4.477 5 10 5s10-2.239 10-5"/></svg>
               Database Control Panel
             </div>
 
             {/* Quick Metrics */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-              <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-                <span className="mono" style={{ fontSize: 9, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Engine Dialect</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: theme.text, textTransform: "capitalize" }}>{dbStats?.dialect || (loadingStats ? "..." : "Unknown")}</span>
+            <div className={styles.metricsGrid}>
+              <div className={styles.statusCard}>
+                <div className={styles.statusCardHeader}>
+                  <span>Engine Dialect</span>
+                </div>
+                <strong style={{ textTransform: "capitalize", fontSize: 18 }}>{dbStats?.dialect || (loadingStats ? "..." : "Unknown")}</strong>
               </div>
-              <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-                <span className="mono" style={{ fontSize: 9, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Database Size</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{dbStats ? formatBytes(dbStats.db_size_bytes) : (loadingStats ? "..." : "Unknown")}</span>
+              <div className={styles.statusCard}>
+                <div className={styles.statusCardHeader}>
+                  <span>Database Size</span>
+                </div>
+                <strong style={{ fontSize: 18 }}>{dbStats ? formatBytes(dbStats.db_size_bytes) : (loadingStats ? "..." : "Unknown")}</strong>
               </div>
-              <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-                <span className="mono" style={{ fontSize: 9, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Migration State</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: dbStats?.pending_migrations ? theme.red : theme.green }}>
+              <div className={styles.statusCard}>
+                <div className={styles.statusCardHeader}>
+                  <span>Migration State</span>
+                </div>
+                <strong style={{ fontSize: 14, color: dbStats?.pending_migrations ? "var(--red)" : "var(--green)" }}>
                   {dbStats ? (dbStats.pending_migrations ? "Pending Update" : "Up-to-Date") : (loadingStats ? "..." : "Unknown")}
-                </span>
+                </strong>
               </div>
             </div>
 
             {/* Detailed Row Counts */}
-            <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
-              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${theme.border}`, fontSize: 13, fontWeight: 500, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Table Registry Metrics</span>
-                {loadingStats && <span style={{ fontSize: 11, color: theme.muted }}>Refreshing...</span>}
+            <div className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <span className={`mono ${styles.sectionKicker}`}>Tables</span>
+                  <h2>Registry Metrics</h2>
+                </div>
+                {loadingStats && <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>Refreshing...</span>}
               </div>
               {dbStats?.row_counts ? (
                 Object.entries(dbStats.row_counts).map(([tbl, cnt]) => (
-                  <div key={tbl} style={{ padding: "10px 16px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", transition: "background 0.2s" }}
-                       onMouseEnter={e => e.currentTarget.style.background = "#141414"}
-                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <span className="mono" style={{ fontSize: 11, color: theme.muted }}>{tbl}</span>
-                    <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: theme.text, background: "#1f1f1f", padding: "2px 8px", borderRadius: 4 }}>{cnt}</span>
+                  <div key={tbl} className={styles.integrationRow}>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>{tbl}</span>
+                    <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", background: "var(--dim)", padding: "2px 8px", borderRadius: 4 }}>{cnt}</span>
                   </div>
                 ))
               ) : (
-                <div style={{ padding: "16px", color: theme.muted, fontSize: 12, textAlign: "center" }}>
+                <div className={styles.emptyState}>
                   {loadingStats ? "Loading table stats..." : "No registry data loaded."}
                 </div>
               )}
             </div>
 
             {/* Housekeeping Action */}
-            <div style={{ background: theme.surface, border: `1px solid ${theme.orangeBorder}30`, borderRadius: 8, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div>
-                <span className="mono" style={{ fontSize: 9, color: theme.orange, textTransform: "uppercase", letterSpacing: "0.1em" }}>Storage Optimization</span>
-                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>Prune Database Records</div>
-                <div style={{ fontSize: 12, color: theme.muted, marginTop: 4, lineHeight: 1.5 }}>
-                  Detailed agent logs and raw artifacts older than 7 days, as well as entire audit jobs older than 30 days, will be pruned. Keeps maximum of 20 jobs per user.
+            <div className={styles.panel} style={{ borderColor: "var(--orangeBorder)" }}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <span className={`mono ${styles.sectionKicker}`}>Storage Optimization</span>
+                  <h2>Prune Database Records</h2>
                 </div>
               </div>
-              <div>
-                <button
-                  onClick={handleHousekeeping}
-                  disabled={pruning}
-                  style={{
-                    padding: "8px 16px",
-                    background: pruning ? "transparent" : theme.orange,
-                    color: pruning ? theme.muted : "#160800",
-                    border: `1px solid ${pruning ? theme.border : theme.orange}`,
-                    borderRadius: 6,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: pruning ? "not-allowed" : "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    transition: "all 0.2s",
-                  }}
-                  onMouseEnter={e => {
-                    if (!pruning) {
-                      e.currentTarget.style.filter = "brightness(1.1)";
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!pruning) {
-                      e.currentTarget.style.filter = "none";
-                      e.currentTarget.style.transform = "none";
-                    }
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: pruning ? "spin 1.5s linear infinite" : "none" }}>
-                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-                  </svg>
-                  {pruning ? "Executing Pruning Pipeline..." : "Run Database Housekeeping"}
-                </button>
-              </div>
+              <p className={styles.emptyState} style={{ textAlign: "left", border: "none", padding: "0 0 16px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
+                Detailed agent logs and raw artifacts older than 7 days, as well as entire audit jobs older than 30 days, will be pruned. Keeps maximum of 20 jobs per user.
+              </p>
+              <button
+                onClick={handleHousekeeping}
+                disabled={pruning}
+                className={styles.ghostAction}
+                style={{
+                  alignSelf: "flex-start",
+                  background: pruning ? "transparent" : "linear-gradient(135deg, var(--fire), var(--orange) 62%, var(--amber))",
+                  color: pruning ? "var(--muted)" : "#160800",
+                  border: pruning ? "1px solid var(--border)" : "none",
+                  fontWeight: 700,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: pruning ? "spin 1.5s linear infinite" : "none" }}>
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                {pruning ? "Executing Pruning Pipeline..." : "Run Database Housekeeping"}
+              </button>
             </div>
           </div>
         )}

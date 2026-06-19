@@ -10,37 +10,14 @@ import {
   subscribeToAuthSession,
 } from "../lib/authSession";
 import { COMPANY_NAME, PRODUCT_VERSION, COPYRIGHT_YEAR, PRODUCT_TAGLINE } from "../shared/config/app";
+import styles from "./page.module.css";
 
-const theme = {
-  bg: "var(--bg)",
-  surface: "var(--surface)",
-  border: "var(--border)",
-  borderHover: "var(--borderHover)",
-  text: "var(--text)",
-  muted: "var(--muted)",
-  dim: "var(--dim)",
-  orange: "var(--orange)",
-  orangeDim: "var(--orangeDim)",
-  orangeBorder: "var(--orangeBorder)",
-  green: "var(--green)",
-  red: "var(--red)",
-  blue: "var(--blue)",
-  amber: "var(--amber)",
+const TONE = {
+  muted: "#5b6880",
+  green: "#00e676",
+  red: "#ff3047",
+  amber: "#ffb800",
 };
-
-function Logo({ centered }: { centered?: boolean }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: centered ? "center" : "flex-start" }}>
-      <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg, ${theme.orange}, #ffb347)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#160800", fontFamily: "'IBM Plex Mono', monospace" }}>FC</span>
-      </div>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>Fire Crow</div>
-        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>FCv1 security audit</div>
-      </div>
-    </div>
-  );
-}
 
 export default function LandingPage() {
   const router = useRouter();
@@ -51,7 +28,6 @@ export default function LandingPage() {
   );
   const isLoggedIn = session.hasDashboardSession;
 
-  const [url, setUrl] = useState("");
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -60,112 +36,309 @@ export default function LandingPage() {
   }, []);
 
   const handleEnter = () => {
-    if (isLoggedIn) {
-      router.push("/dashboard");
-    } else {
-      router.push("/signin");
-    }
+    router.push(isLoggedIn ? "/dashboard" : "/signin");
   };
 
   const termLines = [
-    { txt: "→ cloning acme/backend-api@main", tone: theme.muted },
-    { txt: "✓ SAST scan complete — 47 patterns checked", tone: theme.green },
-    { txt: "! hardcoded secret detected at config.py:16", tone: theme.red },
-    { txt: "→ running dependency audit (osv-scanner)", tone: theme.muted },
-    { txt: "! CVE-2021-23337 lodash@4.17.15", tone: theme.amber },
-    { txt: "✓ CVSS scoring complete — max 9.8", tone: theme.green },
-    { txt: "→ generating report", tone: theme.muted },
+    { txt: "→ cloning acme/backend-api@main", tone: TONE.muted },
+    { txt: "✓ SAST scan complete — 47 patterns checked", tone: TONE.green },
+    { txt: "! hardcoded secret detected at config.py:16", tone: TONE.red },
+    { txt: "→ running dependency audit (osv-scanner)", tone: TONE.muted },
+    { txt: "! CVE-2021-23337 lodash@4.17.15", tone: TONE.amber },
+    { txt: "✓ CVSS scoring complete — max 9.8", tone: TONE.green },
+    { txt: "→ generating report", tone: TONE.muted },
   ];
   const visible = termLines.slice(0, Math.min(tick + 1, termLines.length));
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      {/* Nav */}
-      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 40px", borderBottom: `1px solid ${theme.border}` }}>
-        <Logo />
-        <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
-          {["Platform", "Workflow", "Agents"].map((l) => (
-            <span key={l} style={{ color: theme.muted, fontSize: 13, fontWeight: 400, cursor: "pointer", transition: "color .2s" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
-              onMouseLeave={(e) => (e.currentTarget.style.color = theme.muted)}>{l}</span>
-          ))}
-          <button onClick={handleEnter} style={{ padding: "7px 16px", border: `1px solid ${theme.orangeBorder}`, borderRadius: 6, background: theme.orangeDim, color: theme.orange, fontSize: 13, fontWeight: 500 }}>
-            {isLoggedIn ? "Dashboard" : "Sign in"}
-          </button>
+    <div className={styles.page}>
+      <div className={styles.backdrop} />
+      <div className={styles.noise} />
+      <div className={styles.container}>
+        {/* Nav */}
+        <nav className={styles.nav}>
+          <Link href="/" className={styles.brand}>
+            <span className={styles.brandMark}>FC</span>
+            <span className={styles.brandText}>
+              <strong>Fire Crow</strong>
+              <small>{PRODUCT_TAGLINE}</small>
+            </span>
+          </Link>
+          <div className={styles.navLinks}>
+            {["Platform", "Workflow", "Agents"].map((l) => (
+              <span key={l} className={styles.navLink}>{l}</span>
+            ))}
+            <button onClick={handleEnter} className={styles.navCta}>
+              {isLoggedIn ? "Dashboard" : "Sign in"}
+            </button>
+          </div>
+        </nav>
+
+        {/* Hero */}
+        <div className={styles.hero}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className={styles.heroCopy}
+          >
+            <p className={styles.eyebrow}>Fire Crow · FCv1</p>
+            <h1 className={styles.heroTitle}>
+              Security audits<br />
+              <span className={styles.heroAccent}>that don&apos;t guess.</span>
+            </h1>
+            <p className={styles.heroBody}>
+              Authorization-only agentic scans with evidence-backed findings.
+              Connect a repository and receive a remediation-ready report in minutes.
+            </p>
+
+            <div className={styles.heroActions}>
+              <button onClick={handleEnter} className={styles.primaryButton}>
+                {isLoggedIn ? "Open Dashboard" : "Start an audit →"}
+              </button>
+              <button className={styles.secondaryButton}>View workflow</button>
+            </div>
+
+            <div className={styles.heroFootnotes}>
+              {["Authorization-only", "Evidence-backed", "Sandbox-first", "Remediation-focused"].map((t) => (
+                <span key={t} className={styles.heroFootnote}>{t}</span>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Terminal & metrics */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+          >
+            <div className={styles.simulator}>
+              <div className={styles.simulatorHeader}>
+                <div className={styles.simulatorDots}>
+                  <span className={styles.simulatorDotRed} />
+                  <span className={styles.simulatorDotAmber} />
+                  <span className={styles.simulatorDotGreen} />
+                </div>
+                <span className={styles.simulatorTitle}>firecrow · scan output</span>
+              </div>
+              <div className={styles.simulatorBody}>
+                {visible.map((l, i) => (
+                  <div key={i} className={styles.terminalLine}>
+                    <span className={styles.terminalPrompt}>$</span>
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className={styles.terminalText}
+                      style={{ color: l.tone }}
+                    >
+                      {l.txt}
+                    </motion.span>
+                  </div>
+                ))}
+                {visible.length < termLines.length && (
+                  <div className={styles.terminalLine}>
+                    <span className={styles.terminalPrompt}>$</span>
+                    <span className={styles.terminalText}>_</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={styles.heroMetrics}>
+              {[["14", "Agents"], ["CVSS 3.1", "Scoring"], ["PDF", "Reports"], ["0-days", "Detection"]].map(([v, l]) => (
+                <div key={l} className={styles.metricCard}>
+                  <span className={styles.metricValue}>{v}</span>
+                  <span className={styles.metricLabel}>{l}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         </div>
-      </nav>
 
-      {/* Hero */}
-      <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: "80px 40px 60px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 60, alignItems: "start" }}>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-          <p className="mono" style={{ fontSize: 11, letterSpacing: "0.2em", color: theme.orange, textTransform: "uppercase", marginBottom: 20 }}>Fire Crow · FCv1</p>
-          <h1 style={{ fontSize: "clamp(38px, 5vw, 58px)", fontWeight: 300, lineHeight: 1.1, letterSpacing: "-0.03em", marginBottom: 20 }}>
-            Security audits<br />
-            <span style={{ color: theme.muted }}>that don&apos;t guess.</span>
-          </h1>
-          <p style={{ fontSize: 15, color: theme.muted, lineHeight: 1.7, maxWidth: 420, marginBottom: 36 }}>
-            Authorization-only agentic scans with evidence-backed findings. Connect a repository and receive a remediation-ready report in minutes.
-          </p>
+        {/* Capabilities */}
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Capabilities</p>
+              <h2 className={styles.sectionTitle}>Full-spectrum< br />security analysis</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              From static analysis to dynamic sandbox evaluation — our agent network
+              covers every attack surface your codebase exposes.
+            </p>
+          </div>
+          <div className={styles.capabilityGrid}>
+            {[
+              ["SAST & Semgrep", "Pattern-based vulnerability detection across 40+ languages and frameworks."],
+              ["Dependency Audit", "OSV-scanner integration checks your supply chain for known CVEs."],
+              ["IaC & Config Scan", "Terraform, K8s, Dockerfile, and cloud security posture validation."],
+              ["Dynamic Attack", "Sandboxed SSRF, XXE, SSTI, JWT tampering, and rate-limit testing."],
+            ].map(([title, desc]) => (
+              <div key={title} className={styles.capabilityCard}>
+                <span className={styles.capabilityMeta}>{title.split(" ")[0]}</span>
+                <h3>{title}</h3>
+                <p>{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
 
-          {/* Intake strip */}
-          <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://github.com/your-org/repository"
-                style={{ flex: 1, background: "transparent", border: "none", outline: "none", padding: "13px 16px", fontSize: 13, color: theme.text }}
-              />
-              <button onClick={handleEnter} style={{ padding: "13px 20px", background: theme.orange, color: "#160800", fontSize: 13, fontWeight: 600, borderLeft: `1px solid ${theme.border}`, flexShrink: 0, letterSpacing: "0.02em" }}>
-                Audit →
+        {/* Pipeline Demo */}
+        <div className={`${styles.section} ${styles.demoSection}`}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Pipeline</p>
+              <h2 className={styles.sectionTitle}>Agentic pipeline< br />in motion</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              14 specialized agents orchestrate end-to-end, from reconnaissance
+              to remediation reporting.
+            </p>
+          </div>
+          <div className={styles.demoSplit}>
+            <div className={styles.pipelinePanel}>
+              {[
+                { name: "Reconnaissance", desc: "Subdomain, endpoint, and technology fingerprinting", active: true },
+                { name: "Threat Modeling", desc: "Asset enumeration and attack surface mapping", done: true },
+                { name: "SAST Analysis", desc: "ESLint + Bandit pattern matching", done: true },
+                { name: "Dependency Scan", desc: "OSV and CVE database correlation", active: true },
+                { name: "Dynamic Attack", desc: "Sandboxed exploit validation", done: false },
+              ].map((step, i) => (
+                <div
+                  key={step.name}
+                  className={`${styles.pipelineCard} ${step.active ? styles.pipelineCardActive : ""} ${step.done ? styles.pipelineCardDone : ""}`}
+                >
+                  <div className={styles.pipelineHeader}>
+                    <strong>Step {i + 1}</strong>
+                    <span style={{
+                      color: step.done ? "#00e676" : step.active ? "#ff7200" : "#3a4358",
+                      fontSize: 11,
+                    }}>
+                      {step.done ? "✓ Done" : step.active ? "● Running" : "Pending"}
+                    </span>
+                  </div>
+                  <h3>{step.name}</h3>
+                  <p>{step.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Hero Board */}
+            <div className={styles.heroBoard}>
+              <div className={styles.boardHeader}>
+                <div>
+                  <p className={styles.boardLabel}>Current scan</p>
+                  <h3 className={styles.boardTitle}>acme/backend-api</h3>
+                </div>
+                <span className={styles.boardBadge}>CVSS 9.8</span>
+              </div>
+              <div className={styles.boardList}>
+                {[
+                  ["01", "Hardcoded Secret", "AWS key detected in config.py:16", "Critical"],
+                  ["02", "SQL Injection", "Raw query concatenation in users.py:204", "High"],
+                  ["03", "CVE-2021-23337", "lodash@4.17.15 known RCE", "High"],
+                  ["04", "JWT Weak Secret", "Hardcoded 'secret' in auth middleware", "Medium"],
+                ].map(([idx, title, desc, severity]) => (
+                  <div key={idx} className={styles.boardItem}>
+                    <span className={styles.boardIndex}>{idx}</span>
+                    <div className={styles.boardBody}>
+                      <strong>{title}</strong>
+                      <span>{desc}</span>
+                    </div>
+                    <span className={`${styles.boardState} ${styles[`severity${severity}`] || ""}`}>{severity}</span>
+                  </div>
+                ))}
+              </div>
+              <div className={styles.boardFooter}>
+                <div>
+                  <span className={styles.boardFooterLabel}>Attack graph</span>
+                  <p className={styles.boardFooterValue}>
+                    Cross-contamination path: secret → lateral movement → data exfiltration
+                  </p>
+                </div>
+                <button className={styles.boardFooterLink}>Full report →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Agent Network */}
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <p className={styles.eyebrow}>Agent Network</p>
+              <h2 className={styles.sectionTitle}>14 specialized< br />security agents</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              Each agent handles a specific phase of the audit lifecycle,
+              coordinated by our LangGraph-based maestro.
+            </p>
+          </div>
+          <div className={styles.agentGrid}>
+            {[
+              ["Recon", "Subdomain, tech fingerprinting, endpoint discovery"],
+              ["Threat Model", "Attack tree generation and asset mapping"],
+              ["SAST", "Static analysis with Bandit + ESLint"],
+              ["Semgrep", "Custom rule-based deep code inspection"],
+              ["Dependency", "OSV-scanner CVE correlation"],
+              ["IaC Scanner", "Terraform, K8s, Dockerfile audits"],
+              ["Config Scan", "hadolint, kube-linter, tfsec"],
+              ["Dynamic Attack", "Sandboxed SSRF, XXE, SSTI, JWT, rate limit"],
+              ["Authz/IDOR", "Access control and privilege analysis"],
+              ["Container Scan", "Docker image vulnerability scanning"],
+              ["SBOM Graph", "Software bill-of-materials graph builder"],
+              ["AI Analyzer", "LLM-based evidence correlation"],
+              ["Cross-Validation", "False positive detection and dedup"],
+              ["Remediation", "Actionable fix recommendation engine"],
+            ].map(([name, desc]) => (
+              <div key={name} className={styles.agentCard}>
+                <div className={styles.agentHeader}>
+                  <span className={styles.agentTag}>{name}</span>
+                </div>
+                <h3>{name}</h3>
+                <p>{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA */}
+        <div className={styles.cta}>
+          <div className={styles.ctaContent}>
+            <p className={styles.eyebrow}>Get started</p>
+            <h2 className={styles.ctaTitle}>Ready to secure your repository?</h2>
+            <p className={styles.ctaCopy}>
+              Connect your codebase and receive a comprehensive, evidence-backed
+              security assessment within minutes.
+            </p>
+            <div className={styles.heroActions} style={{ marginTop: 20 }}>
+              <button onClick={handleEnter} className={styles.launchButton}>
+                {isLoggedIn ? "Go to Dashboard" : "Start an audit →"}
               </button>
             </div>
           </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["Authorization-only", "Evidence-backed", "Sandbox-first", "Remediation-focused"].map((t) => (
-              <span key={t} className="mono" style={{ fontSize: 10, letterSpacing: "0.08em", color: theme.muted, border: `1px solid ${theme.border}`, padding: "4px 10px", borderRadius: 4 }}>{t}</span>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Terminal preview */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}>
-          <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden", background: theme.surface }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: `1px solid ${theme.border}`, background: theme.bg }}>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["#ff5f57", "#febc2e", "#28c840"].map((c) => <span key={c} style={{ width: 9, height: 9, borderRadius: "50%", background: c }} />)}
-              </div>
-              <span className="mono" style={{ fontSize: 10, color: theme.muted }}>firecrow · scan output</span>
-            </div>
-            <div style={{ padding: "18px 16px", minHeight: 200, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, lineHeight: 1.8 }}>
-              {visible.map((l, i) => (
-                <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: l.tone }}>{l.txt}</motion.div>
-              ))}
-              {visible.length < termLines.length && <span style={{ color: theme.muted }}>_</span>}
-            </div>
-          </div>
-
-          {/* Stat row */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 12 }}>
-            {[["14", "Agents"], ["CVSS 3.1", "Scoring"], ["PDF", "Reports"]].map(([v, l]) => (
-              <div key={l} style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 6, padding: "14px 16px" }}>
-                <div style={{ fontSize: 20, fontWeight: 500, fontFamily: "'IBM Plex Mono', monospace", color: theme.text }}>{v}</div>
-                <div style={{ fontSize: 11, color: theme.muted, marginTop: 4 }}>{l}</div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ borderTop: `1px solid ${theme.border}`, padding: "20px 40px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: theme.muted }}>© {COPYRIGHT_YEAR} {COMPANY_NAME} · Fire Crow {PRODUCT_VERSION}</span>
-        <div style={{ display: "flex", gap: 24 }}>
-          {["Privacy", "Terms"].map((l) => (
-            <Link key={l} href={`/${l.toLowerCase().replace(" ", "-")}`} style={{ fontSize: 12, color: theme.muted, cursor: "pointer" }}>{l}</Link>
-          ))}
         </div>
+
+        {/* Footer */}
+        <footer className={styles.footer}>
+          <div className={styles.footerBrand}>
+            <Link href="/" className={styles.brand}>
+              <span className={styles.brandMark}>FC</span>
+              <span className={styles.brandText}>
+                <strong>Fire Crow</strong>
+                <small>{PRODUCT_TAGLINE}</small>
+              </span>
+            </Link>
+            <p>Authorization-only security audit platform for SaaS repositories.</p>
+          </div>
+          <div className={styles.footerLinks}>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>
+              © {COPYRIGHT_YEAR} {COMPANY_NAME} · Fire Crow {PRODUCT_VERSION}
+            </span>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
+          </div>
+        </footer>
       </div>
     </div>
   );

@@ -1,43 +1,119 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg: #0a0a0a;
-  --surface: #111111;
-  --border: #1f1f1f;
-  --borderHover: #2a2a2a;
-  --text: #e8e8e8;
-  --muted: #555555;
-  --dim: #333333;
-  --orange: #ff6b2b;
-  --orangeDim: rgba(255,107,43,0.08);
-  --orangeBorder: rgba(255,107,43,0.18);
-  --green: #2ecc71;
-  --red: #e74c3c;
-  --blue: #3b9eff;
-  --amber: #f0a500;
+  --bg: #07080d;
+  --bgAlt: #0a0b14;
+  --surface: #0e101c;
+  --surfaceAlt: #121422;
+  --border: rgba(255, 255, 255, 0.06);
+  --borderHover: rgba(255, 255, 255, 0.12);
+  --borderActive: rgba(255, 114, 0, 0.35);
+  --text: #eef0f7;
+  --textSecondary: #b7bfdc;
+  --muted: #5b6880;
+  --dim: #3a4358;
+
+  --orange: #ff7200;
+  --orangeDim: rgba(255, 114, 0, 0.1);
+  --orangeBorder: rgba(255, 114, 0, 0.2);
+  --fire: #ff4d08;
+  --amber: #ffb800;
+  --green: #00e676;
+  --red: #ff3047;
+  --blue: #5cc8ff;
+  --purple: #b35cff;
+
+  --card-radius: 16px;
+  --duration-fast: 180ms;
+  --duration-normal: 280ms;
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --focus-ring: 0 0 0 3px rgba(255, 114, 0, 0.25);
+  --bright: rgba(255, 255, 255, 0.08);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  line-height: 1.5;
 }
-::-webkit-scrollbar { width: 4px; }
+
+::selection {
+  background: rgba(255, 114, 0, 0.3);
+  color: #fff;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
-input, button { font-family: inherit; }
+::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+input, button, textarea, select { font-family: inherit; }
 button { cursor: pointer; border: none; background: none; }
 a { text-decoration: none; color: inherit; }
+
 .mono { font-family: 'IBM Plex Mono', monospace; }
 
+input::placeholder { color: var(--muted); }
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Animations */
 @keyframes pulse {
   0%, 100% { opacity: 0.4; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.2); }
 }
-input::placeholder { color: var(--muted); }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 114, 0, 0.1); }
+  50% { box-shadow: 0 0 40px rgba(255, 114, 0, 0.2); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* Utilities */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 
 /* Legal pages shell & layout */
 .legal-shell {
@@ -75,7 +151,7 @@ input::placeholder { color: var(--muted); }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-mono), monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 13px;
   font-weight: 700;
   color: #160800;
@@ -88,7 +164,7 @@ input::placeholder { color: var(--muted); }
   text-align: left;
 }
 .public-brand small {
-  font-family: var(--font-mono), monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 9px;
   color: var(--muted);
   letter-spacing: 0.12em;
@@ -128,7 +204,7 @@ input::placeholder { color: var(--muted); }
   margin-bottom: 40px;
 }
 .section-kicker {
-  font-family: var(--font-mono), monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   letter-spacing: 0.2em;
   color: var(--orange);
@@ -151,7 +227,7 @@ input::placeholder { color: var(--muted); }
   margin-bottom: 12px;
 }
 .legal-hero span {
-  font-family: var(--font-mono), monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   color: var(--muted);
 }
@@ -163,4 +239,3 @@ input::placeholder { color: var(--muted); }
   background: var(--surface);
   margin-bottom: 60px;
 }
-
