@@ -65,9 +65,15 @@ export default function LandingPage() {
             </span>
           </Link>
           <div className={styles.navLinks}>
-            {["Platform", "Workflow", "Agents"].map((l) => (
-              <span key={l} className={styles.navLink}>{l}</span>
-            ))}
+            <Link href="/" className={styles.navLink}>
+              Platform
+            </Link>
+            <Link href="/workflow" className={styles.navLink}>
+              Workflow
+            </Link>
+            <Link href="/agents" className={styles.navLink}>
+              Agents
+            </Link>
             <button onClick={handleEnter} className={styles.navCta}>
               {isLoggedIn ? "Dashboard" : "Sign in"}
             </button>
@@ -75,7 +81,7 @@ export default function LandingPage() {
         </nav>
 
         {/* Hero */}
-        <div className={styles.hero}>
+        <div className={styles.hero} id="platform">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
