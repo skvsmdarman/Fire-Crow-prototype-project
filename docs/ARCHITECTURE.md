@@ -41,8 +41,9 @@ Source paths: `backend/app/api/routes_audit.py`, `backend/app/orchestrator/runti
 2. The route dispatches work to Celery when Redis is reachable or to FastAPI `BackgroundTasks` otherwise.
 3. `execute_audit_job()` initializes `AuditState`, restores GitHub token context from the user record, and invokes the compiled LangGraph.
 4. Each phase writes `AgentLog` rows and `PhaseLedgerModel` rows.
-5. Final status is resolved in `backend/app/orchestrator/runtime.py` as `completed`, `partial`, `failed`, or `cancelled`.
-6. Reports are generated as artifacts and later downloaded through authenticated routes.
+5. The orchestrator includes retry mechanisms with exponential backoff for transient failures in non-critical phases.
+6. Final status is resolved in `backend/app/orchestrator/runtime.py` as `completed`, `partial`, `failed`, or `cancelled`.
+7. Reports are generated as artifacts and later downloaded through authenticated routes.
 
 ## Frontend / Backend Boundary
 
@@ -109,4 +110,4 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/agents/github_mcp.p
 The code usually degrades gracefully in debug mode and more conservatively in non-debug mode.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 19, 2026*

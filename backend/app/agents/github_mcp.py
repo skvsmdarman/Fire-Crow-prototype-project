@@ -11,6 +11,68 @@ from app.services.safe_llm import is_llm_enabled, safe_llm_call
 
 logger = logging.getLogger("firecrow.agents.github_mcp")
 
+# Standard labels for Fire Crow security audit issues
+SECURITY_LABELS = {
+    "firecrow": "Automated security audit by Fire Crow",
+    "critical": "Critical severity finding",
+    "high": "High severity finding",
+    "medium": "Medium severity finding",
+    "low": "Low severity finding",
+    "info": "Informational finding",
+    "security": "Security-related issue",
+    "needs-triage": "Requires manual review",
+}
+
+
+def _build_issue_labels(findings: List[Finding]) -> List[str]:
+    """Build a list of GitHub labels based on findings severity."""
+    labels = ["firecrow", "security"]
+    has_critical = any(f.severity == Severity.CRITICAL for f in findings)
+    has_high = any(f.severity == Severity.HIGH for f in findings)
+    has_medium = any(f.severity == Severity.MEDIUM for f in findings)
+    has_low = any(f.severity == Severity.LOW for f in findings)
+
+    if has_critical:
+        labels.append("critical")
+    if has_high:
+        labels.append("high")
+    if has_medium:
+        labels.append("medium")
+    if has_low:
+        labels.append("low")
+    if not has_critical and not has_high:
+        labels.append("needs-triage")
+
+    return labels
+
+
+def _ensure_labels_exist(owner: str, repo: str, token: str, labels: List[str]) -> None:
+    """Create labels in the repository if they don't already exist."""
+    existing_url = f"https://api.github.com/repos/{owner}/{repo}/labels?per_page=100"
+    existing_data, status, _ = _github_api_request(existing_url, "GET", token)
+    existing_names = set()
+    if existing_data and isinstance(existing_data, list):
+        existing_names = {lbl.get("name", "") for lbl in existing_data}
+
+    for label_name in labels:
+        if label_name in existing_names:
+            continue
+        label_desc = SECURITY_LABELS.get(label_name, f"Fire Crow: {label_name}")
+        # Color based on label type
+        color_map = {
+            "firecrow": "f97316",  # orange
+            "security": "e11d48",  # rose
+            "critical": "dc2626",  # red
+            "high": "ea580c",      # orange
+            "medium": "ca8a04",    # yellow
+            "low": "2563eb",       # blue
+            "info": "6b7280",      # gray
+            "needs-triage": "9333ea",  # purple
+        }
+        color = color_map.get(label_name, "6b7280")
+        create_url = f"https://api.github.com/repos/{owner}/{repo}/labels"
+        _github_api_request(create_url, "POST", token, {"name": label_name, "description": label_desc, "color": color})
+
 
 def _github_api_request(url: str, method: str, token: str, payload: dict | None = None) -> tuple[Any, int, str]:
     import urllib.request
@@ -273,11 +335,17 @@ def run_github_mcp(
             "github_mcp_logs": logs
         }
 
-    # 3. Format findings
+    # 3. Format findings and build labels
     issue_title = "Fire Crow Security Scan Report"
     issue_body = format_findings_markdown(repo_url, findings)
+    issue_labels = _build_issue_labels(findings)
 
-    # 4. Attempt GitMCP connection
+    # 4. Ensure labels exist in the repository
+    if token:
+        logs.append(f"Ensuring security labels exist in {owner}/{repo}...")
+        _ensure_labels_exist(owner, repo, token, issue_labels)
+
+    # 5. Attempt GitMCP connection
     token = resolved_token
     client = GitMCPClient(owner=owner, repo=repo, token=token)
     
@@ -291,7 +359,8 @@ def run_github_mcp(
             "owner": owner,
             "repo": repo,
             "title": issue_title,
-            "body": issue_body
+            "body": issue_body,
+            "labels": issue_labels
         })
         if result:
             success = True
@@ -303,7 +372,7 @@ def run_github_mcp(
     else:
         logs.append("GitMCP was unavailable. Using direct GitHub REST API fallback.")
 
-    # 5. Fallback to GitHub REST API directly
+    # 6. Fallback to GitHub REST API directly
     if not success:
         if not token:
             logs.append("No GITHUB_TOKEN configured. Cannot complete API write operations.")
@@ -317,7 +386,8 @@ def run_github_mcp(
             api_url = f"https://api.github.com/repos/{owner}/{repo}/issues"
             data = json.dumps({
                 "title": issue_title,
-                "body": issue_body
+                "body": issue_body,
+                "labels": issue_labels
             }).encode("utf-8")
             
             req = urllib.request.Request(api_url, data=data)

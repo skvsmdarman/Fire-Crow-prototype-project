@@ -9,7 +9,12 @@ logger = logging.getLogger("firecrow.crypto")
 class CryptoManager:
     def __init__(self):
         # Derive a 32-byte key from settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        key_source = settings.ENCRYPTION_KEY or settings.SECRET_KEY or "mock-encryption-key-32-bytes-long!"
+        key_source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+        if not key_source:
+            raise RuntimeError(
+                "ENCRYPTION_KEY or SECRET_KEY must be set. "
+                "Encryption cannot proceed without a valid key."
+            )
         if isinstance(key_source, str):
             key_bytes = key_source.encode("utf-8")
         else:
@@ -27,10 +32,9 @@ class CryptoManager:
             encrypted_bytes = self.cipher.encrypt(plaintext.encode("utf-8"))
             return f"ENC[{encrypted_bytes.decode('utf-8')}]"
         except Exception as e:
-            logger.exception("Failed to encrypt finding data: %s", str(e))
-            # Fallback to mock base64 just in case, but log it
-            encoded = base64.b64encode(plaintext.encode("utf-8")).decode("utf-8")
-            return f"ENC[{encoded}]"
+            logger.exception("Failed to encrypt data: %s", str(e))
+            # Do NOT fall back to base64 - this would store plaintext as if encrypted
+            raise RuntimeError(f"Encryption failed: {str(e)}") from e
 
     def decrypt_secret(self, ciphertext: str) -> str:
         """Decrypts a generic sensitive string from database storage."""
@@ -39,17 +43,13 @@ class CryptoManager:
         
         token = ciphertext[4:-1]
         
-        # 1. Try real Fernet decryption
+        # Try Fernet decryption
         try:
             decrypted_bytes = self.cipher.decrypt(token.encode("utf-8"))
             return decrypted_bytes.decode("utf-8")
         except Exception:
-            # 2. Fallback to legacy base64 decoding (for compatibility with mock data)
-            try:
-                return base64.b64decode(token).decode("utf-8")
-            except Exception:
-                logger.error("Failed to decrypt finding data using Fernet or legacy base64 fallback.")
-                return "ERROR_DECRYPTING"
+            logger.error("Failed to decrypt data using Fernet. Data may be corrupted or encrypted with a different key.")
+            return "ERROR_DECRYPTING"
 
     def encrypt_finding(self, plaintext: str) -> str:
         """Backwards-compatible alias for finding encryption."""

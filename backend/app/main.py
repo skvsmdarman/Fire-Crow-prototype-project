@@ -137,8 +137,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-CSRF-Token"],
 )
 
 @app.middleware("http")
@@ -175,7 +175,8 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
 
     img_src_domains = "https://avatars.githubusercontent.com https://*.googleusercontent.com"
     if settings.R2_ENDPOINT_URL:
@@ -187,13 +188,24 @@ async def add_security_headers(request: Request, call_next):
     if settings.DEBUG:
         img_src_domains += " https://*"
 
+    # Build CSP without unsafe-inline and unsafe-eval for production
+    if settings.DEBUG:
+        script_src = "'self' 'unsafe-inline' 'unsafe-eval'"
+        style_src = "'self' 'unsafe-inline'"
+    else:
+        script_src = "'self'"
+        style_src = "'self'"
+
     csp_header = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
+        f"script-src {script_src}; "
+        f"style-src {style_src}; "
         f"font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com; "
         f"img-src 'self' data: {img_src_domains}; "
-        "connect-src 'self' ws: wss: http: https:;"
+        "connect-src 'self' ws: wss: http: https:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
     )
     response.headers["Content-Security-Policy"] = csp_header
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

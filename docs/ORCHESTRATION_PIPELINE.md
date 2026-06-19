@@ -7,44 +7,49 @@ The current pipeline is defined in `backend/app/orchestrator/maestro.py`. It is 
 The graph is compiled in this order:
 
 1. `recon`
-2. `api_surface`
-3. `secret_history`
-4. `dependency`
-5. `sbom_graph`
-6. `iac`
-7. `cicd_scan`
-8. `container_scan`
-9. `sast`
-10. `semgrep`
-11. `authz_idor`
-12. conditional route to `sandbox` or `ai_analyzer`
-13. `sandbox`
-14. `network`
-15. `attack`
-16. conditional route to `exploit` or `ai_analyzer`
-17. `exploit`
-18. `ai_analyzer`
-19. `scoring`
-20. `attack_graph`
-21. `remediation_planner`
-22. `reporter`
-23. `github_mcp`
-24. `google_agent`
-25. `cleanup`
+2. `threat_model`
+3. `api_surface`
+4. `secret_history`
+5. `dependency`
+6. `sbom_graph`
+7. `iac`
+8. `cicd_scan`
+9. `container_scan`
+10. `config_scan`
+11. `sast`
+12. `semgrep`
+13. `authz_idor`
+14. conditional route to `sandbox` or `ai_analyzer`
+15. `sandbox`
+16. `network`
+17. `attack`
+18. conditional route to `exploit` or `ai_analyzer`
+19. `exploit`
+20. `ai_analyzer`
+21. `cross_validation`
+22. `scoring`
+23. `attack_graph`
+24. `remediation_planner`
+25. `reporter`
+26. `github_mcp`
+27. `google_agent`
+28. `cleanup`
 
 ## Graph Diagram
 
 ```mermaid
 flowchart TD
     START --> recon
-    recon --> api_surface
+    recon --> threat_model
+    threat_model --> api_surface
     api_surface --> secret_history
     secret_history --> dependency
     dependency --> sbom_graph
     sbom_graph --> iac
     iac --> cicd_scan
     cicd_scan --> container_scan
-    container_scan --> sast
+    container_scan --> config_scan
+    config_scan --> sast
     sast --> semgrep
     semgrep --> authz_idor
     authz_idor -->|"sandbox enabled and no critical secret short-circuit"| sandbox
@@ -54,7 +59,8 @@ flowchart TD
     attack -->|"dynamic findings present and exploit enabled"| exploit
     attack -->|"no findings or exploit disabled"| ai_analyzer
     exploit --> ai_analyzer
-    ai_analyzer --> scoring
+    ai_analyzer --> cross_validation
+    cross_validation --> scoring
     scoring --> attack_graph
     attack_graph --> remediation_planner
     remediation_planner --> reporter
@@ -92,7 +98,8 @@ Source: phase bodies in `backend/app/orchestrator/maestro.py` plus helpers in `b
 
 | Phase | Reads | Writes |
 | --- | --- | --- |
-| `recon` | repo URL, branch, optional GitHub token | clone path, tech stack, entry points, manifests, scan plan |
+| `recon` | repo URL, branch, optional GitHub token | clone path, tech stack, entry points, manifests, repo security findings, scan plan |
+| `threat_model` | tech stack, entry points, API surface, repo security | threat model with assets, attack vectors, scan recommendations |
 | `api_surface` | clone path | detected routes, route risk summary |
 | `secret_history` | clone path | secret findings |
 | `dependency` | clone path, manifests | dependency findings, scanner execution metadata |
@@ -100,14 +107,16 @@ Source: phase bodies in `backend/app/orchestrator/maestro.py` plus helpers in `b
 | `iac` | clone path | IaC findings |
 | `cicd_scan` | clone path | CI/CD findings |
 | `container_scan` | clone path | container findings |
-| `sast` | clone path, repo URL | static findings |
+| `config_scan` | clone path, repo URL | configuration file findings (Dockerfile, K8s, Terraform) |
+| `sast` | clone path, repo URL | static findings (regex, Bandit, ESLint) |
 | `semgrep` | clone path, tech stack | semgrep findings, scanner execution metadata |
 | `authz_idor` | detected API surface | authz findings |
 | `sandbox` | clone path, entry points, sandbox settings | sandbox IDs, target IP, sandbox execution metadata |
 | `network` | sandbox IDs and target IP, API surface | open ports, API endpoints, scanner execution metadata |
-| `attack` | sandbox IDs, target IP, open ports | dynamic findings, scanner execution metadata |
+| `attack` | sandbox IDs, target IP, open ports | dynamic findings (SQLi, SSRF, XXE, SSTI, JWT, rate limit) |
 | `exploit` | sandbox IDs, target IP, dynamic findings | exploit proof findings |
 | `ai_analyzer` | accumulated findings | deduplicated findings, false positives, chains, remediations |
+| `cross_validation` | static, dynamic, semgrep, dependency, iac findings | validated findings, false positives, correlation report |
 | `scoring` | persisted findings | CVSS fields, risk summary |
 | `attack_graph` | routes plus selected findings | attack graph, attack chains |
 | `remediation_planner` | selected findings | remediation plan and remediation tasks |
@@ -121,6 +130,7 @@ Source: phase bodies in `backend/app/orchestrator/maestro.py` plus helpers in `b
 Passive / repository-only phases:
 
 - `recon`
+- `threat_model`
 - `api_surface`
 - `secret_history`
 - `dependency`
@@ -128,10 +138,12 @@ Passive / repository-only phases:
 - `iac`
 - `cicd_scan`
 - `container_scan`
+- `config_scan`
 - `sast`
 - `semgrep`
 - `authz_idor`
 - `ai_analyzer`
+- `cross_validation`
 - `scoring`
 - `attack_graph`
 - `remediation_planner`
@@ -148,6 +160,14 @@ Outbound integration phases:
 - `reporter`
 - `github_mcp`
 - `google_agent`
+
+## Retry Mechanism
+
+Source: `execute_phase()` in `backend/app/orchestrator/maestro.py`.
+
+- Non-critical phases retry up to 2 times with exponential backoff (1s, 2s delays).
+- Retry attempts are logged with warning level.
+- `JobCancellationRequested` exceptions bypass retry logic and propagate immediately.
 
 ## Sandbox Dependence
 
@@ -175,6 +195,7 @@ Non-critical phases degrade the job to `partial` on exception and allow later ph
 - `iac_scan`
 - `cicd_scan`
 - `container_scan`
+- `config_scan`
 - `semgrep_scan`
 - `authz_idor`
 - `sandbox`
@@ -183,6 +204,8 @@ Non-critical phases degrade the job to `partial` on exception and allow later ph
 - `exploit`
 - `github_mcp`
 - `google_agent`
+- `threat_model`
+- `cross_validation`
 
 Phases outside that list can still fail the orchestration.
 
@@ -210,6 +233,7 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 - `attack.py` and `exploit.py` mark some findings as `[SIMULATED]` when running in mock sandbox mode.
 - `ai_analyzer.py`, `github_mcp.py`, and `google_agent.py` all have debug fallback behavior.
 - `reporter.py` can emit HTML plus a placeholder PDF when WeasyPrint is unavailable.
+- `config_scan.py` skips scanning for test repositories.
 
 ## Known Risks And TODOs
 
@@ -218,4 +242,4 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 - The current scoring phase uses a simple severity-to-CVSS mapping rather than scanner-native scoring.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 19, 2026*

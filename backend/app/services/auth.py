@@ -258,9 +258,18 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
             return bool(client.exists(_denylist_key(str(jti))))
         except Exception:
             logger.error("Redis denylist lookup failed for jti=%s.", jti)
+            # Fail closed on Redis errors - deny the token
             return True
 
-    return False
+    # Fail closed when no revocation store is available
+    # This prevents token reuse if the revocation system is down
+    logger.warning("No revocation store available (DB/Redis). Denying token jti=%s for security.", jti)
+    from app.config import settings
+    if settings.DEBUG:
+        # In debug mode, allow fail-open for development convenience
+        logger.warning("DEBUG mode: allowing token without revocation check.")
+        return False
+    return True
 
 
 def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Optional[str] = None) -> bool:

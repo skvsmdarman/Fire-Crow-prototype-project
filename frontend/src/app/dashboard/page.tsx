@@ -19,6 +19,7 @@ import dynamic from "next/dynamic";
 import ChatWidget from "../../components/ChatWidget";
 import Leaderboard from "../../components/Leaderboard";
 import { subscribeUserToPush } from "../../lib/pushNotifications";
+import { PRODUCT_NAME, PRODUCT_TAGLINE, GITHUB_SCOPE_DESCRIPTIONS } from "../../shared/config/app";
 
 const AttackGraph = dynamic(() => import("../../components/AttackGraph"), { ssr: false });
 
@@ -89,8 +90,8 @@ function Logo({ centered }: { centered?: boolean }) {
         <span style={{ fontSize: 13, fontWeight: 700, color: "#160800", fontFamily: "'IBM Plex Mono', monospace" }}>FC</span>
       </div>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>Fire Crow</div>
-        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>FCv1 security audit</div>
+        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>{PRODUCT_NAME}</div>
+        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{PRODUCT_TAGLINE}</div>
       </div>
     </div>
   );
@@ -825,6 +826,32 @@ function SettingsSection({ systemStatus }: { systemStatus: SystemStatus | null }
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: available ? theme.green : theme.muted, flexShrink: 0 }} />
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* GitHub Permissions */}
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${theme.border}`, fontSize: 14, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={theme.text}><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.84c.85.004 1.7.115 2.5.337 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10.02 10.02 0 0 0 22 12c0-5.52-4.48-10-10-10z"/></svg>
+            GitHub Permissions
+          </div>
+          {!systemStatus?.github_permissions ? (
+            <div style={{ padding: "14px 18px", color: theme.muted, fontSize: 12 }}>GitHub permissions not available.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {systemStatus.github_permissions.scopes.map((scope) => {
+                const desc = GITHUB_SCOPE_DESCRIPTIONS[scope] || systemStatus.github_permissions?.descriptions[scope] || scope;
+                return (
+                  <div key={scope} style={{ padding: "10px 18px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span className="mono" style={{ fontSize: 11, color: theme.orange, fontWeight: 500 }}>{scope}</span>
+                    <span style={{ fontSize: 11, color: theme.muted, textAlign: "right", maxWidth: "70%" }}>{desc}</span>
+                  </div>
+                );
+              })}
+              <div style={{ padding: "10px 18px", fontSize: 11, color: theme.muted, lineHeight: 1.5 }}>
+                Labels are automatically created for security findings (firecrow, critical, high, medium, low, security, needs-triage).
+              </div>
             </div>
           )}
         </div>

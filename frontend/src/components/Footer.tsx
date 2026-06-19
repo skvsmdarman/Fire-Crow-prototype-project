@@ -10,6 +10,7 @@ import {
 } from "../lib/authSession";
 import styles from "./Footer.module.css";
 import BrandLogo from "./BrandLogo";
+import { COMPANY_NAME, COMPANY_NAME_SHORT, SUPPORT_EMAIL, COPYRIGHT_YEAR } from "../shared/config/app";
 
 export default function Footer() {
   const session = useSyncExternalStore(
@@ -34,7 +35,7 @@ export default function Footer() {
             Continuous offensive security audits, secret scanning, and automated sandbox validation.
           </p>
           <div className={styles.novalabsBadge}>
-            A product from <strong className={styles.highlightText}>Nova labs</strong>
+            A product from <strong className={styles.highlightText}>{COMPANY_NAME_SHORT}</strong>
           </div>
         </div>
 
@@ -79,11 +80,11 @@ export default function Footer() {
           <h4>Security Contact</h4>
           <ul>
             <li>
-              <span className={styles.footerEmail}>security@novadevs.dev</span>
+              <span className={styles.footerEmail}>{SUPPORT_EMAIL}</span>
             </li>
             <li>
               <span className={styles.addressLabel}>Address/Operator:</span>
-              <span className={styles.addressValue}>Nova Devs (an online developer team)</span>
+              <span className={styles.addressValue}>{COMPANY_NAME} (an online developer team)</span>
             </li>
           </ul>
         </div>
@@ -92,11 +93,11 @@ export default function Footer() {
       {/* Bottom Status bar */}
       <div className={styles.footerBottom}>
         <span className={styles.copyrightText}>
-          &copy; {new Date().getFullYear()} FireCrow. All rights reserved.
+          &copy; {COPYRIGHT_YEAR} FireCrow. All rights reserved.
         </span>
         <div className={styles.statusPill}>
           <span className={styles.statusDot} />
-          <span>Nova Devs Network: Operational</span>
+          <span>{COMPANY_NAME} Network: Operational</span>
         </div>
       </div>
     </footer>

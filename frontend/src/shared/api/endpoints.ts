@@ -12,10 +12,15 @@ export const ENDPOINTS = {
   audit: {
     submit: "/audit/submit",
     jobs: "/audit/jobs",
-    job: (jobId: string) => `/audit/job/${jobId}`,
-    insight: (jobId: string) => `/audit/job/${jobId}/insight`,
-    report: (jobId: string) => `/audit/job/${jobId}/report`,
-    stream: (jobId: string) => `/audit/${jobId}/stream`,
+    job: (jobId: string) => "/audit/job/" + jobId,
+    insight: (jobId: string) => "/audit/job/" + jobId + "/insight",
+    report: (jobId: string) => "/audit/job/" + jobId + "/report",
+    stream: (jobId: string) => "/audit/" + jobId + "/stream",
+    graph: (jobId: string) => "/audit/job/" + jobId + "/graph",
+    cancel: (jobId: string) => "/audit/job/" + jobId + "/cancel",
+  },
+  chat: {
+    ask: "/chat/ask",
   },
   leaderboard: {
     list: "/leaderboard",

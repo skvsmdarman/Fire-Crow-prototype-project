@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import styles from './BrandLogo.module.css';
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from '../shared/config/app';
 
 interface BrandLogoProps {
   className?: string;
@@ -12,8 +13,8 @@ export default function BrandLogo({ className = '', isLink = true }: BrandLogoPr
     <>
       <span className={styles.brandMark}>FC</span>
       <span className={styles.brandText}>
-        <strong>Fire Crow</strong>
-        <small>FCv1 security audit</small>
+        <strong>{PRODUCT_NAME}</strong>
+        <small>{PRODUCT_TAGLINE}</small>
       </span>
     </>
   );

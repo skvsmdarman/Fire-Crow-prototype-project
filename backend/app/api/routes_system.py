@@ -49,6 +49,14 @@ async def system_status(
     user_id: str = Depends(get_current_user),
 ):
     """Return backend readiness and tenant-scoped operational status for the control panel."""
+    from app.models.database import query_cache
+    
+    # Check cache first
+    cache_key = f"system_status:{user_id}"
+    cached = query_cache.get(cache_key)
+    if cached:
+        return cached
+    
     try:
         db.execute(text("SELECT 1"))
         database = "connected"
@@ -63,6 +71,14 @@ async def system_status(
         .filter(AuditJob.user_id == user_id)
         .count()
     )
+
+    # GitHub scope descriptions for frontend display
+    github_scope_descriptions = {
+        "repo": "Full control of private repositories (issues, labels, PRs, code)",
+        "workflow": "Update GitHub Action workflows",
+        "read:org": "Read organization membership",
+        "user:email": "Access user email addresses",
+    }
 
     payload = {
         "api": "online",
@@ -79,8 +95,12 @@ async def system_status(
             "findings": total_findings,
         },
         "legal": {
-            "privacy_policy_version": "2026-06-06",
-            "terms_version": "2026-06-06",
+            "privacy_policy_version": settings.PRIVACY_POLICY_VERSION,
+            "terms_version": settings.TERMS_VERSION,
+        },
+        "github_permissions": {
+            "scopes": settings.GITHUB_OAUTH_SCOPES,
+            "descriptions": github_scope_descriptions,
         },
         "agents": [
             {"name": "MAESTRO", "role": "Orchestration", "status": "ready"},
@@ -92,7 +112,7 @@ async def system_status(
             {"name": "EVIDENCE", "role": "Evidence-backed finding validation", "status": "ready"},
             {"name": "SCORING", "role": "CVSS prioritization", "status": "ready"},
             {"name": "REPORTER", "role": "Report generation", "status": "ready"},
-            {"name": "GITHUB_MCP", "role": "GitMCP issue and PR generation", "status": "ready"},
+            {"name": "GITHUB_MCP", "role": "GitMCP issue and PR generation with labels", "status": "ready"},
             {"name": "GOOGLE_AGENT", "role": "PR risk assessment and email alerts", "status": "ready"},
         ],
     }
@@ -114,6 +134,8 @@ async def system_status(
             "ai_models": bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY),
         }
 
+    # Cache for 30 seconds to reduce DB load on frequent status polls
+    query_cache.set(cache_key, payload, ttl=30)
     return payload
 
 

@@ -26,6 +26,11 @@ class Settings(BaseSettings):
         default=["repo", "workflow", "read:org", "user:email"],
         validation_alias="GITHUB_OAUTH_SCOPES"
     )
+    # Scope descriptions for frontend display:
+    # - repo: Full control of private repositories (issues, labels, PRs, code)
+    # - workflow: Update GitHub Action workflows
+    # - read:org: Read organization membership
+    # - user:email: Access user email addresses
     LOGIN_FAILURE_WINDOW_MINUTES: int = Field(default=10, validation_alias="LOGIN_FAILURE_WINDOW_MINUTES")
     LOGIN_FAILURE_LIMIT: int = Field(default=5, validation_alias="LOGIN_FAILURE_LIMIT")
     MAX_REQUEST_BODY_BYTES: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB

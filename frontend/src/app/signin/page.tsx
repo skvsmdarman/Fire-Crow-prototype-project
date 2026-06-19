@@ -8,6 +8,7 @@ import { usePolicyContext } from "../../features/auth/hooks";
 import { exchangeCode } from "../../features/auth/api";
 import { detectRegionFromTimezone } from "../../lib/policyData";
 import { buildApiUrl, isAbsoluteUrl } from "../../shared/api/baseUrl";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../../shared/config/app";
 
 const theme = {
   bg: "var(--bg)",
@@ -33,8 +34,8 @@ function Logo({ centered }: { centered?: boolean }) {
         <span style={{ fontSize: 13, fontWeight: 700, color: "#160800", fontFamily: "'IBM Plex Mono', monospace" }}>FC</span>
       </div>
       <div style={{ textAlign: "left" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>Fire Crow</div>
-        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>FCv1 security audit</div>
+        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>{PRODUCT_NAME}</div>
+        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{PRODUCT_TAGLINE}</div>
       </div>
     </div>
   );

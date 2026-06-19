@@ -1,12 +1,69 @@
 import logging
-from sqlalchemy import create_engine, inspect, select
+import time
+from threading import Lock
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.config import settings
 from app.services.redaction import redact_text
 
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger("firecrow.models.database")
+
+
+class _QueryCache:
+    """Simple in-memory TTL cache for frequently accessed database queries."""
+    
+    def __init__(self, default_ttl: int = 30):
+        self._cache: dict[str, tuple[Any, float]] = {}
+        self._lock = Lock()
+        self._default_ttl = default_ttl
+        self._hits = 0
+        self._misses = 0
+
+    def get(self, key: str) -> Optional[Any]:
+        with self._lock:
+            if key in self._cache:
+                value, expires_at = self._cache[key]
+                if time.time() < expires_at:
+                    self._hits += 1
+                    return value
+                del self._cache[key]
+            self._misses += 1
+            return None
+
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
+        with self._lock:
+            self._cache[key] = (value, time.time() + (ttl or self._default_ttl))
+
+    def invalidate(self, key: str) -> None:
+        with self._lock:
+            self._cache.pop(key, None)
+
+    def invalidate_prefix(self, prefix: str) -> None:
+        with self._lock:
+            keys_to_delete = [k for k in self._cache if k.startswith(prefix)]
+            for k in keys_to_delete:
+                del self._cache[k]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+    @property
+    def stats(self) -> dict:
+        with self._lock:
+            total = self._hits + self._misses
+            return {
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": f"{(self._hits / total * 100):.1f}%" if total > 0 else "N/A",
+                "entries": len(self._cache),
+            }
+
+
+# Global query cache instance
+query_cache = _QueryCache(default_ttl=30)
 
 db_url = settings.DATABASE_URL
 engine: Any = None
@@ -279,6 +336,60 @@ def _ensure_session_and_failure_compatibility() -> None:
         Base.metadata.create_all(bind=engine, tables=tables_to_create)
 
 
+def _ensure_indexes() -> None:
+    """Create performance indexes for frequently queried columns."""
+    if engine is None:
+        return
+    
+    indexes_to_create = [
+        # Audit jobs - most queried table
+        ("ix_audit_jobs_user_status", "audit_jobs", "user_id, status"),
+        ("ix_audit_jobs_created_at", "audit_jobs", "created_at DESC"),
+        ("ix_audit_jobs_user_created", "audit_jobs", "user_id, created_at DESC"),
+        
+        # Findings - join-heavy queries
+        ("ix_findings_job_severity", "findings", "job_id, severity"),
+        ("ix_findings_scanner", "findings", "scanner_name"),
+        ("ix_findings_cwe", "findings", "cwe_id"),
+        
+        # Agent logs - time-series queries
+        ("ix_agent_logs_job_timestamp", "agent_logs", "job_id, timestamp"),
+        
+        # Phase ledger - execution tracking
+        ("ix_phase_ledger_job", "phase_ledger", "job_id"),
+        
+        # User sessions - auth lookups
+        ("ix_user_sessions_user_id", "user_sessions", "user_id"),
+        ("ix_user_sessions_token_family", "user_sessions", "token_family"),
+        
+        # Login failures - brute force detection
+        ("ix_login_failures_user_window", "login_failures", "user_id, created_at"),
+        
+        # Compliance events - audit trail
+        ("ix_compliance_events_user_timestamp", "compliance_events", "user_id, created_at DESC"),
+    ]
+    
+    with engine.begin() as conn:
+        for index_name, table_name, columns in indexes_to_create:
+            try:
+                if engine.dialect.name == "postgresql":
+                    conn.exec_driver_sql(
+                        f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns})"
+                    )
+                elif engine.dialect.name == "sqlite":
+                    # SQLite doesn't support IF NOT EXISTS for indexes, so we catch and ignore
+                    try:
+                        conn.exec_driver_sql(
+                            f"CREATE INDEX {index_name} ON {table_name} ({columns})"
+                        )
+                    except Exception:
+                        pass  # Index already exists
+            except Exception as e:
+                logger.debug("Could not create index %s: %s", index_name, str(e))
+    
+    logger.info("Database indexes ensured for performance optimization.")
+
+
 def ensure_database_compatibility() -> None:
     _ensure_audit_job_compatibility()
     _ensure_user_compatibility()
@@ -287,6 +398,7 @@ def ensure_database_compatibility() -> None:
     _ensure_audit_report_compatibility()
     _ensure_compliance_compatibility()
     _ensure_session_and_failure_compatibility()
+    _ensure_indexes()
 
 
 

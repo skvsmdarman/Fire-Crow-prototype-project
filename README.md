@@ -1,93 +1,113 @@
 # Fire Crow
 
-Fire Crow is a production-ready, repository-focused security audit and intelligence platform. It features a high-performance **FastAPI** backend, a responsive **Next.js** frontend, and a sophisticated **LangGraph** orchestration pipeline capable of chaining multiple deterministic and LLM-powered security agents. 
+Fire Crow is a production-ready, repository-focused security audit and intelligence platform. It features a high-performance **FastAPI** backend, a responsive **Next.js** frontend, and a sophisticated **LangGraph** orchestration pipeline capable of chaining multiple deterministic and LLM-powered security agents.
 
-Users can securely authenticate, submit GitHub HTTPS repository URLs for analysis, stream real-time audit logs over Server-Sent Events (SSE), and download comprehensive vulnerability reports and generated artifacts (such as SBOMs and Attack Graphs).
+Users can securely authenticate, submit GitHub HTTPS repository URLs for analysis, stream real-time audit logs over Server-Sent Events (SSE), and download comprehensive vulnerability reports with visual charts and detailed findings.
 
-## 🚀 Key Features & Current Status
+## Key Features
 
-- **Real-Time Log Streaming**: Native SSE (Server-Sent Events) integration for real-time streaming of scan logs and progress updates directly to the frontend dashboard.
-- **Agentic Orchestration Engine**: Uses a graph-based state machine (`LangGraph`) to route execution between passive scanning, heuristic intelligence gathering, and LLM-driven vulnerability reasoning.
-- **Deep Security Tooling Integration**: Includes 8 specialized scanners (API surface, AuthZ/IDOR flagger, CI/CD scanning, Container scanning, SBOM generation, Secret history parsing).
+- **Enhanced Report Generation**: Premium PDF reports with SVG charts (donut, bar, stacked), severity distribution, scanner performance metrics, CWE analysis, and actionable security recommendations.
+- **Real-Time Log Streaming**: Native SSE integration for streaming scan logs and progress updates directly to the frontend dashboard.
+- **Agentic Orchestration Engine**: Uses a graph-based state machine (LangGraph) to route execution between passive scanning, heuristic intelligence gathering, and LLM-driven vulnerability reasoning.
+- **Deep Security Tooling Integration**: Includes 14+ specialized scanners with AST-based analysis, configuration file scanning, and dynamic attack testing.
 - **Secure Authentication Flow**: Native password login with secure token revocation, along with OAuth integrations for GitHub and Google.
-- **Production Hardening**: Enforces SQLite blocklists in production, supports Redis/Celery job queues, and incorporates compliance filters (Terms of Service, Regional settings).
-- **Automated Remediation (GitHub MCP)**: Features GitHub integration capable of constructing automated GitHub issues and planning pull request structures from remediation tasks.
+- **Production Hardening**: Enforces SQLite blocklists in production, supports Redis/Celery job queues, and incorporates compliance filters.
+- **Automated Remediation (GitHub MCP)**: Creates GitHub issues with security labels (critical, high, medium, low, firecrow, security) and planning pull request structures.
+- **Adaptive Scanning**: Dynamically adjusts scanning depth based on initial findings and repository characteristics.
+- **Retry Mechanisms**: Automatic retry with exponential backoff for transient failures in non-critical phases.
+- **Database Query Caching**: In-memory TTL cache for frequently accessed queries, reducing database load.
+- **Performance Indexes**: Optimized database indexes for audit jobs, findings, and user sessions.
 
-## 🏗 System Architecture
-
-The project follows a decoupled, scalable architecture spanning frontend UI, an API gateway, background job orchestrators, and specialized security agents.
+## System Architecture
 
 ### Backend Overview
 - **Core Framework**: FastAPI (`backend/app/main.py`)
-- **Orchestration**: `LangGraph` pipeline orchestrating security nodes via `backend/app/orchestrator/maestro.py` and `backend/app/orchestrator/runtime.py`.
-- **Background Execution**: Scales horizontally with `Celery` + `Redis`, while preserving a fast local development mode through FastAPI `BackgroundTasks`.
-- **Database & Storage**: SQLAlchemy ORM (`backend/app/models/`) persisting jobs, multi-layered findings, audit artifacts, and system/compliance logs. All artifacts (reports, evidence, attack graphs) are stored in Neon PostgreSQL as TEXT/JSONB.
+- **Orchestration**: LangGraph pipeline orchestrating security nodes via `backend/app/orchestrator/maestro.py`
+- **Background Execution**: Scales horizontally with Celery + Redis, while preserving fast local development mode
+- **Database**: SQLAlchemy ORM with PostgreSQL (production) or SQLite (development), optimized with connection pooling and query caching
 
 ### Frontend Overview
-- **Framework**: Next.js App Router (`frontend/src/app/*`)
+- **Framework**: Next.js App Router
 - **Key Views**:
-  - `page.tsx`: Landing Page
-  - `signin/page.tsx` & `signup/page.tsx`: Auth flows with legal compliance checks
-  - `dashboard/page.tsx`: Main user console featuring dynamic real-time job execution monitoring
-- **Data Fetching**: Custom API client, React hooks, and native SSE stream parsing (`frontend/src/shared/hooks/useSSE.ts`).
+  - Landing page with scanner capabilities display
+  - Auth flows with legal compliance checks
+  - Main dashboard with real-time job monitoring, attack graphs, and chat widget
+- **Data Fetching**: Custom API client, React hooks, and native SSE stream parsing
 
-## 🛡️ Audit Scanners & Intelligence Layers
+## Audit Scanners & Intelligence Layers
 
-Fire Crow's graph dynamically invokes a suite of analyzers based on the repository's technology stack and authorization scopes. Recent refactoring introduced numerous advanced analysis layers:
+### Passive Analysis Phases
+1. **recon**: Clones repository, detects tech stack, checks GitHub API security settings
+2. **threat_model**: Generates prioritized attack vectors and assets
+3. **api_surface**: Maps API routes and REST endpoints from the codebase
+4. **secret_history**: Scans commit history for hardcoded secrets
+5. **dependency**: Scans dependencies for known vulnerabilities (OSV/Trivy)
+6. **sbom_graph**: Captures dependency mappings, outputs CycloneDX-compatible SBOM
+7. **iac**: Scans Infrastructure-as-Code files for misconfigurations
+8. **cicd_scan**: Inspects GitHub workflows for risky configurations
+9. **container_scan**: Analyzes Dockerfile rules for dangerous capabilities
+10. **config_scan**: Scans config files using hadolint, kube-linter, tfsec
+11. **sast**: Static application security testing (Bandit, ESLint, regex)
+12. **semgrep**: Multi-language static analysis with Semgrep rules
+13. **authz_idor**: Flags potential IDOR vulnerabilities
 
-1. **`api_surface`**: Heuristically maps API routes and REST endpoints from the codebase.
-2. **`authz_idor`**: Flags potential Insecure Direct Object Reference (IDOR) vulnerabilities based on routing parameters and risk tags.
-3. **`cicd_scan`**: Inspects `.github/workflows` for risky configurations (e.g., untrusted `pull_request_target`).
-4. **`container_scan`**: Analyzes `Dockerfile` rules for dangerous capabilities and bad practices.
-5. **`config_scan`**: Scans configuration files (Dockerfile, Kubernetes, Terraform) using specialized linters (hadolint, kube-linter, tfsec).
-6. **`sbom_graph`**: Captures dependency manifest mappings and outputs CycloneDX-compatible SBOM artifacts.
-7. **`secret_history`**: Scans commit history heuristically to spot hardcoded secrets, supporting auto-redaction.
-8. **`sast`**: Performs static application security testing including:
-   - Regex-based scanning for secrets and unsafe code patterns
-   - **Bandit integration** for Python-specific security issues (when available)
-   - **ESLint integration** for JavaScript/TypeScript security scanning (when available)
-   - Configurable fallback to enhanced regex scanning
-9. **`threat_model`**: Generates prioritized attack vectors and assets based on tech stack and entry points.
-10. **`dynamic_attack`**: Enhanced with SSRF, XXE, SSTI, JWT tampering, and rate limit testing.
-11. **`cross_validation`**: Correlates findings from static and dynamic analysis, flags false positives.
-12. **`attack_graph`**: Builds a node-edge correlation matrix indicating chained attack paths across files.
-13. **`remediation_planner`**: Analyzes findings to generate actionable fix plans and code snippets.
-14. **`evidence_normalizer` & `confidence`**: Normalizes disparate tool outputs and intelligently upscores finding confidence.
+### Active Testing Phases (Sandbox)
+14. **sandbox**: Provisions isolated Docker/Kali container
+15. **network**: Port scanning and service discovery
+16. **attack**: Dynamic vulnerability testing (SSRF, XXE, SSTI, JWT, rate limiting)
+17. **exploit**: Controlled validation of discovered vulnerabilities
 
-## ⚙️ Local Development Setup
+### Analysis & Reporting
+18. **ai_analyzer**: Deterministic finding triage and deduplication
+19. **cross_validation**: Correlates findings, flags false positives
+20. **scoring**: CVSS v3.1 vector assignment and risk scoring
+21. **attack_graph**: Node-edge correlation for chained attack paths
+22. **remediation_planner**: Generates actionable fix plans
+23. **reporter**: Generates PDF reports with charts and sends email notifications
+24. **github_mcp**: Creates GitHub issues with security labels
+25. **google_agent**: AI-powered PR risk analysis
 
-Fire Crow includes an easy-to-use launch configuration allowing rapid local development.
+## Pipeline Flow
 
-1. **Backend Environment Setup**:
-   Create a Python virtual environment and install dependencies:
-   ```powershell
-   cd backend
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   ```
+```
+recon → threat_model → api_surface → secret_history → dependency → sbom_graph → 
+iac → cicd_scan → container_scan → config_scan → sast → semgrep → 
+authz_idor → [sandbox → network → attack → exploit] → 
+ai_analyzer → cross_validation → scoring → attack_graph → 
+remediation_planner → reporter → github_mcp → google_agent → cleanup
+```
 
-2. **Frontend Environment Setup**:
-   Install npm dependencies:
-   ```powershell
-   cd frontend
-   npm install
-   ```
+## Local Development Setup
 
-3. **Environment Configuration**:
-   - Copy `backend/.env.example` to `backend/.env.local`.
-   - Copy `frontend/.env.example` to `frontend/.env.local`.
+### Prerequisites
+- Python 3.12+
+- Node.js 18+
+- PostgreSQL (production) or SQLite (development)
 
-4. **Launch Application**:
-   From the repository root, run the primary development script which boots both the frontend and backend servers concurrently:
-   ```powershell
-   npm run dev
-   ```
-   *(Alternatively, run `npm run dev:no-worker` to disable background worker scaling)*
+### Backend Setup
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-## ☁️ Deployment Guide (Render)
+### Frontend Setup
+```powershell
+cd frontend
+npm install
+```
 
-Production deployments must not use `http://localhost:3000`. Set `FRONTEND_URL` accurately as OAuth callbacks and CORS mappings are heavily restricted. The application is configured to deploy with Neon DB only (no external object storage required).
+### Environment Configuration
+1. Copy `backend/.env.example` to `backend/.env.local`
+2. Copy `frontend/.env.example` to `frontend/.env.local`
+
+### Launch Application
+```powershell
+npm run dev
+```
+
+## Deployment Guide (Render)
 
 **Minimum Production Environment Variables**:
 ```bash
@@ -101,11 +121,10 @@ CORS_ORIGINS=https://your-firecrow-frontend.example.com
 
 **Feature Flags (LLM Support)**:
 ```bash
-# Enable LLM feature flags (all default to false)
-LLM_CHAT_ASSISTANT=false       # Enables the interactive chat assistant
-LLM_DASHBOARD_INSIGHT=false    # Generates dashboard summary insights
-LLM_ATTACK_CHAIN_NAMING=false  # Generates natural names for attack graphs
-LLM_PR_DESCRIPTION=false       # Auto-generates PR description/summaries
+LLM_CHAT_ASSISTANT=false
+LLM_DASHBOARD_INSIGHT=false
+LLM_ATTACK_CHAIN_NAMING=false
+LLM_PR_DESCRIPTION=false
 ```
 
 **Optional Provider Integrations**:
@@ -116,38 +135,43 @@ GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```
 
-Before relying on OAuth or external connections in a production environment, verify the safety of your environment variables:
-```bash
-bash scripts/verify_render_env.sh
-```
-*(The script intentionally fails if SQLite is targeted, `DEBUG` is active, or `FRONTEND_URL` is missing)*
+## Testing and Validation
 
-## 🧪 Testing and Validation
+- **Full Suite Validation**: `npm run validate`
+- **Backend Tests**: `python -m pytest backend/tests -v`
+- **Frontend Checks**: `npm run lint && npm run build`
 
-Fire Crow emphasizes testability. A full suite of testing utilities guarantees execution safety and architectural compliance:
+## Security Model
 
-- **Full Suite Validation**:
-  ```powershell
-  npm run validate
-  ```
-- **Backend Tests (Pytest)**:
-  ```powershell
-  .\.venv\Scripts\python.exe -m pytest backend/tests -v
-  ```
-- **Frontend Code Checks**:
-  ```powershell
-  cd frontend
-  npm run lint
-  npm run build
-  ```
-
-## 🔒 Security Model & Attestations
-
-Fire Crow executes active/dynamic penetration tools. To prevent misuse, the API enforces a stringent Authorization Model:
-- **Authorization Attestations**: Job submissions require cryptographically tracked consent fields (`attestation_accepted` and an explicit `authorization_scope`). 
-- **Sandboxing**: Active tools run strictly inside isolated container network partitions (`backend/app/services/sandbox.py`) to prevent side-effects on public infrastructure.
-- **Data Protection**: Security audit logs are persisted immutably in the DB.
-- Further reading on our detailed security roadmap and implementations can be found in `docs/SECURITY_MODEL.md` and `docs/IMPLEMENTATION_FRAMEWORK_V2.md`.
+Fire Crow executes active/dynamic penetration tools. To prevent misuse:
+- **Authorization Attestations**: Job submissions require cryptographically tracked consent fields
+- **Sandboxing**: Active tools run inside isolated container network partitions
+- **Data Protection**: Security audit logs are persisted immutably in the DB
 
 ---
-*Documentation last updated: June 08, 2026*
+
+## Efficiency Recommendations for Developers
+
+### Package Management
+- **Removed**: `gitpython` (unused, potential security risk banned by cloud providers)
+- **Kept**: All actively used dependencies (`docker`, `weasyprint`, `celery`, `redis`, `boto3`)
+- **Frontend**: `reactflow` retained for attack graph visualization
+
+### Database Optimization
+- **Indexing**: Added composite indexes for frequently queried columns
+- **Connection Pooling**: Configured with `pool_pre_ping=True`, 20 connections, 10 overflow
+- **Query Caching**: In-memory TTL cache reduces DB load on repeated queries
+
+### Server Efficiency
+- **Async Operations**: FastAPI async endpoints with background task support
+- **Response Caching**: System status cached for 30 seconds
+- **Connection Recycling**: Database connections recycled every 30 minutes
+
+### Report Generation
+- **SVG Charts**: Donut charts for severity distribution, bar charts for scanner performance
+- **Modular Design**: Chart generation methods separated for maintainability
+- **PDF Optimization**: WeasyPrint with fallback for environments without GPU support
+
+---
+
+*Documentation last updated: June 19, 2026*

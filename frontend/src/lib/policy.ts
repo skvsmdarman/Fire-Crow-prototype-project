@@ -1,6 +1,6 @@
 import { buildApiUrl } from "../shared/api/baseUrl";
-export const PRIVACY_POLICY_VERSION = "2026-06-06";
-export const TERMS_VERSION = "2026-06-06";
+import { ENDPOINTS } from "../shared/api/endpoints";
+export { PRIVACY_POLICY_VERSION, TERMS_VERSION } from "../shared/config/app";
 
 interface PolicyEventInput {
   eventType: "link_click" | "page_view";
@@ -18,7 +18,7 @@ export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
   }
 
   // Auth is handled by the HttpOnly session cookie — no token in localStorage.
-  await fetch(buildApiUrl("/auth/policy-events"), {
+  await fetch(buildApiUrl(ENDPOINTS.auth.policyEvents), {
     method: "POST",
     credentials: "include",
     headers: {

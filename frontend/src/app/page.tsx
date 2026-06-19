@@ -9,6 +9,7 @@ import {
   getStoredAuthSessionSnapshot,
   subscribeToAuthSession,
 } from "../lib/authSession";
+import { COMPANY_NAME, PRODUCT_VERSION, COPYRIGHT_YEAR, PRODUCT_TAGLINE } from "../shared/config/app";
 
 const theme = {
   bg: "var(--bg)",
@@ -159,7 +160,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <div style={{ borderTop: `1px solid ${theme.border}`, padding: "20px 40px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: theme.muted }}>© 2026 Nova Devs · Fire Crow FCv1</span>
+        <span style={{ fontSize: 12, color: theme.muted }}>© {COPYRIGHT_YEAR} {COMPANY_NAME} · Fire Crow {PRODUCT_VERSION}</span>
         <div style={{ display: "flex", gap: 24 }}>
           {["Privacy", "Terms"].map((l) => (
             <Link key={l} href={`/${l.toLowerCase().replace(" ", "-")}`} style={{ fontSize: 12, color: theme.muted, cursor: "pointer" }}>{l}</Link>

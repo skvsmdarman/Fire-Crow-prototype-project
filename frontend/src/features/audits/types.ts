@@ -78,4 +78,8 @@ export interface SystemStatus {
     nuclei: boolean;
     sqlmap: boolean;
   };
+  github_permissions?: {
+    scopes: string[];
+    descriptions: Record<string, string>;
+  };
 }

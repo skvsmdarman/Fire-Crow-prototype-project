@@ -1,64 +1,76 @@
-# Production logs
+# ===========================
+# Fire Crow .gitignore
+# ===========================
+
+# ===========================
+# Production & Logs
+# ===========================
 *.log
 logs/
+*.pid
 workspace/sent_emails/
 workspace/temp/
 workspace/storage/cache/
-workspace/scans/*/   # but keep the directory itself
-*.pid
+workspace/scans/*/
 
-# Local development databases (not production)
+# ===========================
+# Databases
+# ===========================
 firecrow.db
 test_firecrow.db
+*.db-journal
+*.db-wal
+*.db-shm
 
-# Environment files with secrets
+# ===========================
+# Environment & Secrets
+# ===========================
 *.env.local
 *.env.production
 !.env.example
 
-# Python cache
+# ===========================
+# Python
+# ===========================
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Frontend build artifacts
-frontend/.next/
-frontend/out/
-frontend/.turbo/
-
-# Backup files
-*.bak
-*.swp
-*.tmp
-
-# OS junk
-.DS_Store
-Thumbs.db
-
-# IDE / Editor
-.idea/
-.vscode/
-*.sublime-project
-*.sublime-workspace
-
-# Virtual environments
+# ===========================
+# Virtual Environments
+# ===========================
 .venv/
 venv/
 env/
 ENV/
+.python-version
 
-# Node dependencies
+# ===========================
+# Frontend / Node.js
+# ===========================
+frontend/.next/
+frontend/out/
+frontend/.turbo/
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.vercel/
+.npm/
 
-# Workspace directories
-workspace/
-backend/workspace/
-
-# Testing
+# ===========================
+# Testing & Coverage
+# ===========================
 __mocks__/
 mock_data/
 test_data/
@@ -67,15 +79,98 @@ test_data/
 *.mock.py
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+coverage/
+coverage.xml
+*.cover
 
-# Type checking
+# ===========================
+# Type Checking & Linting
+# ===========================
 .mypy_cache/
 .pyright/
 .pyrightpy/
+.ruff_cache/
+eslintcache/
 
-# Planning documents (local only)
+# ===========================
+# IDE / Editor
+# ===========================
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*~
+.project
+.settings/
+.classpath
+*.code-workspace
+
+# ===========================
+# OS Files
+# ===========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ===========================
+# Temporary & Backup Files
+# ===========================
+*.bak
+*.swp
+*.tmp
+*.temp
+*.orig
+*~
+
+# ===========================
+# Workspace Directories
+# ===========================
+workspace/
+backend/workspace/
+
+# ===========================
+# Planning & Config (Local Only)
+# ===========================
 PLAN.md
-
-# OpenCode configuration
 .opencode/
+
+# ===========================
+# Build Artifacts
+# ===========================
+*.manifest
+*.spec
+*.pyd
+
+# ===========================
+# Docker
+# ===========================
+docker-compose.override.yml
+
+# ===========================
+# Reports (Generated)
+# ===========================
+backend/workspace/reports/*.pdf
+backend/workspace/reports/*.html
+
+# ===========================
+# Celery
+# ===========================
+celerybeat-schedule
+celerybeat.pid
+
+# ===========================
+# Redis
+# ===========================
+dump.rdb
+
+# ===========================
+# WeasyPrint / PDF
+# ===========================
+*.pdf.tmp
