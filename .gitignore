@@ -8,16 +8,18 @@
 *.log
 logs/
 *.pid
-workspace/sent_emails/
-workspace/temp/
-workspace/storage/cache/
-workspace/scans/*/
+*.out
+*.err
+
+# ===========================
+# Artifacts & Debug Output
+# ===========================
+artifacts/
 
 # ===========================
 # Databases
 # ===========================
-firecrow.db
-test_firecrow.db
+*.db
 *.db-journal
 *.db-wal
 *.db-shm
@@ -25,6 +27,7 @@ test_firecrow.db
 # ===========================
 # Environment & Secrets
 # ===========================
+.env
 *.env.local
 *.env.production
 !.env.example
@@ -39,8 +42,6 @@ __pycache__/
 .Python
 *.egg-info/
 *.egg
-dist/
-build/
 .eggs/
 pip-log.txt
 pip-delete-this-directory.txt
@@ -57,9 +58,9 @@ ENV/
 # ===========================
 # Frontend / Node.js
 # ===========================
-frontend/.next/
-frontend/out/
-frontend/.turbo/
+.next/
+out/
+.turbo/
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -67,6 +68,7 @@ yarn-error.log*
 .pnpm-debug.log*
 .vercel/
 .npm/
+tsconfig.tsbuildinfo
 
 # ===========================
 # Testing & Coverage
@@ -90,7 +92,6 @@ coverage.xml
 # ===========================
 .mypy_cache/
 .pyright/
-.pyrightpy/
 .ruff_cache/
 eslintcache/
 
@@ -127,7 +128,6 @@ Desktop.ini
 *.tmp
 *.temp
 *.orig
-*~
 
 # ===========================
 # Workspace Directories
@@ -140,24 +140,18 @@ backend/workspace/
 # ===========================
 PLAN.md
 .opencode/
+.claude/
 
 # ===========================
 # Build Artifacts
 # ===========================
 *.manifest
 *.spec
-*.pyd
 
 # ===========================
 # Docker
 # ===========================
 docker-compose.override.yml
-
-# ===========================
-# Reports (Generated)
-# ===========================
-backend/workspace/reports/*.pdf
-backend/workspace/reports/*.html
 
 # ===========================
 # Celery
@@ -174,3 +168,15 @@ dump.rdb
 # WeasyPrint / PDF
 # ===========================
 *.pdf.tmp
+
+# ===========================
+# Patch Scripts (one-off)
+# ===========================
+patch_*.py
+
+# ===========================
+# Root Legacy Files
+# ===========================
+/index.html
+/package.json
+/package-lock.json

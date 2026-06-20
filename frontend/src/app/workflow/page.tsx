@@ -90,12 +90,12 @@ export default function WorkflowPage() {
             </p>
 
             <div className={styles.heroActions}>
-              <a href="/dashboard" className={styles.primaryButton}>
+              <Link href="/dashboard" className={styles.primaryButton}>
                 Open Dashboard
-              </a>
-              <a href="/agents" className={styles.secondaryButton}>
+              </Link>
+              <Link href="/agents" className={styles.secondaryButton}>
                 View Agents
-              </a>
+              </Link>
             </div>
 
             <div className={styles.heroFootnotes}>
@@ -265,9 +265,9 @@ export default function WorkflowPage() {
               security assessment in real-time.
             </p>
             <div className={styles.heroActions} style={{ marginTop: 20 }}>
-              <a href="/dashboard" className={styles.launchButton}>
+              <Link href="/dashboard" className={styles.launchButton}>
                 Start an audit →
-              </a>
+              </Link>
             </div>
           </div>
         </div>

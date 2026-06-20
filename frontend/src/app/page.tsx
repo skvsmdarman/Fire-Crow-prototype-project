@@ -102,7 +102,7 @@ export default function LandingPage() {
               <button onClick={handleEnter} className={styles.primaryButton}>
                 {isLoggedIn ? "Open Dashboard" : "Start an audit →"}
               </button>
-              <button className={styles.secondaryButton}>View workflow</button>
+              <button onClick={() => router.push("/workflow")} className={styles.secondaryButton}>View workflow</button>
             </div>
 
             <div className={styles.heroFootnotes}>
@@ -262,7 +262,7 @@ export default function LandingPage() {
                     Cross-contamination path: secret → lateral movement → data exfiltration
                   </p>
                 </div>
-                <button className={styles.boardFooterLink}>Full report →</button>
+                <button onClick={handleEnter} className={styles.boardFooterLink}>Full report →</button>
               </div>
             </div>
           </div>
