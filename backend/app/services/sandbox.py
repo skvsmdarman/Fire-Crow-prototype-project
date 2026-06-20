@@ -112,11 +112,12 @@ class SandboxManager:
     ) -> Tuple[bool, str, str, str, str]:
         """
         Provisions private bridge network, target application container, and Kali testing container.
-        Returns: Tuple of (success, network_name, target_container_id, kali_container_id, kali_ip)
+        Returns: Tuple of (success, network_name, target_container_id, kali_container_id, target_ip)
         """
         net_name = f"fc-net-{job_id}"
         target_cid = f"fc-target-{job_id}"
         kali_cid = f"fc-kali-{job_id}"
+        target_ip = "172.20.0.3"
         kali_ip = "172.20.0.5"
 
         if self.mock_mode:
@@ -131,7 +132,7 @@ class SandboxManager:
                 logger.info(f"[SIMULATOR] Deployed target application container '{target_cid}' with path '{clone_path}' (profile: {profile_name})")
                 target_cid_sim = target_cid
             logger.info(f"[SIMULATOR] Deployed Kali pentest agent container '{kali_cid}' connected to private network.")
-            return True, net_name, target_cid_sim, kali_cid, kali_ip
+            return True, net_name, target_cid_sim, kali_cid, target_ip
 
         if not self.client:
             logger.error("Docker client not initialized. %s", self.unavailable_reason)
@@ -190,13 +191,18 @@ class SandboxManager:
             )
 
             logger.info(f"Docker sandbox successfully provisioned for job {job_id}.")
-            
-            # Inspect Kali container network settings to retrieve private IP address
-            kali_container.reload()
-            net_settings = kali_container.attrs["NetworkSettings"]["Networks"].get(net_name, {})
-            ip_address = net_settings.get("IPAddress", kali_ip)
 
-            return True, net_name, target_container_id_str, str(kali_container.id or ""), str(ip_address or "")
+            target_ip_addr = target_ip
+            if target_container_id_str:
+                try:
+                    target_container_ref = client.containers.get(target_container_id_str)
+                    target_container_ref.reload()
+                    target_net_settings = target_container_ref.attrs["NetworkSettings"]["Networks"].get(net_name, {})
+                    target_ip_addr = target_net_settings.get("IPAddress", target_ip)
+                except Exception as e:
+                    logger.warning("Failed to retrieve target container IP: %s", redact_text(str(e)))
+
+            return True, net_name, target_container_id_str, str(kali_container.id or ""), str(target_ip_addr or target_ip)
 
         except Exception as e:
             logger.exception("Failed to provision docker containers: %s", redact_text(str(e)))

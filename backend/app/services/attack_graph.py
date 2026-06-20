@@ -60,8 +60,7 @@ def build_attack_graph(state: AuditState) -> Dict[str, Any]:
 
     # 4. Form basic chains
     for route in state.api_surface:
-        route_path = route.get("path", "")
-        # Connect IDOR findings to routes
+        route_path = route.get("path", "unknown")
         for f in state.authz_findings:
             if f.route == route_path or (f.file_path and f.file_path == route.get("file")):
                 edges.append({

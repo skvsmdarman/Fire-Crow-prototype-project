@@ -10,6 +10,12 @@ from app.services.redaction import redact_text
 logger = logging.getLogger("firecrow.agents.google_agent")
 
 
+def html_escape(text: str) -> str:
+    """Escapes HTML special characters."""
+    import html
+    return html.escape(text)
+
+
 def _deterministic_pr_risk_analysis(findings: List[Finding], remediations: List[Dict[str, Any]]) -> Dict[str, Any]:
     severity_counts = {
         Severity.CRITICAL: sum(1 for finding in findings if finding.severity == Severity.CRITICAL),
@@ -238,8 +244,3 @@ def run_google_agent(
         "google_agent_risk_report": pr_risk_analysis,
         "google_agent_logs": logs
     }
-
-def html_escape(text: str) -> str:
-    """Escapes HTML special characters."""
-    import html
-    return html.escape(text)

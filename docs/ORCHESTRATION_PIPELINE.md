@@ -241,5 +241,14 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 - `scheduler.py` is still placeholder infrastructure, not a real scheduled-audit subsystem.
 - The current scoring phase uses a simple severity-to-CVSS mapping rather than scanner-native scoring.
 
+### Resolved Issues
+
+- [x] GitHub MCP: f-string loggers replaced with lazy `%s` formatting; added error logging when write URL unavailable.
+- [x] SAST agent: extended exclude dirs list, expanded binary file skip list, replaced silent `errors='ignore'` with `errors='replace'`.
+- [x] Authz/IDOR agent: fixed `db: Any` type to `db: Session`.
+- [x] TelemetryMiddleware registered in main.py.
+- [x] Neo4j configuration and migration service added.
+- [x] API surface scanner: replaced `errors='ignore'` with `errors='replace'`.
+
 ---
 *Documentation last updated: June 19, 2026*
