@@ -4,7 +4,7 @@ import json
 import base64
 import urllib.request
 import urllib.error
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 from app.config import settings
 from app.schemas import Finding, Severity
 from app.services.safe_llm import is_llm_enabled, safe_llm_call
@@ -74,10 +74,7 @@ def _ensure_labels_exist(owner: str, repo: str, token: str, labels: List[str]) -
         _github_api_request(create_url, "POST", token, {"name": label_name, "description": label_desc, "color": color})
 
 
-def _github_api_request(url: str, method: str, token: str, payload: dict | None = None) -> tuple[Any, int, str]:
-    import urllib.request
-    import urllib.error
-    import json
+def _github_api_request(url: str, method: str, token: str, payload: dict | None = None) -> Tuple[Any, int, str]:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
@@ -201,7 +198,7 @@ class GitMCPClient:
 
     def connect_sse(self) -> bool:
         """Connects to the SSE stream to discover the messaging endpoint."""
-        logger.info(f"Connecting to GitMCP SSE endpoint: {self.sse_url}")
+        logger.info("Connecting to GitMCP SSE endpoint: %s", self.sse_url)
         self.last_connect_status = None
         self.last_connect_error = ""
         try:
@@ -227,7 +224,7 @@ class GitMCPClient:
                                 self.write_url = f"https://gitmcp.io{endpoint}"
                             else:
                                 self.write_url = endpoint
-                            logger.info(f"Discovered GitMCP write endpoint: {self.write_url}")
+                            logger.info("Discovered GitMCP write endpoint: %s", self.write_url)
                             return True
         except urllib.error.HTTPError as exc:
             self.last_connect_status = exc.code
@@ -255,6 +252,7 @@ class GitMCPClient:
         """Invokes an MCP tool on the connected server."""
         if not self.write_url:
             if not self.connect_sse() or not self.write_url:
+                logger.error("Failed to obtain GitMCP write URL for %s/%s", self.owner, self.repo)
                 return None
 
         # self.write_url is guaranteed to be a non-None string here
@@ -280,11 +278,11 @@ class GitMCPClient:
             with urllib.request.urlopen(req, timeout=15) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
                 if "error" in res_data:
-                    logger.error(f"MCP tool call returned error: {res_data['error']}")
+                    logger.error("MCP tool call returned error: %s", res_data.get("error"))
                     return None
                 return res_data.get("result")
         except Exception as exc:
-            logger.error(f"Failed to invoke GitMCP tool {tool_name}: {exc}")
+            logger.error("Failed to invoke GitMCP tool %s: %s", tool_name, exc)
         return None
 
 def run_github_mcp(
@@ -302,7 +300,7 @@ def run_github_mcp(
     # 1. Parse repository details
     repo_info = parse_repo_url(repo_url)
     if not repo_info:
-        logger.warning(f"Unsupported git URL for GitHub integration: {repo_url}")
+        logger.warning("Unsupported git URL for GitHub integration: %s", repo_url)
         return {
             "github_issue_created": False,
             "github_pr_created": False,

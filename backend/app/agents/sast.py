@@ -73,24 +73,23 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
     """Scans all text files in clone_path for credential leaks using regex signatures."""
     findings = []
 
+    EXCLUDED_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", ".next", "dist", "build", ".tox", ".eggs"}
     for root, dirs, files in os.walk(clone_path):
-        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "venv", ".venv")]
+        dirs[:] = [d for d in dirs if d.split(os.sep)[-1] not in EXCLUDED_DIRS]
 
         for file in files:
-            # Skip binary files
-            if file.endswith((".png", ".jpg", ".pdf", ".zip", ".tar", ".gz", ".pyc", ".db")):
+            if file.endswith((".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz", ".pyc", ".db", ".svg", ".ico", ".woff", ".woff2", ".eot", ".ttf")):
                 continue
 
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, clone_path)
 
-            # ReDoS protection: Skip files larger than 2MB
             try:
                 if os.path.getsize(file_path) > 2 * 1024 * 1024:
-                    logger.warning(f"Skipping large file {rel_path} (> 2MB) to prevent ReDoS.")
+                    logger.warning("Skipping large file %s (> 2MB) to prevent ReDoS.", rel_path)
                     continue
             except Exception as e:
-                logger.warning(f"Failed to check size for {file_path}: {str(e)}")
+                logger.warning("Failed to check size for %s: %s", file_path, e)
                 continue
 
             # Skip binary files via content check
@@ -98,9 +97,8 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                 continue
 
             try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     for line_num, line in enumerate(f, start=1):
-                        # ReDoS protection: truncate lines longer than 2048 chars
                         line_to_check = line[:2048] if len(line) > 2048 else line
                         for name, regex in SECRET_SIGNATURES.items():
                             match = re.search(regex, line_to_check)
@@ -122,7 +120,7 @@ def scan_for_secrets(clone_path: str) -> List[Finding]:
                                     remediation="Remove hardcoded secrets immediately, revoke leaked key, and store keys securely in environment variables or vault."
                                 ))
             except Exception as e:
-                logger.warning(f"Failed to scan file {file_path} for secrets: {str(e)}")
+                logger.warning("Failed to scan file %s for secrets: %s", file_path, e)
 
     return findings
 
@@ -137,27 +135,27 @@ def scan_for_unsafe_code(clone_path: str, skip_extensions: Optional[List[str]] =
     findings = []
     skip_extensions = skip_extensions or []
 
+    EXCLUDED_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", ".next", "dist", "build", ".tox", ".eggs"}
     for root, dirs, files in os.walk(clone_path):
-        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "venv", ".venv")]
+        dirs[:] = [d for d in dirs if d.split(os.sep)[-1] not in EXCLUDED_DIRS]
 
         for file in files:
             # Skip files with extensions in skip_extensions
             if any(file.endswith(ext) for ext in skip_extensions):
                 continue
 
-            if not file.endswith((".py", ".js", ".ts", ".go", ".java", ".php")):
+            if not file.endswith((".py", ".js", ".ts", ".go", ".java", ".php", ".rb", ".rs")):
                 continue
 
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, clone_path)
 
-            # ReDoS protection: Skip files larger than 2MB
             try:
                 if os.path.getsize(file_path) > 2 * 1024 * 1024:
-                    logger.warning(f"Skipping large file {rel_path} (> 2MB) to prevent ReDoS.")
+                    logger.warning("Skipping large file %s (> 2MB) to prevent ReDoS.", rel_path)
                     continue
             except Exception as e:
-                logger.warning(f"Failed to check size for {file_path}: {str(e)}")
+                logger.warning("Failed to check size for %s: %s", file_path, e)
                 continue
 
             # Skip binary files via content check
@@ -165,9 +163,8 @@ def scan_for_unsafe_code(clone_path: str, skip_extensions: Optional[List[str]] =
                 continue
 
             try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     for line_num, line in enumerate(f, start=1):
-                        # ReDoS protection: truncate lines longer than 2048 chars
                         line_to_check = line[:2048] if len(line) > 2048 else line
                         for spec in UNSAFE_CODE_PATTERNS:
                             if re.search(spec["pattern"], line_to_check):
@@ -186,7 +183,7 @@ def scan_for_unsafe_code(clone_path: str, skip_extensions: Optional[List[str]] =
                                     remediation="Rewrite source code to avoid dynamic query/expression evaluation or command execution."
                                 ))
             except Exception as e:
-                logger.warning(f"Failed to scan file {file_path} for code issues: {str(e)}")
+                logger.warning("Failed to scan file %s for code issues: %s", file_path, e)
 
     return findings
 
@@ -346,7 +343,7 @@ def run_sast(clone_path: str, repo_url: str) -> List[Finding]:
     Runs the full suite of static analysis tools on the cloned directory.
     Combines secrets leakage scans and code injection syntax scans.
     """
-    logger.info(f"Running SAST scanner on {clone_path}")
+    logger.info("Running SAST scanner on %s", clone_path)
 
     # Debug-only mock support for standard unit tests.
     if "example/standard-repo" in repo_url:

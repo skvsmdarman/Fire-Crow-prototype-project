@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
 
+    # --- Neo4j Graph Database ---
+    NEO4J_URI: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
+    NEO4J_USER: str = Field(default="neo4j", validation_alias="NEO4J_USER")
+    NEO4J_PASSWORD: str = Field(default="", validation_alias="NEO4J_PASSWORD")
+    NEO4J_DATABASE: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")
+
     # --- Communication ---
     RESEND_API_KEY: str = Field(default="", validation_alias="RESEND_API_KEY")
     BREVO_API_KEY: str = Field(default="", validation_alias="BREVO_API_KEY")

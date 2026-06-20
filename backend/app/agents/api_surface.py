@@ -61,7 +61,7 @@ def detect_api_endpoints(clone_path: str) -> List[Dict[str, Any]]:
                 continue
 
             try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
                     for line_num, line in enumerate(f, 1):
                         # Python Routes
                         if ext == '.py':

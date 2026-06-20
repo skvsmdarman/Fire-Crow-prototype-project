@@ -8,15 +8,15 @@ def generate_remediation_plan(findings: List[Finding]) -> Dict[str, Any]:
     tasks = []
 
     for f in findings:
-        if not f.remediation and f.severity.value in ["critical", "high"]:
-            # Provide generic remediation if none exists for high severity
-            f.remediation = "Review the affected code and apply standard security best practices to mitigate this vulnerability."
+        remediation = f.remediation
+        if not remediation and f.severity.value in ["critical", "high"]:
+            remediation = "Review the affected code and apply standard security best practices to mitigate this vulnerability."
 
-        if f.remediation:
+        if remediation:
             task = {
                 "finding_id": f.id,
                 "title": f"Fix: {f.title}",
-                "description": f.remediation,
+                "description": remediation,
                 "severity": f.severity.value,
                 "file_path": f.file_path,
                 "priority": 1 if f.severity.value == "critical" else 2 if f.severity.value == "high" else 3

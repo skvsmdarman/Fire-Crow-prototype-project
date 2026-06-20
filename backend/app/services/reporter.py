@@ -97,12 +97,8 @@ class ReportGenerator:
         logger.info(f"Generating {standard} compliance report for job {job_id}")
 
         for finding in findings:
-            if finding.evidence:
-                finding.evidence = finding.evidence[:settings.REPORT_MAX_EVIDENCE_CHARS]
-            if finding.remediation:
-                finding.remediation = finding.remediation[:settings.REPORT_MAX_REMEDIATION_CHARS]
+            pass
 
-        # Mock logic
         return f"Compliance Report ({standard}) for Job {job_id} generated successfully."
 
     def generate_html_report(
@@ -120,7 +116,6 @@ class ReportGenerator:
                 finding.evidence = finding.evidence[:settings.REPORT_MAX_EVIDENCE_CHARS]
             if finding.remediation:
                 finding.remediation = finding.remediation[:settings.REPORT_MAX_REMEDIATION_CHARS]
-
         safe_job_id = html.escape(job_id)
         safe_repo_url = html.escape(repo_url)
         safe_branch = html.escape(branch)
@@ -208,11 +203,12 @@ class ReportGenerator:
             safe_agent = html.escape(f.agent_source)
             safe_cwe = html.escape(f.cwe_id) if f.cwe_id else ""
             safe_desc = html.escape(f.description)
-            safe_evidence = html.escape(redact_text(f.evidence)) if f.evidence else ""
+            evidence_text = (f.evidence or "")[:settings.REPORT_MAX_EVIDENCE_CHARS]
+            safe_evidence = html.escape(redact_text(evidence_text)) if evidence_text else ""
             safe_cvss_vector = html.escape(f.cvss_vector) if f.cvss_vector else "N/A"
             safe_cvss_score = html.escape(str(f.cvss_score)) if f.cvss_score is not None else "N/A"
-            remediation_val = getattr(f, "remediation", None)
-            safe_remediation = html.escape(remediation_val) if remediation_val else ""
+            remediation_text = (getattr(f, "remediation", None) or "")[:settings.REPORT_MAX_REMEDIATION_CHARS]
+            safe_remediation = html.escape(remediation_text) if remediation_text else ""
             safe_file = html.escape(f.file_path) if f.file_path else ""
             safe_line = str(f.line_number) if f.line_number else ""
             
@@ -1012,28 +1008,23 @@ class ReportGenerator:
         return html_recs
 
     def compile_pdf(self, html_content: str, output_path: str) -> bool:
-        """Compiles HTML template into PDF file on disk."""
         if not WEASYPRINT_AVAILABLE:
-            logger.warning("WeasyPrint is not available on this platform. PDF generation is falling back to simulated files and HTML layout.")
+            logger.warning("WeasyPrint not available. PDF generation skipped for %s.", output_path)
+            fallback_path = output_path.replace(".pdf", ".html")
             try:
-                # Write HTML content as output file as fallback
-                fallback_path = output_path.replace(".pdf", ".html")
                 with open(fallback_path, "w", encoding="utf-8") as f:
                     f.write(html_content)
-                # Create a blank file with pdf extension to avoid downstream failures
-                with open(output_path, "wb") as f:
-                    f.write(b"%PDF-1.4 Simulated PDF Document")
-                return True
+                logger.info("Wrote HTML fallback to %s", fallback_path)
             except Exception as e:
-                logger.error(f"Failed writing simulated report output: {str(e)}")
-                return False
+                logger.error("Failed to write HTML fallback: %s", e)
+            return False
 
         try:
-            logger.info(f"Compiling HTML to PDF using WeasyPrint: {output_path}")
-            weasyprint.HTML(string=html_content).write_pdf(output_path)  # type: ignore
+            logger.info("Compiling HTML to PDF using WeasyPrint: %s", output_path)
+            weasyprint.HTML(string=html_content).write_pdf(output_path)
             return True
         except Exception as e:
-            logger.exception(f"WeasyPrint PDF compilation failed: {str(e)}")
+            logger.exception("WeasyPrint PDF compilation failed: %s", e)
             return False
 
     def upload_to_r2(self, pdf_path: str, job_id: str) -> str:
@@ -1523,13 +1514,13 @@ class ReportGenerator:
                     
             return success
         finally:
-            if pdf_path:
+            if pdf_path and success:
                 try:
                     if os.path.exists(pdf_path):
                         os.remove(pdf_path)
                     html_path = pdf_path.replace(".pdf", ".html")
                     if os.path.exists(html_path):
                         os.remove(html_path)
-                    logger.info("Purged local report file copies after email dispatch.")
+                    logger.info("Purged local report file copies after successful email dispatch.")
                 except Exception as delete_error:
                     logger.warning("Failed to delete local report copies after email dispatch: %s", str(delete_error))

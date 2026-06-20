@@ -138,10 +138,12 @@ def create_report_in_db(
     
     # 4. Update AuditJob to link this report
     job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
-    if job:
-        job.report_id = report.id
-        db.add(job)
-        
+    if not job:
+        db.rollback()
+        raise RuntimeError(f"AuditJob {job_id} not found. Cannot create report.")
+
+    job.report_id = report.id
+    db.add(job)
     db.commit()
     logger.info("Successfully created structured report %s for job %s", report.id, job_id)
     return report

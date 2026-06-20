@@ -138,7 +138,7 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/services/auth.py`.
 
 ## Known Security Gaps And TODOs
 
-- `TelemetryMiddleware` exists in `backend/app/middleware/telemetry.py` but is not registered in `backend/app/main.py`.
+- [x] `TelemetryMiddleware` registered in `backend/app/main.py` (fixed).
 - The frontend legal and marketing claims have been aligned with the backend guarantees, including a responsive Terms of Service page.
 
 - The current scoring phase uses simple severity mapping, not scanner-native CVSS.

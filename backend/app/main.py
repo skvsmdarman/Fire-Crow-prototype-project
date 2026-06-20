@@ -16,6 +16,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.services.limiter import limiter
+from app.middleware.telemetry import TelemetryMiddleware
 
 from app.config import settings, WORKSPACE_DIR
 from app.models.database import Base, engine, ensure_database_compatibility, get_db
@@ -104,6 +105,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 app.add_middleware(SlowAPIMiddleware)  # type: ignore
+app.add_middleware(TelemetryMiddleware)
 
 
 @app.exception_handler(Exception)
