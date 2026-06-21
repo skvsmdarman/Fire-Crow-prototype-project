@@ -166,7 +166,7 @@ export default function LandingPage() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Capabilities</p>
-              <h2 className={styles.sectionTitle}>Full-spectrum< br />security analysis</h2>
+              <h2 className={styles.sectionTitle}>Full-spectrum<br />security analysis</h2>
             </div>
             <p className={styles.sectionIntro}>
               From static analysis to dynamic sandbox evaluation — our agent network
@@ -194,7 +194,7 @@ export default function LandingPage() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Pipeline</p>
-              <h2 className={styles.sectionTitle}>Agentic pipeline< br />in motion</h2>
+              <h2 className={styles.sectionTitle}>Agentic pipeline<br />in motion</h2>
             </div>
             <p className={styles.sectionIntro}>
               14 specialized agents orchestrate end-to-end, from reconnaissance
@@ -273,7 +273,7 @@ export default function LandingPage() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Agent Network</p>
-              <h2 className={styles.sectionTitle}>14 specialized< br />security agents</h2>
+              <h2 className={styles.sectionTitle}>14 specialized<br />security agents</h2>
             </div>
             <p className={styles.sectionIntro}>
               Each agent handles a specific phase of the audit lifecycle,

@@ -73,7 +73,7 @@ export default function AgentsPage() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Agent Network</p>
-              <h2 className={styles.sectionTitle}>Specialized Security< br />Agents</h2>
+              <h2 className={styles.sectionTitle}>Specialized Security<br />Agents</h2>
             </div>
             <p className={styles.sectionIntro}>
               Our agent network consists of 14 specialized agents, each responsible

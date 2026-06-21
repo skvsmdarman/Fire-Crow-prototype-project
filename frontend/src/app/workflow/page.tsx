@@ -159,7 +159,7 @@ export default function WorkflowPage() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>How It Works</p>
-              <h2 className={styles.sectionTitle}>The Fire Crow< br />Security Audit Pipeline</h2>
+              <h2 className={styles.sectionTitle}>The Fire Crow<br />Security Audit Pipeline</h2>
             </div>
             <p className={styles.sectionIntro}>
               Our agentic pipeline transforms raw code into actionable security intelligence
