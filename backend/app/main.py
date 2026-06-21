@@ -46,10 +46,21 @@ def _cors_origins() -> list[str]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.DEBUG:
-        Base.metadata.create_all(bind=engine)
-        ensure_database_compatibility()
+        logger.info("Running in DEBUG mode. Checking for pending migrations before auto-DDL.")
+        try:
+            from app.models.database import check_pending_migrations
+            if check_pending_migrations():
+                logger.warning(
+                    "Pending database migrations detected. "
+                    "Please run 'alembic upgrade head' to apply proper migrations. "
+                    "Falling back to auto-DDL for development convenience."
+                )
+            Base.metadata.create_all(bind=engine)
+            ensure_database_compatibility()
+        except Exception as e:
+            logger.error("Error during database initialization in DEBUG mode: %s", str(e))
     else:
-        logger.warning("Running in non-debug/production mode; checking for pending migrations.")
+        logger.info("Running in production mode; enforcing Alembic migration checks.")
         try:
             from app.models.database import check_pending_migrations
             if check_pending_migrations():
@@ -58,6 +69,7 @@ async def lifespan(app: FastAPI):
                     "Startup blocked. Run 'alembic upgrade head' first."
                 )
                 raise RuntimeError("Pending database migrations on production startup.")
+            logger.info("Database migration check passed. Database is up-to-date.")
         except Exception as e:
             if isinstance(e, RuntimeError):
                 raise e

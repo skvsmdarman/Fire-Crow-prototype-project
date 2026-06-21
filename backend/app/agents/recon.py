@@ -205,7 +205,8 @@ def check_github_repo_security(repo_url: str, github_token: Optional[str] = None
         })
     
     # 3. Check branch protection rules
-    branch_protection = make_request(f"{api_base}/branches/{branch}/protection")
+    default_branch = result["repo_metadata"].get("default_branch", "main")
+    branch_protection = make_request(f"{api_base}/branches/{default_branch}/protection")
     if branch_protection:
         result["repo_metadata"]["branch_protection_enabled"] = True
         # Check for required reviews

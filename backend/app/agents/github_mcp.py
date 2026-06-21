@@ -339,9 +339,9 @@ def run_github_mcp(
     issue_labels = _build_issue_labels(findings)
 
     # 4. Ensure labels exist in the repository
-    if token:
+    if resolved_token:
         logs.append(f"Ensuring security labels exist in {owner}/{repo}...")
-        _ensure_labels_exist(owner, repo, token, issue_labels)
+        _ensure_labels_exist(owner, repo, resolved_token, issue_labels)
 
     # 5. Attempt GitMCP connection
     token = resolved_token

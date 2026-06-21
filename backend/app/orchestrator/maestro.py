@@ -282,6 +282,13 @@ def execute_phase(
         "threat_model": "threat_model",
     }
 
+    # Phases that perform external I/O and should release DB connections
+    EXTERNAL_IO_PHASES = {
+        "sandbox", "network", "attack", "exploit", "recon",
+        "dependency_scan", "iac_scan", "sast", "semgrep_scan",
+        "cicd_scan", "container_scan", "config_scan"
+    }
+
     NON_CRITICAL_PHASES = {
         "api_surface",
         "secret_history",
@@ -333,7 +340,7 @@ def execute_phase(
 
     import time
     last_exception = None
-    
+
     try:
         for attempt in range(max_retries + 1):
             try:
@@ -345,7 +352,18 @@ def execute_phase(
                     time.sleep(retry_delay_sec * attempt)
 
                 log_agent_message(db, state.job_id, agent_name, start_message)
+
+                # Release DB connection during external I/O phases to prevent pool exhaustion
+                if phase_name in EXTERNAL_IO_PHASES:
+                    db.commit()
+                    db.close()
+
                 updates = body(db, state)
+
+                # Re-establish DB connection after external I/O
+                if phase_name in EXTERNAL_IO_PHASES:
+                    db = SessionLocal()
+
                 updates = {"current_phase": phase_name, **updates}
                 apply_runtime_updates(updates)
 
@@ -387,7 +405,7 @@ def execute_phase(
                         ]
                     else:
                         updates["phase_history"] = [build_phase_history_entry(phase_name, started_at, "completed")]
-                
+
                 apply_runtime_updates({"phase_history": updates["phase_history"]})
                 log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase completed.")
 
@@ -402,7 +420,7 @@ def execute_phase(
                     ended_at=ended_at,
                 )
                 return updates
-                
+
             except JobCancellationRequested as exc:
                 last_exception = exc
                 ended_at = utc_now()
@@ -424,21 +442,25 @@ def execute_phase(
                     ended_at=ended_at,
                 )
                 raise
-                
+
             except Exception as exc:
                 last_exception = exc
                 ended_at = utc_now()
                 duration_sec = round((ended_at - started_at).total_seconds(), 3)
                 error_msg = str(exc)
-                
+
+                # Re-establish DB connection if we closed it for external I/O
+                if phase_name in EXTERNAL_IO_PHASES:
+                    db = SessionLocal()
+
                 if attempt < max_retries and phase_name in NON_CRITICAL_PHASES:
-                    log_agent_message(db, state.job_id, agent_name, 
-                        f"{phase_name.capitalize()} phase failed (attempt {attempt + 1}/{max_retries + 1}): {error_msg}. Retrying...", 
+                    log_agent_message(db, state.job_id, agent_name,
+                        f"{phase_name.capitalize()} phase failed (attempt {attempt + 1}/{max_retries + 1}): {error_msg}. Retrying...",
                         "WARNING")
                     continue
-                
+
                 log_agent_message(db, state.job_id, agent_name, f"{phase_name.capitalize()} phase failed: {error_msg}", "ERROR")
-                
+
                 if phase_name in NON_CRITICAL_PHASES:
                     updates = {
                         "current_phase": phase_name,
@@ -447,7 +469,7 @@ def execute_phase(
                         "status": JobStatus.PARTIAL,
                     }
                     apply_runtime_updates(updates)
-                    
+
                     _write_ledger_entry(
                         db=db,
                         job_id=state.job_id,

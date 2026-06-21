@@ -206,3 +206,18 @@ async def trigger_database_housekeeping(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database housekeeping failed: {str(e)}",
         )
+
+
+@router.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics endpoint for monitoring and alerting."""
+    try:
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        metrics_data = generate_latest()
+        return Response(content=metrics_data, media_type=CONTENT_TYPE_LATEST)
+    except ImportError:
+        # Fallback if prometheus_client is not available
+        return Response(
+            content="# prometheus_client not installed\n",
+            media_type="text/plain"
+        )

@@ -118,7 +118,19 @@ if engine is None:
     logger.info("Initialized database engine using URL: %s", db_url)
 
 
+# Legacy auto-DDL is DEPRECATED. Use Alembic migrations instead.
+# This function is kept for backward compatibility during development only.
 def _ensure_audit_job_compatibility() -> None:
+    """
+    DEPRECATED: Auto-DDL is deprecated. Use Alembic migrations for schema changes.
+    This function remains for backward compatibility in DEBUG mode only.
+    """
+    if not settings.DEBUG:
+        logger.warning(
+            "Auto-DDL is deprecated and disabled in production. "
+            "Use 'alembic upgrade head' to apply schema migrations."
+        )
+        return
     if engine is None:
         return
     inspector = inspect(engine)
@@ -130,16 +142,30 @@ def _ensure_audit_job_compatibility() -> None:
     columns = {column["name"] for column in inspector.get_columns("audit_jobs")}
     with engine.begin() as conn:
         if "cancel_requested" not in columns:
+            logger.warning("DEPRECATED: Missing 'cancel_requested' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested BOOLEAN NOT NULL DEFAULT false")
         if "cancel_requested_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'cancel_requested_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN cancel_requested_at TIMESTAMP")
         if "report_id" not in columns:
+            logger.warning("DEPRECATED: Missing 'report_id' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN report_id VARCHAR(36)")
         if "security_score" not in columns:
+            logger.warning("DEPRECATED: Missing 'security_score' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE audit_jobs ADD COLUMN security_score FLOAT")
 
 
 def _ensure_user_compatibility() -> None:
+    """
+    DEPRECATED: Auto-DDL is deprecated. Use Alembic migrations for schema changes.
+    This function remains for backward compatibility in DEBUG mode only.
+    """
+    if not settings.DEBUG:
+        logger.warning(
+            "Auto-DDL is deprecated and disabled in production. "
+            "Use 'alembic upgrade head' to apply schema migrations."
+        )
+        return
     if engine is None:
         return
     inspector = inspect(engine)
@@ -151,32 +177,46 @@ def _ensure_user_compatibility() -> None:
     columns = {column["name"] for column in inspector.get_columns("users")}
     with engine.begin() as conn:
         if "github_id" not in columns:
+            logger.warning("DEPRECATED: Missing 'github_id' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_id VARCHAR(255)")
         if "github_access_token" not in columns:
+            logger.warning("DEPRECATED: Missing 'github_access_token' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_access_token TEXT")
         if "github_token_scopes" not in columns:
+            logger.warning("DEPRECATED: Missing 'github_token_scopes' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_token_scopes TEXT")
         if "github_token_updated_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'github_token_updated_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_token_updated_at TIMESTAMP")
         if "google_id" not in columns:
+            logger.warning("DEPRECATED: Missing 'google_id' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN google_id VARCHAR(255)")
         if "privacy_policy_version" not in columns:
+            logger.warning("DEPRECATED: Missing 'privacy_policy_version' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(64)")
         if "privacy_policy_accepted_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'privacy_policy_accepted_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_accepted_at TIMESTAMP")
         if "terms_version" not in columns:
+            logger.warning("DEPRECATED: Missing 'terms_version' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN terms_version VARCHAR(64)")
         if "terms_accepted_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'terms_accepted_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN terms_accepted_at TIMESTAMP")
         if "first_login_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'first_login_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN first_login_at TIMESTAMP")
         if "last_login_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'last_login_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP")
         if "last_logout_at" not in columns:
+            logger.warning("DEPRECATED: Missing 'last_logout_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_logout_at TIMESTAMP")
         if "activity_log" not in columns:
+            logger.warning("DEPRECATED: Missing 'activity_log' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN activity_log TEXT")
         if "credit_balance" not in columns:
+            logger.warning("DEPRECATED: Missing 'credit_balance' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN credit_balance FLOAT NOT NULL DEFAULT 10.0")
         try:
             if engine.dialect.name == "postgresql":
@@ -391,6 +431,22 @@ def _ensure_indexes() -> None:
 
 
 def ensure_database_compatibility() -> None:
+    """
+    DEPRECATED: This function provides backward compatibility for legacy auto-DDL.
+    In production, all schema changes must be managed via Alembic migrations.
+    This function is disabled in production and only runs in DEBUG mode.
+    """
+    if not settings.DEBUG:
+        logger.warning(
+            "ensure_database_compatibility() is deprecated in production. "
+            "Use Alembic migrations for all schema changes."
+        )
+        return
+
+    logger.warning(
+        "ensure_database_compatibility() is deprecated. "
+        "Use Alembic migrations for all schema changes: 'alembic revision --autogenerate -m <message>'"
+    )
     _ensure_audit_job_compatibility()
     _ensure_user_compatibility()
     _ensure_finding_compatibility()

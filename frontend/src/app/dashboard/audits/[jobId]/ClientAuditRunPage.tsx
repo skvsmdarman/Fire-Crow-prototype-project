@@ -1,17 +1,16 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAudits } from "../../../../features/audits/hooks";
 import { useSSE, LogLine } from "../../../../shared/hooks/useSSE";
 import { useAuthSession } from "../../../../shared/hooks/useAuthSession";
-import { ENDPOINTS } from "../../../../shared/api/endpoints";
 import Card from "../../../../components/ui/Card";
 import Button from "../../../../components/ui/Button";
 import Badge from "../../../../components/ui/Badge";
 import styles from "../../page.module.css";
 import { formatDateTime, shortRepoName } from "../../../../shared/utils/format";
-import { Download, AlertTriangle, PlayCircle, GitBranch, ArrowLeft } from "lucide-react";
+import { Download, ArrowLeft } from "lucide-react";
 import LogStream from "../../../../features/audits/components/LogStream";
 import AuditVerificationCard from "../../../../features/audits/components/AuditVerificationCard";
 import { useToast } from "../../../../components/ui/Toast";
@@ -25,8 +24,6 @@ export default function AuditRunPage() {
   const {
     selectedJobDetail,
     loadJobDetail,
-    loadingDetail,
-    detailError,
     cancelAudit,
   } = useAudits(session.hasDashboardSession);
 
@@ -58,13 +55,13 @@ export default function AuditRunPage() {
       const prevStatus = prevStatusRef.current;
       if (prevStatus && prevStatus !== job.status) {
         if (["completed", "partial"].includes(job.status)) {
-          const mailPart = job.email_delivered 
-            ? "Premium report sent to your mailbox." 
+          const mailPart = job.email_delivered
+            ? "Premium report sent to your mailbox."
             : "Email report skipped or failed.";
-          const issuePart = job.github_issues_raised 
-            ? "Vulnerability tracking issues raised on GitHub." 
+          const issuePart = job.github_issues_raised
+            ? "Vulnerability tracking issues raised on GitHub."
             : "GitHub tracking issues skipped or not raised.";
-          
+
           if (job.status === "completed") {
             toast(`Audit Job Completed! ${mailPart} ${issuePart}`, "success");
           } else {

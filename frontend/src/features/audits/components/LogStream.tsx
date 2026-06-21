@@ -59,7 +59,7 @@ export default function LogStream({ logs, streamActive, hasSelection }: LogStrea
     if (logs.length === 0) return;
     const text = logs
       .map(
-        (log, i) =>
+        (log) =>
           `[${formatLogDateTime(log.timestamp)}] [${log.agent_name}] [${log.log_level}] ${log.message}`
       )
       .join("\n");
@@ -72,7 +72,7 @@ export default function LogStream({ logs, streamActive, hasSelection }: LogStrea
     if (logs.length === 0) return;
     const text = logs
       .map(
-        (log, i) =>
+        (log) =>
           `[${formatLogDateTime(log.timestamp)}] [${log.agent_name}] [${log.log_level}] ${log.message}`
       )
       .join("\n");

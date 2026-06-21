@@ -22,3 +22,4 @@ slowapi
 cryptography>=42.0.0
 email-validator>=2.1.0
 pywebpush>=1.14.0
+prometheus-client>=0.19.0

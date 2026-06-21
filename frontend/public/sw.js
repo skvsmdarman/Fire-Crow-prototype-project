@@ -127,7 +127,7 @@ self.addEventListener('push', function(event) {
       event.waitUntil(
         self.registration.showNotification(payload.title || 'Fire Crow Alert', options)
       );
-    } catch (e) {
+    } catch {
       event.waitUntil(
         self.registration.showNotification('Fire Crow Alert', {
           body: event.data.text()
