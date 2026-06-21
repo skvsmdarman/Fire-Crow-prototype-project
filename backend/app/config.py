@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # --- Database & Cache ---
     DATABASE_URL: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/firecrow",
+        default="",
         validation_alias="DATABASE_URL"
     )
     DATABASE_POOL_SIZE: int = Field(default=20)
@@ -210,6 +210,8 @@ class Settings(BaseSettings):
                 raise ValueError("SECRET_KEY is required in production and cannot use a known development value.")
             if len(self.SECRET_KEY) < 32:
                 raise ValueError("SECRET_KEY must be at least 32 characters in production.")
+            if not self.DATABASE_URL:
+                raise ValueError("DATABASE_URL is required in production.")
             if self.DATABASE_URL.startswith("sqlite"):
                 raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
             if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):

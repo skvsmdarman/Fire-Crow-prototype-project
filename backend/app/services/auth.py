@@ -77,10 +77,7 @@ def _get_redis_client():
         client.ping()
         _redis_client = client
     except Exception:
-        if settings.DEBUG:
-            logger.info("Redis token denylist unavailable in DEBUG mode.")
-        else:
-            logger.critical("Redis token denylist unavailable in production; token validation will fail closed.")
+        logger.critical("Redis token denylist unavailable; token validation will fail closed.")
         _redis_client = None
 
     return _redis_client
@@ -264,11 +261,6 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
     # Fail closed when no revocation store is available
     # This prevents token reuse if the revocation system is down
     logger.warning("No revocation store available (DB/Redis). Denying token jti=%s for security.", jti)
-    from app.config import settings
-    if settings.DEBUG:
-        # In debug mode, allow fail-open for development convenience
-        logger.warning("DEBUG mode: allowing token without revocation check.")
-        return False
     return True
 
 
