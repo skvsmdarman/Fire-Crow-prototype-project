@@ -1,182 +1,160 @@
-# ===========================
-# Fire Crow .gitignore
-# ===========================
+```
+# Dependencies
+node_modules/
 
-# ===========================
-# Production & Logs
-# ===========================
-*.log
-logs/
-*.pid
-*.out
-*.err
-
-# ===========================
-# Artifacts & Debug Output
-# ===========================
-artifacts/
-
-# ===========================
-# Databases
-# ===========================
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-
-# ===========================
-# Environment & Secrets
-# ===========================
-.env
-*.env.local
-*.env.production
-!.env.example
-
-# ===========================
 # Python
-# ===========================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-*.egg-info/
-*.egg
-.eggs/
+env/
+venv/
+.venv/
+.ENV
+.python-version
 pip-log.txt
 pip-delete-this-directory.txt
-
-# ===========================
-# Virtual Environments
-# ===========================
-.venv/
-venv/
-env/
-ENV/
-.python-version
-
-# ===========================
-# Frontend / Node.js
-# ===========================
-.next/
-out/
-.turbo/
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-.vercel/
-.npm/
-tsconfig.tsbuildinfo
-
-# ===========================
-# Testing & Coverage
-# ===========================
-__mocks__/
-mock_data/
-test_data/
-*.mock.ts
-*.mock.js
-*.mock.py
-.pytest_cache/
+.tox/
 .coverage
 .coverage.*
-htmlcov/
-coverage/
+.cache
+nosetests.xml
 coverage.xml
 *.cover
-
-# ===========================
-# Type Checking & Linting
-# ===========================
-.mypy_cache/
-.pyright/
-.ruff_cache/
-eslintcache/
-
-# ===========================
-# IDE / Editor
-# ===========================
-.idea/
-.vscode/
-*.sublime-project
-*.sublime-workspace
-*~
-.project
-.settings/
-.classpath
-*.code-workspace
-
-# ===========================
-# OS Files
-# ===========================
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+.MF
+tags
+TAGS
+.idle/
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-Thumbs.db
 ehthumbs.db
-Desktop.ini
-
-# ===========================
-# Temporary & Backup Files
-# ===========================
-*.bak
+Thumbs.db
+*.sublime-workspace
 *.swp
+*.swo
+*~
+.project
+.pydevproject
+.metadata
+.venv.bak/
+.venv/
+venv/
+env/
+ENV/
+venv.bak/
+pip-selfcheck.json
+.Python
+.python-version
+ipython_config.py
+notebook_info
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-debug.log*
+yarn-error.log*
+.node-version
+.npm
+.npmrc
+package-lock.json
+yarn.lock
+.pnp.*
+.pnp.js
+editors/
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Build outputs
+dist/
+build/
+*.min.js
+*.min.css
+coverage/
+.nyc_output/
+coverage-final.json
+lib-cov/
+*.gcda
+*.gcno
+*.gcov
+.info
+.opencover
+.xml
+.lst
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.dylib
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+
+# Environment variables
+.env
+.env.local
+.env.*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
 *.tmp
 *.temp
-*.orig
-
-# ===========================
-# Workspace Directories
-# ===========================
-workspace/
-backend/workspace/
-
-# ===========================
-# Planning & Config (Local Only)
-# ===========================
-PLAN.md
-.opencode/
-.claude/
-
-# ===========================
-# Build Artifacts
-# ===========================
-*.manifest
-*.spec
-
-# ===========================
-# Docker
-# ===========================
-docker-compose.override.yml
-
-# ===========================
-# Celery
-# ===========================
-celerybeat-schedule
-celerybeat.pid
-
-# ===========================
-# Redis
-# ===========================
-dump.rdb
-
-# ===========================
-# WeasyPrint / PDF
-# ===========================
-*.pdf.tmp
-
-# ===========================
-# Patch Scripts (one-off)
-# ===========================
-patch_*.py
-
-# ===========================
-# Root Legacy Files
-# ===========================
-/index.html
-/package.json
-/package-lock.json
+*.bak
+*.backup
+*~
+```
