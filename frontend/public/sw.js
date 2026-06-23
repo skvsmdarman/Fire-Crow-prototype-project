@@ -1,4 +1,4 @@
-const CACHE_NAME = 'firecrow-v1';
+const CACHE_NAME = 'firecrow-v2';
 const OFFLINE_URL = '/offline';
 
 // Static assets to cache for offline use (app shell only - no sensitive data)
@@ -67,6 +67,28 @@ self.addEventListener('fetch', function(event) {
     return;
   }
 
+  // Handle navigation requests (HTML) - Network First
+  if (event.request.mode === 'navigate' || (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))) {
+    event.respondWith(
+      fetch(event.request)
+        .then(function(networkResponse) {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then(function(cache) {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(function() {
+          return caches.match(event.request).then(function(cachedResponse) {
+            return cachedResponse || caches.match(OFFLINE_URL);
+          });
+        })
+    );
+    return;
+  }
+
   // Static assets: Cache first, network fallback
   event.respondWith(
     caches.match(event.request)
@@ -102,10 +124,6 @@ self.addEventListener('fetch', function(event) {
           })
           .catch(function() {
             // Network failed and not in cache
-            // For navigation requests, show offline page
-            if (event.request.mode === 'navigate') {
-              return caches.match(OFFLINE_URL);
-            }
             // For other requests, return a basic error
             return new Response('Offline', { status: 503 });
           });
