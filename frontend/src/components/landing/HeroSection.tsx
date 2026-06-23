@@ -5,13 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import styles from "./HeroSection.module.css";
 
 interface HeroSectionProps {
-  isLoggedIn: boolean;
   onEnter: () => void;
 }
 
 const DEFAULT_REPO = "github.com/acme/backend-api";
 
-export default function HeroSection({ isLoggedIn, onEnter }: HeroSectionProps) {
+export default function HeroSection({ onEnter }: HeroSectionProps) {
   const [repoInput, setRepoInput] = useState(DEFAULT_REPO);
   const [isScanning, setIsScanning] = useState(false);
   const [scanStep, setScanStep] = useState(0);

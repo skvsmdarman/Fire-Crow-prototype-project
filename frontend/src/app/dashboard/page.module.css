@@ -1,3 +1,21 @@
+.page {
+  min-height: 100vh;
+  padding: 32px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 114, 0, 0.06), transparent 24%),
+    linear-gradient(180deg, #090a11, #05060b 58%);
+  color: var(--text);
+}
+
+.container {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.timelineWrapper {
+  width: 100%;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -252,6 +270,16 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color var(--duration-normal) var(--ease-smooth),
+              background var(--duration-normal) var(--ease-smooth);
+}
+
+.metricCard:hover {
+  border-color: var(--borderHover);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .metricHeader {
@@ -304,6 +332,10 @@
   gap: 14px;
 }
 
+.sectionBody {
+  padding: 24px 32px;
+}
+
 .workGrid {
   grid-template-columns: minmax(340px, 0.85fr) minmax(420px, 1.15fr);
   margin-bottom: 14px;
@@ -317,6 +349,8 @@
 .panel {
   padding: 18px;
   border-radius: 20px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .panelHeader {
@@ -410,6 +444,49 @@
 
 .submitButton {
   width: 100%;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--fire), var(--orange) 58%, var(--amber));
+  color: #160800;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-smooth),
+              transform var(--duration-fast) var(--ease-smooth);
+}
+
+.submitButton:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.urlInput {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(4, 5, 11, 0.84);
+  color: var(--text);
+  outline: none;
+  font-size: 14px;
+  font-family: var(--font-mono), monospace;
+  transition: border-color var(--duration-fast) var(--ease-smooth),
+              box-shadow var(--duration-fast) var(--ease-smooth);
+}
+
+.urlInput:focus {
+  border-color: rgba(255, 156, 74, 0.48);
+  box-shadow: 0 0 0 4px rgba(255, 156, 74, 0.1);
 }
 
 .jobList {
@@ -582,7 +659,7 @@
 .findingList {
   display: grid;
   gap: 10px;
-  max-height: 380px;
+  max-height: 600px;
   overflow-y: auto;
   padding-right: 4px;
 }

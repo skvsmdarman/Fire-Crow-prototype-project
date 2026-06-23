@@ -84,19 +84,7 @@ function SeverityPill({ severity }: { severity: string }) {
   );
 }
 
-function Logo({ centered }: { centered?: boolean }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: centered ? "center" : "flex-start" }}>
-      <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg, ${theme.orange}, #ffb347)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#160800", fontFamily: "'IBM Plex Mono', monospace" }}>FC</span>
-      </div>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em" }}>{PRODUCT_NAME}</div>
-        <div className="mono" style={{ fontSize: 9, color: theme.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{PRODUCT_TAGLINE}</div>
-      </div>
-    </div>
-  );
-}
+
 
 function SectionIcon({ name, active }: { name: string; active: boolean }) {
   const color = active ? theme.orange : theme.muted;
@@ -617,7 +605,7 @@ function AuditsSection({ jobs, selected, insight, onSelect, newUrl, setNewUrl, n
             </div>
 
             <div style={{ borderTop: `1px solid ${theme.border}`, padding: "14px 18px" }}>
-              <LogStream logs={logs as unknown as LogLine[]} streamActive={streamActive} hasSelection={!!selected} />
+              <LogStream logs={logs} streamActive={streamActive} hasSelection={!!selected} />
             </div>
           </div>
         )}

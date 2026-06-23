@@ -3,7 +3,7 @@
 import React, { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAudits } from "../../../../features/audits/hooks";
-import { useSSE, LogLine } from "../../../../shared/hooks/useSSE";
+import { useSSE } from "../../../../shared/hooks/useSSE";
 import { useAuthSession } from "../../../../shared/hooks/useAuthSession";
 import Card from "../../../../components/ui/Card";
 import Button from "../../../../components/ui/Button";
@@ -80,8 +80,8 @@ export default function AuditRunPage() {
   // Simple progress calculation based on logs
   let progress = 0;
   if (logs.length > 0) {
-    const lastLog = logs[logs.length - 1] as unknown as { progress: number; stage: string; };
-    progress = lastLog.progress || 50;
+    // Estimate progress from log count as a rough heuristic
+    progress = Math.min(90, Math.round((logs.length / 50) * 100));
   }
   if (job?.status === "completed" || job?.status === "failed" || job?.status === "cancelled") {
     progress = 100;
@@ -184,7 +184,7 @@ export default function AuditRunPage() {
         </div>
 
         <div style={{ marginTop: "2rem" }}>
-          <LogStream logs={logs as unknown as LogLine[]} streamActive={streamActive && isRunning} hasSelection={true} />
+          <LogStream logs={logs} streamActive={streamActive && isRunning} hasSelection={true} />
         </div>
       </div>
     </main>

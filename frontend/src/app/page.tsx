@@ -37,7 +37,7 @@ export default function LandingPage() {
       
       <div className={styles.container}>
         <Navbar isLoggedIn={isLoggedIn} onEnter={handleEnter} />
-        <HeroSection isLoggedIn={isLoggedIn} onEnter={handleEnter} />
+        <HeroSection onEnter={handleEnter} />
         <CapabilitiesSection />
         <PipelineDemoSection />
         <AgentNetworkSection />

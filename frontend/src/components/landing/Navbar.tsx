@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import BrandLogo from "../BrandLogo";
 import styles from "./Navbar.module.css";
 
