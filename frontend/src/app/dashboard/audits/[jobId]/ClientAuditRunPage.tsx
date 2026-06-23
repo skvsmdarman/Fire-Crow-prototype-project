@@ -21,6 +21,14 @@ export default function AuditRunPage() {
   const jobId = Array.isArray(params.jobId) ? params.jobId[0] : params.jobId;
   const session = useAuthSession();
 
+  useEffect(() => {
+    if (!session.hasDashboardSession) {
+      router.push("/signin");
+    }
+  }, [session.hasDashboardSession, router]);
+
+
+
   const {
     selectedJobDetail,
     loadJobDetail,

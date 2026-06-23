@@ -108,6 +108,15 @@ const SECTIONS = ["Overview", "Audits", "Findings", "Reports", "Leaderboard", "S
 export default function Dashboard() {
   const router = useRouter();
   const authSession = useAuthSession();
+
+  useEffect(() => {
+    if (!authSession.hasDashboardSession) {
+      router.push("/signin");
+    }
+  }, [authSession.hasDashboardSession, router]);
+
+
+
   const isAuthenticated = authSession.hasDashboardSession;
   const validateSession = authSession.validateSession;
 
