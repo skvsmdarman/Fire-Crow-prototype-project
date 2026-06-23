@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import logging
@@ -171,6 +171,9 @@ class StorageService:
         if user.is_admin:
             return True
             
+        if user.tenant_id and user.tenant_id == organization_id:
+            return True
+            
         membership = db.query(Membership).filter(
             Membership.user_id == user_id,
             Membership.organization_id == organization_id
@@ -187,7 +190,16 @@ class StorageService:
 
         # Verify access
         if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Not authorized to access this artifact")
+            has_job_access = False
+            if artifact.job_id:
+                try:
+                    from app.api.audit_queries import get_owned_job_or_404
+                    get_owned_job_or_404(db, artifact.job_id, user_id)
+                    has_job_access = True
+                except Exception:
+                    pass
+            if not has_job_access:
+                raise HTTPException(status_code=403, detail="Not authorized to access this artifact")
 
         # Get file data based on storage provider
         if artifact.storage_provider == "cloudflare_r2" and self.s3_client is not None:
@@ -226,7 +238,16 @@ class StorageService:
             return False
 
         if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
+            has_job_access = False
+            if artifact.job_id:
+                try:
+                    from app.api.audit_queries import get_owned_job_or_404
+                    get_owned_job_or_404(db, artifact.job_id, user_id)
+                    has_job_access = True
+                except Exception:
+                    pass
+            if not has_job_access:
+                raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
 
         artifact.deletion_status = "pending_deletion"
         artifact.deleted_at = datetime.now(timezone.utc)

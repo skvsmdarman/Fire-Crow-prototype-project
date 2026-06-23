@@ -2,11 +2,18 @@
 *.log
 artifacts/
 
-# Python cache
+# Python cache & virtualenvs
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Environment files
 .env

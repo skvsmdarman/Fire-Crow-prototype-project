@@ -63,12 +63,9 @@ async def stream_audit_logs(
                 loop_db = SessionLocal()
                 try:
                     # Refresh job status
-                    current_job = (
-                        loop_db.query(AuditJob)
-                        .filter(AuditJob.id == job_id, AuditJob.user_id == user_id)
-                        .first()
-                    )
-                    if not current_job:
+                    try:
+                        current_job = get_owned_job_or_404(loop_db, job_id, user_id)
+                    except HTTPException:
                         yield f"event: error\ndata: {json.dumps({'error': 'Job is unavailable or access is no longer authorized'})}\n\n"
                         break
 

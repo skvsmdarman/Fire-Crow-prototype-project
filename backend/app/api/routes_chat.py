@@ -32,7 +32,7 @@ async def ask_chat(
     for f in findings:
         findings_context.append({
             "title": f.title,
-            "severity": f.severity,
+            "severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity),
             "description": f.description,
             "file_path": f.file_path,
             "line_number": f.line_number,
