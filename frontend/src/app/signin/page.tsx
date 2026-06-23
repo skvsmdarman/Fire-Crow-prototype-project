@@ -7,7 +7,7 @@ import { useAuthSession } from "../../shared/hooks/useAuthSession";
 import { usePolicyContext } from "../../features/auth/hooks";
 import { exchangeCode, loginUser, registerUser } from "../../features/auth/api";
 import { detectRegionFromTimezone } from "../../lib/policyData";
-import { buildApiUrl, isAbsoluteUrl } from "../../shared/api/baseUrl";
+import { buildApiUrl } from "../../shared/api/baseUrl";
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../../shared/config/app";
 import styles from "./page.module.css";
 
@@ -76,19 +76,14 @@ export default function SignInPage() {
   }, [login, router]);
 
   const oauthHref = (provider: "github" | "google") => {
-    const authUrl = buildApiUrl(`/auth/${provider}`);
-    const url = isAbsoluteUrl(authUrl)
-      ? new URL(authUrl)
-      : new URL(authUrl, typeof window !== "undefined" ? window.location.origin : "https://firecrow.invalid");
-    url.searchParams.set("privacy_policy_accepted", "true");
-    url.searchParams.set("privacy_policy_version", activePrivacyVersion);
+    let authUrl = buildApiUrl(`/auth/${provider}?privacy_policy_accepted=true&privacy_policy_version=${activePrivacyVersion}`);
     if (typeof window !== "undefined") {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      url.searchParams.set("timezone", tz);
-      url.searchParams.set("region", detectRegionFromTimezone(tz));
+      authUrl += `&timezone=${encodeURIComponent(tz)}&region=${encodeURIComponent(detectRegionFromTimezone(tz))}`;
     }
-    return isAbsoluteUrl(authUrl) ? url.toString() : `${url.pathname}${url.search}`;
+    return authUrl;
   };
+
 
   const oauthProviderCount = Number(providerAvailability.github) + Number(providerAvailability.google);
   const passwordAvailable = providerAvailability.password || oauthProviderCount === 0;

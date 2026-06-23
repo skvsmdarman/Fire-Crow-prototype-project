@@ -17,7 +17,7 @@ export const ENDPOINTS = {
     report: (jobId: string) => "/audit/job/" + jobId + "/report",
     stream: (jobId: string) => "/audit/" + jobId + "/stream",
     graph: (jobId: string) => "/audit/job/" + jobId + "/graph",
-    cancel: (jobId: string) => "/audit/job/" + jobId + "/cancel",
+    cancel: (jobId: string) => "/audit/job/" + jobId,
   },
   chat: {
     ask: "/chat/ask",
