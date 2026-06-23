@@ -1,0 +1,391 @@
+.section {
+  padding: 80px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  scroll-margin-top: 80px;
+}
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 48px;
+  align-items: flex-end;
+}
+
+.eyebrow {
+  color: var(--orange);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.sectionTitle {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(32px, 4.5vw, 48px);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.sectionIntro {
+  color: var(--textSecondary);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 32px;
+}
+
+.stepsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.stepsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.playButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--textSecondary);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  cursor: pointer;
+}
+
+.playButton:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border-color: var(--borderHover);
+}
+
+.playIcon {
+  width: 10px;
+  height: 10px;
+}
+
+.stepsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stepCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(10, 12, 21, 0.4);
+  text-align: left;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  cursor: pointer;
+}
+
+.stepCardActive {
+  border-color: var(--orange);
+  background: rgba(255, 114, 0, 0.05);
+  box-shadow: 0 0 15px rgba(255, 114, 0, 0.08);
+}
+
+.stepCardCompleted {
+  border-color: rgba(0, 230, 118, 0.2);
+}
+
+.stepIndicator {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--textSecondary);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.stepCardActive .stepIndicator {
+  background: var(--orangeDim);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.stepCardCompleted .stepIndicator {
+  background: rgba(0, 230, 118, 0.05);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.checkMark {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.stepNum {
+  font-size: 11px;
+}
+
+.stepInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stepName {
+  font-family: var(--font-display), sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stepDesc {
+  font-size: 13px;
+  color: var(--textSecondary);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* Board Styling */
+.boardColumn {
+  display: flex;
+  flex-direction: column;
+}
+
+.board {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(10, 12, 21, 0.8);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.boardHeader {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.01);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.boardSub {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.boardTitle {
+  font-family: var(--font-display), sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.badgeGroup {
+  display: flex;
+  gap: 8px;
+}
+
+.boardBadge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--orangeDim);
+  border: 1px solid var(--orangeBorder);
+  color: var(--orange);
+}
+
+.boardBody {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 240px;
+}
+
+.findingsHeader {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.findingsList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.emptyState {
+  color: var(--textSecondary);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  padding: 40px 20px;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.findingCard {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.findingCard:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.findingIndex {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.findingContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.findingTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.findingDesc {
+  font-size: 12px;
+  color: var(--textSecondary);
+  margin: 0;
+}
+
+.severityBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.severityBadge.critical {
+  background: rgba(255, 48, 71, 0.1);
+  border-color: rgba(255, 48, 71, 0.25);
+  color: var(--red);
+}
+
+.severityBadge.high {
+  background: rgba(255, 114, 0, 0.1);
+  border-color: rgba(255, 114, 0, 0.25);
+  color: var(--orange);
+}
+
+.severityBadge.medium {
+  background: rgba(255, 184, 0, 0.1);
+  border-color: rgba(255, 184, 0, 0.25);
+  color: var(--amber);
+}
+
+.severityBadge.low {
+  background: rgba(92, 200, 255, 0.1);
+  border-color: rgba(92, 200, 255, 0.25);
+  color: var(--blue);
+}
+
+.boardFooter {
+  padding: 20px;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.footerLabel {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.footerText {
+  font-size: 13px;
+  color: var(--textSecondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 1024px) {
+  .container {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  
+  .sectionHeader {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  .section {
+    padding: 40px 0;
+  }
+  
+  .findingCard {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    text-align: center;
+    justify-items: center;
+  }
+}

@@ -1,0 +1,86 @@
+.section {
+  position: relative;
+  padding: 80px 40px;
+  margin: 80px 0;
+  scroll-margin-top: 80px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  background: radial-gradient(100% 100% at 50% 0%, rgba(255, 114, 0, 0.05) 0%, rgba(10, 12, 21, 0.4) 100%), rgba(7, 8, 13, 0.8);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.eyebrow {
+  color: var(--orange);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.title {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.copy {
+  color: var(--textSecondary);
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.ctaButton {
+  padding: 14px 32px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  background: linear-gradient(135deg, var(--fire), var(--orange) 60%, var(--amber));
+  color: #180a02;
+  box-shadow: 0 10px 25px rgba(255, 114, 0, 0.25);
+  transition: all var(--duration-fast) var(--ease-smooth);
+  cursor: pointer;
+}
+
+.ctaButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px rgba(255, 114, 0, 0.35);
+}
+
+.glow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(255, 114, 0, 0.15) 0%, transparent 70%);
+  z-index: 1;
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+@media (max-width: 600px) {
+  .section {
+    padding: 40px 20px;
+    margin: 40px 0;
+  }
+}
