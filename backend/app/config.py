@@ -196,13 +196,14 @@ class Settings(BaseSettings):
             "changeme",
             "secret",
             "development",
+            "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
         }
 
         if self.DEBUG and not self.SECRET_KEY:
             object.__setattr__(
                 self,
                 "SECRET_KEY",
-                "dev_only_firecrow_local_secret_key_32_bytes_minimum",
+                "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
             )
 
         if not self.DEBUG:

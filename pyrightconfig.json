@@ -1,9 +1,9 @@
 {
-  "venvPath": "/app",
+  "venvPath": ".",
   "venv": ".venv",
   "extraPaths": [
-    "/app",
-    "/app/backend"
+    ".",
+    "./backend"
   ],
   "typeCheckingMode": "basic"
 }

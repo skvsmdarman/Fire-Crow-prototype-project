@@ -1,1 +1,49 @@
-Nothing should be ignored based on the provided file changes, as they only include source code files (.py) and no build artifacts, dependencies, or temporary files.
+# Log files
+*.log
+artifacts/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment files
+.env
+.env.local
+.env.*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Workspace
+workspace/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp scripts
+patch_*.py
+index.html
+
+# Build artifacts
+/build
+/dist
+*.egg-info/
+
+# Root-level package files (managed via frontend/)
+package.json
+package-lock.json
+node_modules/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~

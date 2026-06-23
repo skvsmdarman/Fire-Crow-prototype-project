@@ -55,7 +55,7 @@ def test_settings_rejects_default_secret_in_production():
     with pytest.raises(ValidationError):
         Settings(
             DEBUG=False,
-            SECRET_KEY="dev_secret_key_change_in_production_1234567890",
+            SECRET_KEY="dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
             DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
         )
 
