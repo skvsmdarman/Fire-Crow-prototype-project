@@ -38,15 +38,11 @@ export async function request<T>(path: string, options: FetchOptions = {}): Prom
 
   const requestId = response.headers.get("X-Request-ID") || undefined;
 
-  if (response.status === 401 || response.status === 403) {
-    if (typeof window !== "undefined") {
-      clearStoredAuthSession();
-      // Only redirect if we are not already on the sign-in page to prevent redirect loops
-      if (!window.location.pathname.startsWith("/signin")) {
-        const searchParamsString = window.location.search;
-        window.location.replace(`/signin${searchParamsString}`);
-      }
-    }
+  // Let 401 pass through here so the page can handle invalid credentials
+  if ((response.status === 401 || response.status === 403) && typeof window !== "undefined" && !window.location.pathname.startsWith("/signin")) {
+    clearStoredAuthSession();
+    const searchParamsString = window.location.search;
+    window.location.replace(`/signin${searchParamsString}`);
     throw new APIError("Session expired. Please sign in again.", response.status, undefined, requestId);
   }
 
