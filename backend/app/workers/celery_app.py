@@ -98,3 +98,31 @@ celery_app.conf.beat_schedule = {
         'schedule': 30.0,
     },
 }
+
+
+from celery.signals import worker_ready
+@worker_ready.connect
+def on_worker_ready(**kwargs):
+    """Mark jobs that were running when worker died as failed/interrupted."""
+    logger.info("Worker ready. Checking for orphaned jobs.")
+    try:
+        from app.models import AuditJob, AgentLog, get_db, SessionLocal
+        from app.schemas import JobStatus
+        from datetime import datetime, timezone
+
+        db = SessionLocal()
+        orphaned = db.query(AuditJob).filter(AuditJob.status == JobStatus.RUNNING).all()
+        for job in orphaned:
+            job.status = JobStatus.FAILED
+            job.error_message = "Audit job was interrupted by a server restart or deployment. Please try again."
+            job.finished_at = datetime.now(timezone.utc)
+            db.add(AgentLog(
+                job_id=job.id,
+                agent_name="SYSTEM",
+                log_level="ERROR",
+                message="Job marked as FAILED due to unexpected worker restart."
+            ))
+        db.commit()
+        db.close()
+    except Exception as e:
+        logger.error(f"Failed to check for orphaned jobs on startup: {e}")

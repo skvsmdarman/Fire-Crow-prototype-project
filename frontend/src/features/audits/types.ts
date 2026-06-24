@@ -43,8 +43,7 @@ export interface SubmitAuditBody {
   attestation_accepted: boolean;
   authorization_scope: string;
   repo_branch?: string;
-  scanners?: string[];
-  sandbox_mode?: "docker" | "simulation";
+
 }
 
 export interface SystemAgent {

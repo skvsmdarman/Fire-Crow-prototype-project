@@ -50,8 +50,10 @@ export function useSSE({ authenticated, onJobStatusChange, maxLogs = 500 }: UseS
         });
 
         if (response.status === 401 || response.status === 403) {
-          // Auth client middleware will redirect automatically, but we stop the stream here
           stopLogStream();
+          if (typeof window !== "undefined") {
+            window.location.href = `/signin?returnTo=${encodeURIComponent(window.location.pathname)}`;
+          }
           return;
         }
 
