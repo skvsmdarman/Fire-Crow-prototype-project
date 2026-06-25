@@ -47,10 +47,10 @@ export default function HeroSection({ onEnter }: HeroSectionProps) {
   ] as const;
 
   useEffect(() => {
-    if (logsEndRef.current) {
+    if (isScanning && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [logs]);
+  }, [logs, isScanning]);
 
   const startDemoScan = (e: React.FormEvent) => {
     e.preventDefault();
