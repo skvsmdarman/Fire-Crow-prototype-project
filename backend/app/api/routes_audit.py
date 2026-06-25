@@ -36,6 +36,7 @@ from app.orchestrator.runtime import execute_audit_job
 from app.services.auth import get_current_user
 from app.services.redaction import redact_text
 from app.services.safe_llm import is_llm_enabled, safe_llm_call
+from app.services.security_log import record_user_activity
 from app.workers.celery_app import run_audit_job_task, celery_app
 
 logger = logging.getLogger("firecrow.api.audit")
@@ -277,6 +278,18 @@ async def submit_audit(
     )
     db.add(attestation)
     db.commit()
+    
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="audit.submit",
+        request=request,
+        details={
+            "job_id": job.id,
+            "repo_url": payload.repo_url,
+            "repo_branch": payload.repo_branch,
+        }
+    )
 
     _dispatch_audit_job(
         background_tasks,
@@ -336,6 +349,7 @@ async def get_job_detail(
 @router.delete("/job/{job_id}", status_code=status.HTTP_200_OK)
 async def cancel_job(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
@@ -366,12 +380,24 @@ async def cancel_job(
     db.add(cancel_log)
     db.commit()
 
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="audit.cancel",
+        request=request,
+        details={
+            "job_id": job_id,
+            "repo_url": job.repo_url,
+        }
+    )
+
     return {"message": "Job cancellation request recorded successfully", "job_id": job_id}
 
 
 @router.get("/job/{job_id}/report")
 async def download_report(
     job_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
@@ -380,6 +406,18 @@ async def download_report(
     try:
         import os
         job = get_owned_job_or_404(db, job_id, user_id)
+
+        record_user_activity(
+            db,
+            user_id=user_id,
+            action="report.download",
+            request=request,
+            details={
+                "job_id": job_id,
+                "repo_url": job.repo_url,
+                "report_pdf_url": job.report_pdf_url,
+            }
+        )
 
         # 1. Try structured database report first (on-the-fly compiling)
         from app.models.audit_job import AuditReport
@@ -499,6 +537,7 @@ _SEVERITY_RANK = {
 async def email_report(
     job_id: str,
     payload: EmailReportRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
@@ -631,6 +670,17 @@ async def email_report(
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to send report email.")
+
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="report.email",
+        request=request,
+        details={
+            "job_id": job_id,
+            "recipient": recipient,
+        }
+    )
 
     return {"message": "Email report triggered successfully.", "recipient": recipient}
 

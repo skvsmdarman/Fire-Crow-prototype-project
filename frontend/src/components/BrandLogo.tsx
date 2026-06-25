@@ -9,9 +9,19 @@ interface BrandLogoProps {
 }
 
 export default function BrandLogo({ className = '', isLink = true }: BrandLogoProps) {
+  const brandMarkImage = (
+    <div className={styles.logoWrapper}>
+      <img
+        src="/fire_crow_logo.png"
+        className={styles.logoImage}
+        alt="Fire Crow Logo"
+      />
+    </div>
+  );
+
   const content = (
     <>
-      <span className={styles.brandMark}>FC</span>
+      {brandMarkImage}
       <span className={styles.brandText}>
         <strong>{PRODUCT_NAME}</strong>
         <small>{PRODUCT_TAGLINE}</small>

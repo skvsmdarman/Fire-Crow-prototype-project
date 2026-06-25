@@ -84,3 +84,77 @@
     margin: 40px 0;
   }
 }
+
+.ctaActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 440px;
+  margin-top: 12px;
+}
+
+.oauthButtons {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+}
+
+.oauthButton {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  /* GitHub style */
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.oauthButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.oauthButton.google {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.oauthButton.google:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.passwordButton {
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--textSecondary);
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.passwordButton:hover {
+  color: var(--text);
+}
+
+@media (max-width: 500px) {
+  .oauthButtons {
+    flex-direction: column;
+    gap: 10px;
+  }
+}

@@ -215,6 +215,12 @@ def _ensure_user_compatibility() -> None:
         if "activity_log" not in columns:
             logger.warning("DEPRECATED: Missing 'activity_log' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN activity_log TEXT")
+        if "region" not in columns:
+            logger.warning("DEPRECATED: Missing 'region' column. Use Alembic migration instead.")
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN region VARCHAR(100)")
+        if "timezone" not in columns:
+            logger.warning("DEPRECATED: Missing 'timezone' column. Use Alembic migration instead.")
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN timezone VARCHAR(100)")
         if "credit_balance" not in columns:
             logger.warning("DEPRECATED: Missing 'credit_balance' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN credit_balance FLOAT NOT NULL DEFAULT 10.0")

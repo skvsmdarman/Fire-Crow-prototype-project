@@ -50,6 +50,12 @@ try:
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     logger.warning("Prometheus client not available. Metrics collection disabled.")
+    HTTP_REQUESTS_TOTAL = None
+    HTTP_REQUEST_DURATION = None
+    ACTIVE_JOBS = None
+    AUDIT_JOBS_TOTAL = None
+    DB_CONNECTION_POOL_SIZE = None
+    REDIS_CONNECTED = None
 
 
 class TelemetryMiddleware(BaseHTTPMiddleware):

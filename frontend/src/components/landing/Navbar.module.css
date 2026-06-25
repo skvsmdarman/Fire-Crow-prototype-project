@@ -40,6 +40,10 @@
   color: var(--text);
 }
 
+.ctaWrapper {
+  position: relative;
+}
+
 .navCta {
   min-height: 36px;
   padding: 8px 20px;
@@ -60,6 +64,106 @@
   transform: translateY(-1px);
 }
 
+/* Glassmorphic Sign In Dropdown */
+.dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  background: rgba(14, 16, 28, 0.95);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  padding: 16px;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dropdownHeader {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--textSecondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dropdownBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.providerButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  
+  /* GitHub Default styling */
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.providerButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.providerButton.google {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.providerButton.google:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.passwordLink {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-align: center;
+  margin-top: 4px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.passwordLink:hover {
+  color: var(--textSecondary);
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (max-width: 768px) {
   .nav {
     flex-wrap: wrap;
@@ -74,5 +178,10 @@
     justify-content: center;
     flex-wrap: wrap;
     gap: 12px 20px;
+  }
+  
+  .dropdown {
+    right: 50%;
+    transform: translateX(50%);
   }
 }
