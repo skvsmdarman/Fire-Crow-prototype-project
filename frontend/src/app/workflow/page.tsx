@@ -22,23 +22,23 @@ export default function WorkflowPage() {
   }, []);
 
   const termLines = [
-    { txt: "→ Initializing Fire Crow agent orchestrator", tone: TONE.muted },
-    { txt: "✓ LangGraph maestro initialized", tone: TONE.green },
-    { txt: "→ Loading 14 specialized security agents", tone: TONE.muted },
-    { txt: "✓ Recon agent: Subdomain & tech fingerprinting", tone: TONE.green },
-    { txt: "✓ Threat Model agent: Attack surface mapping", tone: TONE.green },
-    { txt: "✓ SAST agent: Bandit + ESLint pattern scanning", tone: TONE.green },
-    { txt: "✓ Semgrep agent: Custom rule-based deep inspection", tone: TONE.green },
-    { txt: "✓ Dependency agent: OSV-scanner CVE correlation", tone: TONE.green },
-    { txt: "✓ IaC Scanner agent: Terraform/K8s/Dockerfile audit", tone: TONE.green },
-    { txt: "✓ Config Scan agent: hadolint/kube-linter/tfsec", tone: TONE.green },
-    { txt: "✓ Dynamic Attack agent: Sandboxed exploit validation", tone: TONE.green },
-    { txt: "✓ Authz/IDOR agent: Privilege escalation testing", tone: TONE.green },
-    { txt: "✓ Container Scan agent: Image vulnerability scanning", tone: TONE.green },
-    { txt: "✓ SBOM Graph agent: Software bill-of-materials", tone: TONE.green },
-    { txt: "✓ AI Analyzer agent: LLM evidence correlation", tone: TONE.green },
-    { txt: "✓ Cross-Validation agent: False positive detection", tone: TONE.green },
-    { txt: "✓ Remediation agent: Fix recommendation engine", tone: TONE.green },
+    { txt: "→ Initializing Fire Crow pipeline orchestrator", tone: TONE.muted },
+    { txt: "✓ Orchestrator engine initialized", tone: TONE.green },
+    { txt: "→ Loading security pipeline modules", tone: TONE.muted },
+    { txt: "✓ Recon module: Subdomain & tech fingerprinting", tone: TONE.green },
+    { txt: "✓ Threat Model module: Attack surface mapping", tone: TONE.green },
+    { txt: "✓ SAST module: AST code pattern scanning", tone: TONE.green },
+    { txt: "✓ Semgrep module: Custom rule-based deep inspection", tone: TONE.green },
+    { txt: "✓ Dependency module: OSV-scanner CVE correlation", tone: TONE.green },
+    { txt: "✓ IaC Scanner module: Terraform/K8s/Dockerfile audit", tone: TONE.green },
+    { txt: "✓ Config Scan module: hadolint/kube-linter/tfsec", tone: TONE.green },
+    { txt: "✓ Dynamic Attack module: Sandboxed exploit validation", tone: TONE.green },
+    { txt: "✓ Authz/IDOR module: Privilege escalation testing", tone: TONE.green },
+    { txt: "✓ Container Scan module: Image vulnerability scanning", tone: TONE.green },
+    { txt: "✓ SBOM Graph module: Software bill-of-materials", tone: TONE.green },
+    { txt: "✓ AI Analyzer module: Evidence correlation engine", tone: TONE.green },
+    { txt: "✓ Cross-Validation module: False positive detection", tone: TONE.green },
+    { txt: "✓ Remediation module: Fix recommendation engine", tone: TONE.green },
     { txt: "→ Orchestrator ready for audit execution", tone: TONE.muted },
   ];
 
@@ -66,7 +66,7 @@ export default function WorkflowPage() {
               Workflow
             </Link>
             <Link href="/agents" className={styles.navLink}>
-              Agents
+              Modules
             </Link>
           </div>
         </nav>
@@ -81,11 +81,11 @@ export default function WorkflowPage() {
           >
             <p className={styles.eyebrow}>Fire Crow · Workflow</p>
             <h1 className={styles.heroTitle}>
-              Agentic Security Audit<br />
+              Automated Security Audit<br />
               <span className={styles.heroAccent}>Pipeline in Action</span>
             </h1>
             <p className={styles.heroBody}>
-              14 specialized agents orchestrated by our LangGraph maestro
+              Specialized analysis modules orchestrated sequentially
               to deliver comprehensive, evidence-backed security assessments.
             </p>
 
@@ -94,12 +94,12 @@ export default function WorkflowPage() {
                 Open Dashboard
               </Link>
               <Link href="/agents" className={styles.secondaryButton}>
-                View Agents
+                View Modules
               </Link>
             </div>
 
             <div className={styles.heroFootnotes}>
-              {["Agent-Orchestrated", "Evidence-Based", "Authorization-First", "Remediation-Ready"].map((t) => (
+              {["Orchestrated", "Evidence-Based", "Authorization-First", "Remediation-Ready"].map((t) => (
                 <span key={t} className={styles.heroFootnote}>{t}</span>
               ))}
             </div>
@@ -144,7 +144,7 @@ export default function WorkflowPage() {
             </div>
 
             <div className={styles.heroMetrics}>
-              {[["14", "Specialized Agents"], ["LangGraph", "Orchestration"], ["Sandbox", "Dynamic Testing"], ["Zero", "False Positives"]].map(([v, l]) => (
+              {[["Modular", "Pipeline"], ["Strict", "Orchestration"], ["Sandbox", "Dynamic Testing"], ["Evidence", "Backed"]].map(([v, l]) => (
                 <div key={l} className={styles.metricCard}>
                   <span className={styles.metricValue}>{v}</span>
                   <span className={styles.metricLabel}>{l}</span>
@@ -162,8 +162,8 @@ export default function WorkflowPage() {
               <h2 className={styles.sectionTitle}>The Fire Crow<br />Security Audit Pipeline</h2>
             </div>
             <p className={styles.sectionIntro}>
-              Our agentic pipeline transforms raw code into actionable security intelligence
-              through coordinated agent execution and evidence validation.
+              Our analysis pipeline transforms raw code into actionable security intelligence
+              through coordinated module execution and evidence validation.
             </p>
           </div>
           <div className={styles.workflowSteps}>
@@ -261,7 +261,7 @@ export default function WorkflowPage() {
             <p className={styles.eyebrow}>Ready to see it in action?</p>
             <h2 className={styles.ctaTitle}>Start your first security audit</h2>
             <p className={styles.ctaCopy}>
-              Connect your repository and watch our agent network perform a comprehensive
+              Connect your repository and watch our pipeline modules perform a comprehensive
               security assessment in real-time.
             </p>
             <div className={styles.heroActions} style={{ marginTop: 20 }}>

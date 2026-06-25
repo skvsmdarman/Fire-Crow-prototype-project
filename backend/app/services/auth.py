@@ -344,7 +344,7 @@ def get_current_token_payload(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = verify_access_token(token, db=db)
+    payload = verify_access_token(token, check_revocation=True, db=db)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

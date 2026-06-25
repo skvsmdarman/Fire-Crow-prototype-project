@@ -1,7 +1,7 @@
 import { apiClient } from "../../shared/api/client";
 import { ENDPOINTS } from "../../shared/api/endpoints";
-import { SystemStatus } from "./types";
+import { RawSystemStatus } from "./types";
 
-export async function getSystemStatus(): Promise<SystemStatus> {
-  return apiClient.get<SystemStatus>(ENDPOINTS.system.status);
+export async function getSystemStatus(): Promise<RawSystemStatus> {
+  return apiClient.get<RawSystemStatus>(ENDPOINTS.system.status);
 }

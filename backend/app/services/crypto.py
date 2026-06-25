@@ -9,7 +9,13 @@ logger = logging.getLogger("firecrow.crypto")
 class CryptoManager:
     def __init__(self):
         # Derive a 32-byte key from settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        key_source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+        if not settings.DEBUG:
+            if not settings.ENCRYPTION_KEY:
+                raise RuntimeError("ENCRYPTION_KEY must be configured in production.")
+            key_source = settings.ENCRYPTION_KEY
+        else:
+            key_source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+
         if not key_source:
             raise RuntimeError(
                 "ENCRYPTION_KEY or SECRET_KEY must be set. "

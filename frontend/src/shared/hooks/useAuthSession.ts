@@ -37,28 +37,30 @@ export function useAuthSession() {
     clearStoredAuthSession();
   }, [session.hasConsoleSession, session.hasDashboardSession]);
 
-  const validateSession = useCallback(async (): Promise<boolean> => {
+  const validateSession = useCallback(async (): Promise<"valid" | "invalid" | "network_error"> => {
     try {
       const response = await fetch(`${API_BASE_URL}${ENDPOINTS.auth.session}`, {
         credentials: "include",
       });
-      if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
         clearStoredAuthSession();
-        return false;
+        return "invalid";
+      }
+      if (!response.ok) {
+        return "network_error";
       }
       const data = (await response.json()) as { user_id?: string; username?: string };
       if (!data.user_id || !data.username) {
         clearStoredAuthSession();
-        return false;
+        return "invalid";
       }
       persistAuthSession({
         user_id: data.user_id,
         username: data.username,
       });
-      return true;
+      return "valid";
     } catch {
-      clearStoredAuthSession();
-      return false;
+      return "network_error";
     }
   }, []);
 

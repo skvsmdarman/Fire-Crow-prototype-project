@@ -91,8 +91,8 @@ export default function HeroSection({ onEnter }: HeroSectionProps) {
 
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] } }
-  } as any;
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } }
+  };
 
   return (
     <div className={styles.hero} id="platform">
@@ -259,10 +259,10 @@ export default function HeroSection({ onEnter }: HeroSectionProps) {
 
         <div className={styles.heroMetrics}>
           {[
-            ["14", "Agents Active"],
+            ["Docker", "Sandbox Verification"],
             ["CVSS 3.1", "Standard"],
             ["PDF/HTML", "Remediation"],
-            ["0-days", "Fuzzing Engine"]
+            ["Git", "Integration"]
           ].map(([val, label]) => (
             <div key={label} className={styles.metricCard}>
               <span className={styles.metricValue}>{val}</span>

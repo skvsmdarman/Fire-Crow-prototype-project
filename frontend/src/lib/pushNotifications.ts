@@ -31,8 +31,12 @@ export async function subscribeUserToPush() {
     }
 
     // Register service worker if not already registered
-    const registration = await navigator.serviceWorker.register('/sw.js');
-    console.log('Service Worker registered successfully:', registration);
+    await navigator.serviceWorker.register('/sw.js');
+    const registration = await navigator.serviceWorker.ready;
+    if (!registration.active) {
+      throw new Error('No active Service Worker available for subscription.');
+    }
+    console.log('Service Worker active and ready:', registration);
 
     // Fetch VAPID public key from backend
     const res = await fetch(buildApiUrl('/push/vapid-public-key'), {
@@ -74,6 +78,20 @@ export async function subscribeUserToPush() {
       console.error('Failed to register subscription on backend.');
     }
   } catch (err) {
-    console.error('Error subscribing to push notifications:', err);
+    if (err instanceof Error) {
+      const isExpectedBrowserError = 
+        err.name === 'AbortError' || 
+        err.name === 'NotAllowedError' || 
+        err.name === 'InvalidStateError' || 
+        err.name === 'SecurityError';
+      
+      if (isExpectedBrowserError) {
+        console.warn(`Push subscription registration skipped/unavailable: ${err.name} - ${err.message}`);
+      } else {
+        console.error('Error subscribing to push notifications:', err);
+      }
+    } else {
+      console.error('Unknown error subscribing to push notifications:', err);
+    }
   }
 }

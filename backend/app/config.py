@@ -197,20 +197,27 @@ class Settings(BaseSettings):
             "secret",
             "development",
             "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
+            "local_dev_secret_key_change_me_1234567890",
+            "local_dev_encryption_key_change_me_1234567890",
         }
 
-        if self.DEBUG and not self.SECRET_KEY:
-            object.__setattr__(
-                self,
-                "SECRET_KEY",
-                "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
-            )
+        if self.DEBUG:
+            if not self.SECRET_KEY:
+                object.__setattr__(
+                    self,
+                    "SECRET_KEY",
+                    "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
+                )
 
         if not self.DEBUG:
             if self.SECRET_KEY.strip() in insecure_dev_values:
                 raise ValueError("SECRET_KEY is required in production and cannot use a known development value.")
             if len(self.SECRET_KEY) < 32:
                 raise ValueError("SECRET_KEY must be at least 32 characters in production.")
+            if not self.ENCRYPTION_KEY or self.ENCRYPTION_KEY.strip() in insecure_dev_values:
+                raise ValueError("ENCRYPTION_KEY is required in production and cannot use a known development value.")
+            if len(self.ENCRYPTION_KEY) < 32:
+                raise ValueError("ENCRYPTION_KEY must be at least 32 characters in production.")
             if not self.DATABASE_URL:
                 raise ValueError("DATABASE_URL is required in production.")
             if self.DATABASE_URL.startswith("sqlite"):

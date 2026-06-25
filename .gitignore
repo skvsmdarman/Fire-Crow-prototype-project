@@ -54,3 +54,6 @@ node_modules/
 *.swp
 *.swo
 *~
+
+# VAPID Keys
+.vapid_keys.json

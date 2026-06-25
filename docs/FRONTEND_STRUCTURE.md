@@ -63,24 +63,25 @@ Current caution:
 
 Source: `frontend/src/app/dashboard/page.tsx`.
 
+The dashboard is structured modularly to separate business state machine logic from presentation layouts:
+
+- **Orchestrator Page (`page.tsx`)**: Coordinates visual transitions, page navigation (Overview, Audits, Findings, Reports, Settings), dynamic chat assistant widgets, and offline/reconnecting banner states.
+- **Subcomponents (`components.tsx`)**: Declares display-only structures such as `OverviewSection`, `AuditLaunchPanel`, `AuditJobList`, `AuditJobDetail`, `FindingsPanel`, `ReportsPanel`, `SettingsPanel`, and `DashboardSidebar`.
+- **State Hooks (`hooks.ts`)**: Encapsulates functional state hooks:
+  - `useDashboardStatus`: System status polling adapter and derived overview indicators.
+  - `useSessionValidation`: Checks token status resiliently, transitioning to an `isReconnecting` offline state during temporary disconnections instead of immediate session clearing.
+  - `useAuditSubmission`: Controls repository url/branch parameters and enforces the mandatory explicit security authorization attestation.
+  - `useReportDownload`: Handles backend blob downloads with unique request tracing ID error logging.
+
 Primary backend calls:
 
 - `GET /audit/jobs`
 - `GET /audit/job/{id}`
 - `DELETE /audit/job/{id}`
-- `POST /audit/submit`
+- `POST /audit/submit` (with attestation verification fields)
 - `GET /system/status`
 - `GET /audit/{id}/stream`
 - `GET /audit/job/{id}/report`
-
-Important dashboard subcomponents:
-
-- `frontend/src/features/audits/components/AuditForm.tsx`
-- `JobList.tsx`
-- `PipelineViz.tsx`
-- `LogStream.tsx`
-- `Sidebar.tsx`
-- `frontend/src/features/findings/components/FindingsList.tsx`
 
 ## Shared Components
 
@@ -112,7 +113,7 @@ Practical implication:
 
 - the root launcher matters for dynamic port assignment because it injects the backend URL into the frontend process
 
-## Auth Session Storage
+## Auth Session Storage & Lifecycle
 
 Source: `frontend/src/lib/authSession.ts`, `frontend/src/shared/hooks/useAuthSession.ts`.
 
@@ -125,8 +126,8 @@ Stored keys:
 
 Behavior:
 
-- auth state is broadcast through a custom browser event
-- logout attempts server-side logout, then clears local storage even if the request fails
+- Auth state is broadcast through a custom browser event.
+- Network validation of sessions has three outcomes: `"valid"`, `"invalid"`, and `"network_error"`. If the server returns a temporary network error, the local session is retained, and the dashboard transitions into a read-only reconnecting banner state rather than forcing an immediate logout.
 
 ## Policy And Legal Pages
 
@@ -142,16 +143,12 @@ Current behavior:
 - pages log policy link clicks and page views through `POST /auth/policy-events`
 - region-specific text is selected using client timezone
 
-Current caution:
-
-- `policyData.ts` includes claims about Neon, R2, GDPR/DPDP/CCPA compliance, SLAs, and subscription terms that are not fully backed by the backend codebase
-
 ## PWA And Offline Behavior
 
 Sources:
 
 - `frontend/src/app/layout.tsx`
-- `frontend/src/components/PWARegister.tsx`
+- `components/PWARegister.tsx`
 - `frontend/public/manifest.webmanifest`
 - `frontend/public/sw.js`
 - `frontend/src/app/offline/page.tsx`
@@ -173,12 +170,11 @@ Current behavior:
 | `src/lib/policy.ts` | `/auth/policy-events` |
 | `src/features/auth/hooks.ts` | `/auth/policy-context` |
 
-## Known Frontend Cleanup Needs
+## Grounded Product Philosophy Cleanup
 
-- Audit submission does not send the backend-required attestation fields.
-- `SubmitAuditBody` still declares `scanners` and `sandbox_mode`, but the current backend submit route does not accept those options.
-- The dashboard expects fields like `sandbox_mode` and `integrations` even though `/system/status` only returns them for admin-like users.
-- Legal and signup copy overstates current backend guarantees.
+- Removed ungrounded marketing claims (such as "14 agents active", "0-days", specific accuracy or timing percentages) from landing, workflow, and modules pages.
+- Standardized copy on a grounded SaaS model: authorization-only scanning and evidence-backed findings.
+- Hardened audit submission to prevent accidental or unverified job execution.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 25, 2026*
