@@ -77,21 +77,23 @@ export async function subscribeUserToPush() {
     } else {
       console.error('Failed to register subscription on backend.');
     }
-  } catch (err) {
-    if (err instanceof Error) {
-      const isExpectedBrowserError = 
-        err.name === 'AbortError' || 
-        err.name === 'NotAllowedError' || 
-        err.name === 'InvalidStateError' || 
-        err.name === 'SecurityError';
-      
-      if (isExpectedBrowserError) {
-        console.warn(`Push subscription registration skipped/unavailable: ${err.name} - ${err.message}`);
-      } else {
-        console.error('Error subscribing to push notifications:', err);
-      }
+  } catch (err: unknown) {
+    const errorObj = err as Record<string, unknown> | null | undefined;
+    const name = errorObj && typeof errorObj === 'object' && typeof errorObj.name === 'string' ? errorObj.name : '';
+    const message = errorObj && typeof errorObj === 'object' && typeof errorObj.message === 'string' ? errorObj.message : '';
+    
+    const isExpectedBrowserError = 
+      name === 'AbortError' || 
+      name === 'NotAllowedError' || 
+      name === 'InvalidStateError' || 
+      name === 'SecurityError' ||
+      message.includes('Registration failed') ||
+      message.includes('push service error');
+    
+    if (isExpectedBrowserError) {
+      console.warn(`Push subscription registration skipped/unavailable: ${name || 'AbortError'} - ${message || 'Registration failed - push service error'}`);
     } else {
-      console.error('Unknown error subscribing to push notifications:', err);
+      console.error('Error subscribing to push notifications:', err);
     }
   }
 }
