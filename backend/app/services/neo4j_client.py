@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Optional
 from neo4j import GraphDatabase, AsyncGraphDatabase, Driver, AsyncDriver, Session, AsyncSession
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("firecrow.services.neo4j_client")
 

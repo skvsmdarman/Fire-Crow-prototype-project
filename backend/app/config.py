@@ -29,23 +29,29 @@ class Settings(BaseSettings):
             "local_dev_encryption_key_change_me_1234567890",
         }
 
-        if not self.SECRET_KEY:
-            raise ValueError("SECRET_KEY is required. Set a strong random value (min 32 chars).")
+        if self.DEBUG:
+            if not self.SECRET_KEY:
+                object.__setattr__(self, "SECRET_KEY", "local_dev_secret_key_change_me_1234567890")
+            if not self.ENCRYPTION_KEY:
+                object.__setattr__(self, "ENCRYPTION_KEY", "local_dev_encryption_key_change_me_1234567890")
+        else:
+            if not self.SECRET_KEY:
+                raise ValueError("SECRET_KEY is required. Set a strong random value (min 32 chars).")
 
-        if self.SECRET_KEY.strip() in insecure_dev_values:
-            raise ValueError("SECRET_KEY cannot use a known development value. Generate a secure random key.")
+            if self.SECRET_KEY.strip() in insecure_dev_values:
+                raise ValueError("SECRET_KEY cannot use a known development value. Generate a secure random key.")
 
-        if len(self.SECRET_KEY) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters.")
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters.")
 
-        if not self.ENCRYPTION_KEY:
-            raise ValueError("ENCRYPTION_KEY is required. Set a strong random value (min 32 chars).")
+            if not self.ENCRYPTION_KEY:
+                raise ValueError("ENCRYPTION_KEY is required. Set a strong random value (min 32 chars).")
 
-        if self.ENCRYPTION_KEY.strip() in insecure_dev_values:
-            raise ValueError("ENCRYPTION_KEY cannot use a known development value. Generate a secure random key.")
+            if self.ENCRYPTION_KEY.strip() in insecure_dev_values:
+                raise ValueError("ENCRYPTION_KEY cannot use a known development value. Generate a secure random key.")
 
-        if len(self.ENCRYPTION_KEY) < 32:
-            raise ValueError("ENCRYPTION_KEY must be at least 32 characters.")
+            if len(self.ENCRYPTION_KEY) < 32:
+                raise ValueError("ENCRYPTION_KEY must be at least 32 characters.")
 
         if not self.DEBUG:
             missing = []

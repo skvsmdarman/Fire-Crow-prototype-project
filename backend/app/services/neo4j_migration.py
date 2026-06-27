@@ -1,10 +1,10 @@
 import logging
 from typing import Any
 from sqlalchemy.orm import Session as SASession
-from backend.app.services.neo4j_client import execute_query, verify_connectivity
-from backend.app.models.audit_job import AuditJob, FindingModel, AgentLog
-from backend.app.models.user import User
-from backend.app.models.security_log import SecurityLog
+from app.services.neo4j_client import execute_query, verify_connectivity
+from app.models.audit_job import AuditJob, FindingModel, AgentLog
+from app.models.user import User
+from app.models.security_log import SecurityLog
 
 logger = logging.getLogger("firecrow.services.neo4j_migration")
 
