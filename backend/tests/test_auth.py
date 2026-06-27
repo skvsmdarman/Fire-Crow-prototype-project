@@ -676,3 +676,22 @@ def test_redis_outage_falls_back_to_db(monkeypatch):
     # Token should still be revoked
     response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
+
+
+def test_auth_me_bearer_no_cookies():
+    # Register user with standard client (sets cookies on standard client)
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("cleanclient"))
+    assert reg_response.status_code == 200
+    token = reg_response.json()["access_token"]
+    user_id = reg_response.json()["user_id"]
+
+    # Use a brand new client with no cookies
+    clean_client = TestClient(app)
+    response = clean_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["user_id"] == user_id
+    assert response.json()["username"] == "cleanclient"
+

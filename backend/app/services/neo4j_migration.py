@@ -60,7 +60,7 @@ def migrate_users(db: SASession) -> int:
             "id": user.id,
             "username": user.username,
             "email": user.email or "",
-            "created_at": str(user.created_at) if user.created_at else None,
+            "created_at": str(user.created_at) if user.created_at is not None else None,
         })
         count += 1
     logger.info("Migrated %d users to Neo4j.", count)
@@ -89,8 +89,8 @@ def migrate_audit_jobs(db: SASession, user_id: str | None = None) -> int:
             "id": job.id,
             "repo_url": job.repo_url or "",
             "status": job.status or "",
-            "created_at": str(job.created_at) if job.created_at else None,
-            "completed_at": str(job.completed_at) if job.completed_at else None,
+            "created_at": str(job.created_at) if job.created_at is not None else None,
+            "completed_at": str(job.finished_at) if job.finished_at is not None else None,
             "user_id": job.user_id,
         })
 
@@ -132,7 +132,7 @@ def migrate_audit_jobs(db: SASession, user_id: str | None = None) -> int:
                 "id": log.id,
                 "agent_name": log.agent_name or "",
                 "message": log.message or "",
-                "created_at": str(log.created_at) if log.created_at else None,
+                "created_at": str(log.timestamp) if log.timestamp is not None else None,
                 "job_id": job.id,
             })
         count += 1
@@ -155,11 +155,11 @@ def migrate_security_logs(db: SASession) -> int:
             "id": log.id,
             "action": log.action,
             "ip_address": log.ip_address or "",
-            "timestamp": str(log.timestamp) if log.timestamp else None,
+            "timestamp": str(log.timestamp) if log.timestamp is not None else None,
             "details": log.details or "",
         })
 
-        if log.user_id:
+        if log.user_id is not None:
             rel_cql = """
             MATCH (s:SecurityLog {id: $log_id})
             MATCH (u:User {id: $user_id})

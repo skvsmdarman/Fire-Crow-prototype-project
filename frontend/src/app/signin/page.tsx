@@ -21,6 +21,8 @@ function getClientPolicyMeta() {
   return { timezone, region: detectRegionFromTimezone(timezone) };
 }
 
+const exchangedCodes = new Set<string>();
+
 export default function SignInPage() {
   const router = useRouter();
   const authSession = useAuthSession();
@@ -33,7 +35,6 @@ export default function SignInPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const handledExchangeCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (authSession.hasDashboardSession && authSession.workspace) {
@@ -44,34 +45,32 @@ export default function SignInPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const code = new URLSearchParams(window.location.search).get("code") ?? "";
-    if (!code || handledExchangeCodeRef.current === code) return;
+    if (!code || exchangedCodes.has(code)) return;
 
-    let active = true;
-    handledExchangeCodeRef.current = code;
-    setLoading(true);
-    setError("");
+    exchangedCodes.add(code);
 
     async function finishOauthSignIn() {
       try {
+        setError("");
+        setLoading(true);
         const session = await exchangeCode(code);
-        if (!active) return;
         login({ user_id: session.user_id, username: session.username });
         router.replace(`/dashboard?workspace=${encodeURIComponent(session.username)}`);
       } catch (authError) {
         const err = authError as { message?: string };
-        if (!active) return;
         setError(err.message || "Unable to finish sign-in.");
         const nextUrl = new URL(window.location.href);
         nextUrl.searchParams.delete("code");
         window.history.replaceState({}, "", nextUrl.toString());
       } finally {
-        if (active) setLoading(false);
+        setLoading(false);
       }
     }
 
     void finishOauthSignIn();
     return () => {
-      active = false;
+      // Note: exchangedCodes cleanup is intentionally not done here
+      // as it's a global deduplication set for the session
     };
   }, [login, router]);
 

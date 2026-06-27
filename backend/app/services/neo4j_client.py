@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 from neo4j import GraphDatabase, AsyncGraphDatabase, Driver, AsyncDriver, Session, AsyncSession
 from backend.app.config import settings
 
@@ -58,7 +58,16 @@ def close():
         _driver.close()
         _driver = None
     if _async_driver:
-        _async_driver.close()
+        import asyncio
+        coro = _async_driver.close()
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(coro)
+            else:
+                loop.run_until_complete(coro)
+        except Exception:
+            pass
         _async_driver = None
 
 
@@ -76,13 +85,13 @@ def verify_connectivity() -> bool:
         return False
 
 
-def execute_query(query: str, parameters: dict | None = None) -> list[dict]:
+def execute_query(query: Any, parameters: dict | None = None) -> list[dict]:
     with get_session() as session:
         result = session.run(query, parameters or {})
         return [record.data() for record in result]
 
 
-async def execute_query_async(query: str, parameters: dict | None = None) -> list[dict]:
+async def execute_query_async(query: Any, parameters: dict | None = None) -> list[dict]:
     session = await get_async_session()
     try:
         result = await session.run(query, parameters or {})

@@ -1,5 +1,12 @@
 import os
 import logging
+
+try:
+    from pythonjsonlogger.json import JsonFormatter
+    _JSON_LOGGING_AVAILABLE = True
+except ImportError:
+    _JSON_LOGGING_AVAILABLE = False
+
 import uuid
 import argparse
 import sys
@@ -17,12 +24,29 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.services.limiter import limiter
 from app.middleware.telemetry import TelemetryMiddleware
+from app.services.csrf import CSRFMiddleware
 
 from app.config import settings, WORKSPACE_DIR
 from app.models.database import Base, engine, ensure_database_compatibility, get_db
-from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router
+from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router, user_router
+
 
 logger = logging.getLogger("firecrow.main")
+# Structured JSON logging (production) – includes request_id when available.
+# Falls back to standard formatter when python-json-logger is not installed.
+if _JSON_LOGGING_AVAILABLE:
+    _log_handler = logging.StreamHandler()
+    _json_formatter = JsonFormatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s %(request_id)s"
+    )
+    _log_handler.setFormatter(_json_formatter)
+    logger.addHandler(_log_handler)
+else:
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+logger.setLevel(logging.INFO if not settings.DEBUG else logging.DEBUG)
+
 
 
 def _cors_origins() -> list[str]:
@@ -118,6 +142,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 app.add_middleware(SlowAPIMiddleware)  # type: ignore
 app.add_middleware(TelemetryMiddleware)
+app.add_middleware(CSRFMiddleware)
 
 
 @app.exception_handler(Exception)
@@ -234,6 +259,8 @@ app.include_router(storage_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(leaderboard_router, prefix="/api/v1")
 app.include_router(push_router, prefix="/api/v1")
+app.include_router(user_router, prefix="/api/v1")
+
 
 # Ensure reports directory exists for authenticated downloads
 reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")

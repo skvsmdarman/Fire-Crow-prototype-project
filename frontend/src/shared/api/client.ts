@@ -18,9 +18,21 @@ export async function request<T>(path: string, options: FetchOptions = {}): Prom
   }
 
   const reqHeaders = new Headers(headers);
-  if (!reqHeaders.has("Content-Type") && !(rest.body instanceof FormData)) {
-    reqHeaders.set("Content-Type", "application/json");
+  // Include CSRF token for state‑changing requests (double‑submit cookie pattern).
+  const method = (rest.method || "GET").toUpperCase();
+  const unsafeMethods = ["POST", "PUT", "PATCH", "DELETE"]; // safe methods already exempted
+  if (unsafeMethods.includes(method) && !reqHeaders.has("X-CSRF-Token")) {
+    // Retrieve the csrf cookie (it is not HttpOnly after our server change).
+    const csrfCookie = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("fc_csrf_token="));
+    if (csrfCookie) {
+      const token = csrfCookie.split("=")[1];
+      reqHeaders.set("X-CSRF-Token", token);
+    }
   }
+
+  reqHeaders.set("Content-Type", "application/json");
 
   // Auth is handled by the HttpOnly session cookie (set by the backend).
   // No Authorization header needed — the cookie is sent via credentials: "include".

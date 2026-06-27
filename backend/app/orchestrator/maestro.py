@@ -502,6 +502,9 @@ def execute_phase(
                         ended_at=ended_at,
                     )
                     raise
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Unreachable: execute_phase loop terminated without raising or returning")
     finally:
         db.close()
 

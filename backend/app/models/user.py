@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import String, DateTime, Text, Float, ForeignKey
+from sqlalchemy import String, DateTime, Text, Float, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
@@ -22,6 +22,7 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     tenant_id: Mapped[Optional[str]] = mapped_column(String(255), index=True, nullable=True)
     role_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("roles.id"), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     github_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     github_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     github_token_scopes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

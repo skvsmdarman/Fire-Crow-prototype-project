@@ -16,8 +16,10 @@ if TEST_DB_PATH.exists():
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"
+os.environ["ENCRYPTION_KEY"] = "test_encryption_key_32_bytes_minimum"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
+os.environ["CSRF_ENABLED"] = "False"
 
 from app.services.limiter import limiter
 limiter.enabled = False

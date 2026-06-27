@@ -1,11 +1,11 @@
 export interface PolicyContext {
   privacy_policy_version: string;
+  terms_version: string;
   providers: {
     github: boolean;
     google: boolean;
     password: boolean;
   };
-  terms_version: string;
 }
 
 export interface AuthSessionPayload {

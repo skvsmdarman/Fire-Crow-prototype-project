@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
 from pydantic import Field, field_validator, model_validator
 
@@ -10,6 +10,86 @@ WORKSPACE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
+    @model_validator(mode="after")
+    def _ensure_critical_secrets(self) -> "Settings":
+        """Validate that all production‑critical secrets are set.
+        This runs after the model is populated from env files. In production
+        (`DEBUG=False`) any empty value for a secret will raise a RuntimeError
+        and abort startup, preventing the service from running with insecure defaults.
+        """
+        insecure_dev_values = {
+            "",
+            "dev_secret_key_change_in_production_1234567890",
+            "change_me",
+            "changeme",
+            "secret",
+            "development",
+            "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
+            "local_dev_secret_key_change_me_1234567890",
+            "local_dev_encryption_key_change_me_1234567890",
+        }
+
+        if not self.SECRET_KEY:
+            raise ValueError("SECRET_KEY is required. Set a strong random value (min 32 chars).")
+
+        if self.SECRET_KEY.strip() in insecure_dev_values:
+            raise ValueError("SECRET_KEY cannot use a known development value. Generate a secure random key.")
+
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters.")
+
+        if not self.ENCRYPTION_KEY:
+            raise ValueError("ENCRYPTION_KEY is required. Set a strong random value (min 32 chars).")
+
+        if self.ENCRYPTION_KEY.strip() in insecure_dev_values:
+            raise ValueError("ENCRYPTION_KEY cannot use a known development value. Generate a secure random key.")
+
+        if len(self.ENCRYPTION_KEY) < 32:
+            raise ValueError("ENCRYPTION_KEY must be at least 32 characters.")
+
+        if not self.DEBUG:
+            missing = []
+            for name in [
+                "SECRET_KEY",
+                "ENCRYPTION_KEY",
+                "DATABASE_URL",
+                "REDIS_URL",
+                "GITHUB_CLIENT_ID",
+                "GITHUB_CLIENT_SECRET",
+                "GOOGLE_CLIENT_ID",
+                "GOOGLE_CLIENT_SECRET",
+            ]:
+                if not getattr(self, name):
+                    missing.append(name)
+            if missing:
+                raise RuntimeError(
+                    f"Missing critical secrets for production: {', '.join(missing)}"
+                )
+            if self.DATABASE_URL.startswith("sqlite"):
+                raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
+            if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):
+                raise ValueError("FIRE_CROW_SCANNER_IMAGE must be pinned in production and cannot use :latest.")
+            if not getattr(self, "REPORT_LOCAL_FALLBACK", True):
+                if not self.R2_ACCESS_KEY_ID or not self.R2_SECRET_ACCESS_KEY or not self.R2_BUCKET_NAME or not self.R2_ENDPOINT_URL:
+                    raise ValueError("Cloud storage configuration is missing, but REPORT_LOCAL_FALLBACK is False.")
+
+        # Inject REDIS_PASSWORD into REDIS_URL if provided
+        if self.REDIS_PASSWORD:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(self.REDIS_URL)
+            if parsed.scheme in ("redis", "rediss") and not parsed.password:
+                netloc = parsed.netloc
+                if "@" in netloc:
+                    user_host = netloc.split("@", 1)
+                    user = user_host[0]
+                    host = user_host[1]
+                    if ":" not in user:
+                        netloc = f"{user}:{self.REDIS_PASSWORD}@{host}"
+                else:
+                    netloc = f":{self.REDIS_PASSWORD}@{netloc}"
+                new_url = urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+                object.__setattr__(self, "REDIS_URL", new_url)
+        return self
     # --- Server Settings ---
     PORT: int = Field(default=8000, validation_alias="PORT")
     HOST: str = Field(default="0.0.0.0", validation_alias="HOST")
@@ -39,7 +119,8 @@ class Settings(BaseSettings):
     AUTH_COOKIE_NAME: str = Field(default="fc_access_token", validation_alias="AUTH_COOKIE_NAME")
     AUTH_COOKIE_SECURE: bool = Field(default=True, validation_alias="AUTH_COOKIE_SECURE")
     AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
-    AUTH_COOKIE_SAMESITE: str = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
+    AUTH_COOKIE_SAMESITE: Literal['lax', 'strict', 'none'] | None = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
+    CSRF_ENABLED: bool = Field(default=True, validation_alias="CSRF_ENABLED")
 
 
     # --- Database & Cache ---
@@ -188,62 +269,12 @@ class Settings(BaseSettings):
         raise ValueError("Unsupported GITHUB_OAUTH_SCOPES value.")
 
     @model_validator(mode="after")
-    def validate_production_keys(self) -> "Settings":
-        insecure_dev_values = {
-            "",
-            "dev_secret_key_change_in_production_1234567890",
-            "change_me",
-            "changeme",
-            "secret",
-            "development",
-            "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
-            "local_dev_secret_key_change_me_1234567890",
-            "local_dev_encryption_key_change_me_1234567890",
-        }
-
-        if self.DEBUG:
-            if not self.SECRET_KEY:
-                object.__setattr__(
-                    self,
-                    "SECRET_KEY",
-                    "dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
-                )
-
-        if not self.DEBUG:
-            if self.SECRET_KEY.strip() in insecure_dev_values:
-                raise ValueError("SECRET_KEY is required in production and cannot use a known development value.")
-            if len(self.SECRET_KEY) < 32:
-                raise ValueError("SECRET_KEY must be at least 32 characters in production.")
-            if not self.ENCRYPTION_KEY or self.ENCRYPTION_KEY.strip() in insecure_dev_values:
-                raise ValueError("ENCRYPTION_KEY is required in production and cannot use a known development value.")
-            if len(self.ENCRYPTION_KEY) < 32:
-                raise ValueError("ENCRYPTION_KEY must be at least 32 characters in production.")
-            if not self.DATABASE_URL:
-                raise ValueError("DATABASE_URL is required in production.")
-            if self.DATABASE_URL.startswith("sqlite"):
-                raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
-            if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):
-                raise ValueError("FIRE_CROW_SCANNER_IMAGE must be pinned in production and cannot use :latest.")
-            if not getattr(self, "REPORT_LOCAL_FALLBACK", True):
-                if not self.R2_ACCESS_KEY_ID or not self.R2_SECRET_ACCESS_KEY or not self.R2_BUCKET_NAME or not self.R2_ENDPOINT_URL:
-                    raise ValueError("Cloud storage configuration is missing, but REPORT_LOCAL_FALLBACK is False.")
-
-        # Inject REDIS_PASSWORD into REDIS_URL if provided
-        if self.REDIS_PASSWORD:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(self.REDIS_URL)
-            if parsed.scheme in ("redis", "rediss") and not parsed.password:
-                netloc = parsed.netloc
-                if "@" in netloc:
-                    user_host = netloc.split("@", 1)
-                    user = user_host[0]
-                    host = user_host[1]
-                    if ":" not in user:
-                        netloc = f"{user}:{self.REDIS_PASSWORD}@{host}"
-                else:
-                    netloc = f":{self.REDIS_PASSWORD}@{netloc}"
-                new_url = urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
-                object.__setattr__(self, "REDIS_URL", new_url)
+    def _ensure_frontend_url(self) -> "Settings":
+        """Require ``FRONTEND_URL`` in production mode.
+        The API must know which origin is allowed for CORS and CSRF redirects.
+        """
+        if not self.DEBUG and not self.FRONTEND_URL:
+            raise RuntimeError("FRONTEND_URL must be set in production.")
         return self
 
 

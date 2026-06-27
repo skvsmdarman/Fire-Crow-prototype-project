@@ -28,6 +28,7 @@ from app.services.auth import (
     hash_password,
     password_needs_rehash,
     revoke_access_token,
+    revoke_token_family,
     verify_and_consume_exchange_code,
     verify_oauth_state,
     verify_password,
@@ -452,7 +453,7 @@ async def create_policy_event(
 
 
 @router.post("/register", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 async def register(
     request: Request,
     response: Response,
@@ -547,7 +548,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def login(
     request: Request,
     response: Response,
@@ -573,6 +574,9 @@ async def login(
             details={"username": username},
         )
         raise HTTPException(status_code=401, detail="Invalid workspace name or password.")
+    # Ensure the account is active (GDPR soft‑delete)
+    if hasattr(user, "is_active") and not user.is_active:
+        raise HTTPException(status_code=403, detail="Workspace has been deactivated.")
 
     _apply_consents(user, payload.privacy_policy_version)
     now = datetime.now(timezone.utc)
@@ -646,7 +650,12 @@ async def logout(
     db: Session = Depends(get_db),
 ):
     user_id = str(token_payload.get("sub", ""))
-    if not revoke_access_token(token_payload, db=db):
+    # Revoke the specific access token and, if possible, the entire token family.
+    token_family = token_payload.get("token_family")
+    revoked = revoke_access_token(token_payload, db=db)
+    if token_family:
+        revoked = revoke_token_family(token_family, db=db) or revoked
+    if not revoked:
         raise HTTPException(status_code=503, detail="Logout could not revoke the active session.")
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -662,21 +671,13 @@ async def logout(
         user_id=user_id,
         details={"source": "frontend"},
     )
-    response.delete_cookie(settings.AUTH_COOKIE_NAME, path="/")
-    response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
+    response.delete_cookie(settings.AUTH_COOKIE_NAME, path="/", secure=settings.AUTH_COOKIE_SECURE, httponly=settings.AUTH_COOKIE_HTTPONLY, samesite=settings.AUTH_COOKIE_SAMESITE)
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/", secure=settings.AUTH_COOKIE_SECURE, httponly=settings.AUTH_COOKIE_HTTPONLY, samesite=settings.AUTH_COOKIE_SAMESITE)
     return {"status": "logged_out"}
 
 
 @router.get("/me")
-async def get_me(request: Request, db: Session = Depends(get_db)):
-    from app.services.auth import _extract_bearer_or_cookie_token, verify_access_token
-    token = _extract_bearer_or_cookie_token(request, None)
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = verify_access_token(token, check_revocation=True, db=db)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    user_id = payload.get("sub")
+async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User session could not be resolved.")

@@ -72,7 +72,7 @@ class TelemetryMiddleware(BaseHTTPMiddleware):
         status_code = response.status_code
 
         # Record Prometheus metrics if available
-        if PROMETHEUS_AVAILABLE:
+        if PROMETHEUS_AVAILABLE and HTTP_REQUESTS_TOTAL is not None and HTTP_REQUEST_DURATION is not None:
             HTTP_REQUESTS_TOTAL.labels(
                 method=method,
                 endpoint=endpoint,

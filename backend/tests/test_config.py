@@ -3,6 +3,26 @@ from pydantic import ValidationError
 
 from app.config import Settings, settings
 
+# Minimal production-valid defaults that all DEBUG=False test cases need.
+# Individual tests can override any of these to trigger validation errors.
+_PROD_DEFAULTS = dict(
+    DEBUG=False,
+    SECRET_KEY="x" * 40,
+    ENCRYPTION_KEY="y" * 40,
+    DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
+    REDIS_URL="redis://localhost:6379/0",
+    GITHUB_CLIENT_ID="gh_dummy",
+    GITHUB_CLIENT_SECRET="gh_secret_dummy_value_32chars",
+    GOOGLE_CLIENT_ID="g_dummy",
+    GOOGLE_CLIENT_SECRET="g_secret_dummy_value_32chars_min",
+    FRONTEND_URL="https://app.firecrow.test",
+)
+
+
+def _prod_settings(**overrides) -> Settings:
+    """Create a Settings instance with production-safe defaults, allowing overrides."""
+    return Settings(**{**_PROD_DEFAULTS, **overrides})
+
 
 def test_runtime_settings_loaded_for_tests():
     assert settings.PORT == 8000
@@ -14,124 +34,74 @@ def test_runtime_settings_loaded_for_tests():
 
 def test_storage_config_validation():
     with pytest.raises(ValueError, match="Cloud storage configuration is missing"):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="supersecretkeythatisatleast32charslong",
-            ENCRYPTION_KEY="superencryptionkeythatisatleast32chars",
-            DATABASE_URL="postgresql://user:pass@localhost:5432/db",
+        _prod_settings(
             FIRE_CROW_SCANNER_IMAGE="image:1.0",
             REPORT_LOCAL_FALLBACK=False,
             R2_ACCESS_KEY_ID="",
         )
 
-    Settings(
-        DEBUG=False,
-        SECRET_KEY="supersecretkeythatisatleast32charslong",
-        ENCRYPTION_KEY="superencryptionkeythatisatleast32chars",
-        DATABASE_URL="postgresql://user:pass@localhost:5432/db",
+    _prod_settings(
         FIRE_CROW_SCANNER_IMAGE="image:1.0",
         REPORT_LOCAL_FALLBACK=True,
     )
 
 
 def test_settings_debug_defaults_safe_when_secret_provided():
-    configured = Settings(
-        DEBUG=False,
-        SECRET_KEY="x" * 40,
-        ENCRYPTION_KEY="y" * 40,
-        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-    )
-
+    configured = _prod_settings()
     assert configured.DEBUG is False
 
 
 def test_settings_rejects_missing_secret_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="",
-            ENCRYPTION_KEY="y" * 40,
-            DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-        )
+        _prod_settings(SECRET_KEY="", ENCRYPTION_KEY="y" * 40)
 
 
 def test_settings_rejects_default_secret_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
+        _prod_settings(
             SECRET_KEY="dev_only_firecrow_local_secret_key_32_bytes_minimum_DO_NOT_USE_IN_PRODUCTION",
             ENCRYPTION_KEY="y" * 40,
-            DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
         )
 
 
 def test_settings_rejects_sqlite_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="x" * 40,
-            ENCRYPTION_KEY="y" * 40,
-            DATABASE_URL="sqlite:///firecrow.db",
-        )
+        _prod_settings(DATABASE_URL="sqlite:///firecrow.db")
 
 
 def test_settings_rejects_latest_scanner_image_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="x" * 40,
-            ENCRYPTION_KEY="y" * 40,
-            DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-            FIRE_CROW_SCANNER_IMAGE="kalilinux/kali-rolling:latest",
-        )
+        _prod_settings(FIRE_CROW_SCANNER_IMAGE="kalilinux/kali-rolling:latest")
 
 
 def test_settings_do_not_hardcode_local_frontend_url():
     configured = Settings(
         _env_file=None,  # type: ignore
-        DEBUG=False,
+        DEBUG=True,
         SECRET_KEY="x" * 40,
         ENCRYPTION_KEY="y" * 40,
         DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
     )
-
+    # In debug mode FRONTEND_URL can be empty
     assert configured.FRONTEND_URL == ""
 
 
 def test_settings_accepts_comma_separated_github_oauth_scopes_from_env(monkeypatch):
     monkeypatch.setenv("GITHUB_OAUTH_SCOPES", "repo, workflow, read:org, user:email")
 
-    configured = Settings(
-        DEBUG=False,
-        SECRET_KEY="x" * 40,
-        ENCRYPTION_KEY="y" * 40,
-        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-    )
-
+    configured = _prod_settings()
     assert configured.GITHUB_OAUTH_SCOPES == ["repo", "workflow", "read:org", "user:email"]
 
 
 def test_settings_accepts_json_github_oauth_scopes_from_env(monkeypatch):
     monkeypatch.setenv("GITHUB_OAUTH_SCOPES", '["repo","workflow","read:org","user:email"]')
 
-    configured = Settings(
-        DEBUG=False,
-        SECRET_KEY="x" * 40,
-        ENCRYPTION_KEY="y" * 40,
-        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-    )
-
+    configured = _prod_settings()
     assert configured.GITHUB_OAUTH_SCOPES == ["repo", "workflow", "read:org", "user:email"]
 
 
 def test_safe_llm_flags_default_disabled():
-    configured = Settings(
-        DEBUG=False,
-        SECRET_KEY="x" * 40,
-        ENCRYPTION_KEY="y" * 40,
-        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-    )
-
+    configured = _prod_settings()
     assert configured.LLM_CHAT_ASSISTANT is False
     assert configured.LLM_DASHBOARD_INSIGHT is False
     assert configured.LLM_ATTACK_CHAIN_NAMING is False
@@ -140,29 +110,14 @@ def test_safe_llm_flags_default_disabled():
 
 def test_settings_rejects_missing_encryption_key_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="x" * 40,
-            ENCRYPTION_KEY="",
-            DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-        )
+        _prod_settings(ENCRYPTION_KEY="")
 
 
 def test_settings_rejects_short_encryption_key_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="x" * 40,
-            ENCRYPTION_KEY="too_short",
-            DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-        )
+        _prod_settings(ENCRYPTION_KEY="too_short")
 
 
 def test_settings_rejects_default_encryption_key_in_production():
     with pytest.raises(ValidationError):
-        Settings(
-            DEBUG=False,
-            SECRET_KEY="x" * 40,
-            ENCRYPTION_KEY="local_dev_encryption_key_change_me_1234567890",
-            DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
-        )
+        _prod_settings(ENCRYPTION_KEY="local_dev_encryption_key_change_me_1234567890")
