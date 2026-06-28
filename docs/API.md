@@ -294,12 +294,12 @@ Signals the running execution queue to terminate worker actions and release cont
   ```
 
 ### 3.5 Download PDF Report
-Serves the persisted executive audit report. 
+Downloads the compiled executive PDF audit report. 
 
 * **Route**: `GET /api/v1/audit/job/{job_id}/report`
 * **Headers**: `Authorization: Bearer <token>`
-* **Success Response**: Returns the HTML report directly from the database for current jobs, with legacy local-file fallback for older jobs.
-* **Error Response (400 Bad Request)**: Returned when a stored report URL is not a safe supported local report path.
+* **Success Response**: Returns a local binary file (`application/pdf`) or redirects only to the configured Cloudflare R2 HTTPS host.
+* **Error Response (400 Bad Request)**: Returned when a stored report URL is not a safe local report path or configured report-storage URL.
 
 ---
 

@@ -61,7 +61,7 @@ We build the platform from the inside out: **Database Setup → Orchestrator →
 ### Step 1: Database & Project Scaffolding
 * **Goal**: Prepare the project workspace, database models, and settings.
 * **What you write**:
-  * `config.py`: Loads credentials (GitHub OAuth client IDs, database URL, mail provider keys, and feature flags) from env variables.
+  * `config.py`: Loads credentials (GitHub OAuth client IDs, Supabase URL, Resend Key, R2 Buckets) from env variables.
   * `models/audit_job.py`: Tables for jobs (`status`, `repo_url`, `created_at`), findings (`severity`, `title`, `description`, `evidence`), and logs.
   * `schemas/audit_state.py`: The `AuditState` dataclass containing the fields listed in §4 below.
 * **How to verify**: Boot the database using `docker-compose up`, run database migrations using Alembic, and run a script to create a dummy job in the DB.
@@ -98,7 +98,7 @@ We build the platform from the inside out: **Database Setup → Orchestrator →
 * **Goal**: Calculate vulnerability severities and deliver the report.
 * **What you write**:
   * `agents/scoring.py`: Takes the list of findings, maps CWE/CVE numbers to severities, and generates CVSS v3.1 vector strings.
-  * `agents/reporter.py`: Standardizes findings, stores the canonical HTML report in the database, generates a temporary PDF when needed, and sends a transactional email via Resend.
+  * `agents/reporter.py`: Standardizes findings, feeds them into a WeasyPrint HTML/CSS page to export a premium PDF, uploads it to Cloudflare R2, and sends a transactional email via Resend.
 * **How to verify**: Populate findings manually and run the reporter node. Verify you receive a formatted PDF in your inbox containing the results.
 
 ### Step 7: Next.js Frontend Dashboard (Completed)

@@ -28,32 +28,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/auth/refresh:
-    post:
-      tags:
-      - Authentication
-      summary: Refresh Token
-      operationId: refresh_token_api_v1_auth_refresh_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              anyOf:
-              - $ref: '#/components/schemas/RefreshPayload'
-              - type: 'null'
-              title: Payload
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/auth/policy-context:
     get:
       tags:
@@ -176,20 +150,6 @@ paths:
       - Authentication
       summary: Get Session
       operationId: get_session_api_v1_auth_session_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - HTTPBearer: []
-  /api/v1/auth/activities:
-    get:
-      tags:
-      - Authentication
-      summary: Get User Activities
-      operationId: get_user_activities_api_v1_auth_activities_get
       responses:
         '200':
           description: Successful Response
@@ -466,7 +426,7 @@ paths:
       tags:
       - Security Auditing
       summary: Download Report
-      description: Authenticated endpoint to serve the persisted report HTML.
+      description: Authenticated endpoint to download PDF reports.
       operationId: download_report_api_v1_audit_job__job_id__report_get
       security:
       - HTTPBearer: []
@@ -656,19 +616,6 @@ paths:
               schema: {}
       security:
       - HTTPBearer: []
-  /api/v1/system/metrics:
-    get:
-      tags:
-      - System
-      summary: Prometheus Metrics
-      description: Prometheus metrics endpoint for monitoring and alerting.
-      operationId: prometheus_metrics_api_v1_system_metrics_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
   /api/v1/storage/artifacts/{artifact_id}/download:
     get:
       tags:
@@ -821,45 +768,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
-  /api/v1/user/export:
-    get:
-      tags:
-      - User GDPR
-      summary: Export User Data
-      description: 'Export all personal data for the authenticated user.
-
-
-        Returns a JSON blob containing the user record (excluding ``password_hash``)
-
-        and the activity log.  This satisfies the GDPR *right of access* (Art. 15).'
-      operationId: export_user_data_api_v1_user_export_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - HTTPBearer: []
-  /api/v1/user/delete:
-    delete:
-      tags:
-      - User GDPR
-      summary: Delete User
-      description: "Anonymize the current user's personal data (right\u2011to\u2011\
-        be\u2011forgotten).\n\nThe user record is **soft\u2011deleted**: PII fields\
-        \ are cleared and the\naccount is marked inactive.  The row is kept for referential\
-        \ integrity\n(audit jobs, reports, etc.) but contains no personally identifiable\
-        \ data."
-      operationId: delete_user_api_v1_user_delete_delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
       security:
       - HTTPBearer: []
   /health:
@@ -1156,15 +1064,6 @@ components:
       - event_type
       - policy_version
       title: PolicyEventRequest
-    RefreshPayload:
-      properties:
-        refresh_token:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Refresh Token
-      type: object
-      title: RefreshPayload
     RegisterRequest:
       properties:
         username:

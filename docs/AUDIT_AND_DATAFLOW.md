@@ -40,7 +40,7 @@ Fire Crow/
 │   │   │   └── audit_api.py      → API request/response schemas
 │   │   ├── services/         # Business logic services
 │   │   │   ├── auth.py           → JWT encode/decode, Argon2id hash/verify, token revocation
-│   │   │   ├── reporter.py       → HTML→PDF (WeasyPrint), DB-backed report persistence, Resend email
+│   │   │   ├── reporter.py       → HTML→PDF (WeasyPrint), R2 upload, Resend email
 │   │   │   └── sandbox.py        → Docker bridge network + Kali container manager
 │   │   ├── workers/
 │   │   │   └── celery_app.py     → Celery task definition (Redis broker)
@@ -76,7 +76,7 @@ Fire Crow/
 | **Auth** | PyJWT + Argon2id | Bearer/cookie auth, salted password hashing, token revocation |
 | **Sandbox** | Docker SDK (Python) | Private bridge networks, controlled scanner + target containers |
 | **PDF Reports** | WeasyPrint | HTML→PDF compilation |
-| **Report Storage** | Neon PostgreSQL + local workspace overflow | HTML/JSONB artifact persistence with authenticated download route |
+| **Report Storage** | Cloudflare R2 (S3-compatible) | Presigned report storage with authenticated download route |
 | **Email** | Resend API | Transactional audit completion emails |
 | **GitHub Integration** | GitMCP (gitmcp.io SSE) + REST API | Auto-raise security issues on scanned repos |
 | **Frontend** | Next.js 14, React 18, TypeScript | App Router SSR + client dashboard |
@@ -350,6 +350,10 @@ Pydantic Settings reads from (in priority order):
 | `GITHUB_CLIENT_SECRET` | `""` | GitHub OAuth client secret |
 | `GITHUB_TOKEN` | `""` | PAT for GitMCP issue/PR creation |
 | `RESEND_API_KEY` | `""` | Transactional email API key |
+| `R2_ACCESS_KEY_ID` | `""` | Cloudflare R2 access key |
+| `R2_SECRET_ACCESS_KEY` | `""` | Cloudflare R2 secret key |
+| `R2_ENDPOINT_URL` | `""` | R2 S3-compatible endpoint |
+| `R2_BUCKET_NAME` | `firecrow-reports` | R2 bucket name |
 | `GEMINI_API_KEY` | `""` | Google Gemini model key |
 | `OPENAI_API_KEY` | `""` | OpenAI model key |
 
@@ -408,7 +412,7 @@ A `@model_validator` on `Settings` raises `ValueError` at startup if production 
 
 - **HTML**: Generates premium styled executive audit report with severity badges, evidence blocks, and summary table
 - **PDF**: Compiles via WeasyPrint. Simulated PDF fallback is DEBUG-only.
-- **Persistence**: Reports are stored in Neon PostgreSQL, with temporary PDFs generated only for delivery workflows.
+- **Upload**: Cloudflare R2 with 7-day pre-signed URL. Presigned URLs are treated as bearer secrets and are not logged.
 - **Email**: Sends via configured providers. Local HTML fallback is DEBUG-only.
 
 ### 7.9 GITHUB_MCP (`agents/github_mcp.py`)
@@ -569,7 +573,7 @@ DEBUG=false → PostgreSQL required, explicit user registration, Docker sandbox,
 | Redis | Celery task queue | FastAPI BackgroundTasks (in-process) |
 | Docker | Kali sandbox | Simulated mock responses |
 | WeasyPrint (GTK libs) | PDF reports | Simulated PDF stub |
-| External object storage | Not required | Authenticated local report download endpoint |
+| Cloudflare R2 | Report hosting | Authenticated local report download endpoint |
 | Resend | Email delivery | Skipped silently |
 | GitHub Token | Issue creation | Skipped with warning log |
 

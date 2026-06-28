@@ -11,7 +11,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ENCRYPTION_KEY
-        generateValue: true
+        sync: false
       - key: FRONTEND_URL
         value: "https://fire-crow.onrender.com"
       - key: CORS_ORIGINS

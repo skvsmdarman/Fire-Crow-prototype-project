@@ -218,6 +218,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
 
     img_src_domains = "https://avatars.githubusercontent.com https://*.googleusercontent.com"
+    if settings.R2_ENDPOINT_URL:
+        r2_domain = settings.R2_ENDPOINT_URL
+        if "://" in r2_domain:
+            r2_domain = r2_domain.split("://")[1]
+        img_src_domains += f" https://{r2_domain}"
 
     if settings.DEBUG:
         img_src_domains += " https://*"
@@ -332,14 +337,22 @@ async def health_deep(db: Session = Depends(get_db)):
     except Exception:
         storage_ok = False
 
-    status_code = 200 if (db_ok and storage_ok) else 503
+    s3_ok = True
+    from app.services.storage import storage_service
+    if storage_service.s3_client is not None:
+        try:
+            storage_service.s3_client.list_buckets()
+        except Exception:
+            s3_ok = False
+
+    status_code = 200 if (db_ok and storage_ok and s3_ok) else 503
     return JSONResponse(
         status_code=status_code,
         content={
             "status": "healthy" if status_code == 200 else "unhealthy",
             "database": "ok" if db_ok else "failed",
-            "workspace_storage": "ok" if storage_ok else "failed",
-            "artifact_storage": "database_backed",
+            "local_storage": "ok" if storage_ok else "failed",
+            "object_storage": "ok" if s3_ok else ("failed" if storage_service.is_s3_active() else "disabled"),
         }
     )
 

@@ -19,9 +19,6 @@ interface AttackGraphResponse {
   edges: Edge[];
 }
 
-const defaultNodeTypes = {};
-const defaultEdgeTypes = {};
-
 export default function AttackGraph({ jobId }: AttackGraphProps) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -45,10 +42,7 @@ export default function AttackGraph({ jobId }: AttackGraphProps) {
           position: { x: Math.random() * 500, y: Math.random() * 300 },
           style: { background: n.severity === 'critical' ? '#ff4444' : '#ffaa44' }
         })));
-        setEdges(data.edges.map((e, i) => ({
-          ...e,
-          id: e.id || `edge_${i}_${e.source}_${e.target}`,
-        })));
+        setEdges(data.edges);
       })
       .catch(() => {
         setNodes([]);
@@ -63,7 +57,7 @@ export default function AttackGraph({ jobId }: AttackGraphProps) {
 
   return (
     <div style={{ height: '500px', width: '100%' }}>
-      <ReactFlow nodes={nodes} edges={edges} fitView nodeTypes={defaultNodeTypes} edgeTypes={defaultEdgeTypes}>
+      <ReactFlow nodes={nodes} edges={edges} fitView>
         <Background />
         <Controls />
       </ReactFlow>

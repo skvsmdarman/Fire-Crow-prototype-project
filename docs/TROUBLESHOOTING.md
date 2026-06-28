@@ -97,25 +97,25 @@ Check:
 - reporter phase logs in `agent_logs`
 - whether WeasyPrint is available
 - whether the job ended as `partial`
-- whether email delivery or temporary-PDF generation degraded the job
+- whether object storage or email errors degraded the job
 
 Relevant sources:
 
 - `backend/app/services/reporter.py`
 - `backend/app/orchestrator/runtime.py`
 
-## Artifact Delivery Issues
+## Object Storage Upload Failed
 
 Symptoms:
 
-- report route returns legacy-file fallback instead of database HTML
-- temporary PDF generation fails during email delivery
+- report falls back to local serving
+- logs mention R2 or S3 failure
 
 Check:
 
-- `workspace/storage` permissions
-- `workspace/temp` write access
-- WeasyPrint availability if you expect PDF attachments
+- `R2_*` settings
+- legacy `CLOUDFLARE_R2_*` aliases if you rely on them
+- endpoint scheme; the code prepends `https://` when missing in some paths
 
 Relevant sources:
 

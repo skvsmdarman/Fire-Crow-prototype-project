@@ -23,7 +23,7 @@ Later files win.
 | `HOST` | optional | `0.0.0.0` | backend bind host | example present |
 | `DEBUG` | optional | `false` | toggles debug behavior | local example sets `true` |
 | `SECRET_KEY` | required in non-debug | empty string | JWT signing and security hashing input | sensitive; production must be strong and >= 32 chars |
-| `ENCRYPTION_KEY` | required in non-debug | empty string | provider-token encryption key | sensitive; production must be strong and >= 32 chars |
+| `ENCRYPTION_KEY` | optional but strongly recommended | empty string | provider-token encryption key | sensitive; falls back to `SECRET_KEY` in `crypto.py` |
 | `FRONTEND_URL` | optional | `http://localhost:3000` | frontend origin and redirect base | can be filled from `RENDER_EXTERNAL_URL` |
 | `CORS_ORIGINS` | optional | empty string | extra allowed CORS origins | used in code; example missing |
 | `MAX_REQUEST_BODY_BYTES` | optional | `10485760` | request body limit | used in middleware; example missing |
@@ -82,15 +82,15 @@ Later files win.
 | --- | --- | --- | --- | --- |
 | `RESEND_API_KEY` | optional | empty string | Resend mail delivery | sensitive; example present |
 | `BREVO_API_KEY` | optional | empty string | Brevo mail delivery | sensitive; example present |
-| `SENDER_EMAIL` | optional | empty string | sender address for mailers | set this when using Resend or Brevo |
+| `SENDER_EMAIL` | optional | `reports@firecrow.dev` | sender address for mailers | example present |
 | `SMTP_HOST` | optional | `smtp.gmail.com` | SMTP server | example present |
 | `SMTP_PORT` | optional | `587` | SMTP port | example present |
 | `SMTP_USER` | optional | empty string | SMTP username | sensitive; example present |
 | `SMTP_PASSWORD` | optional | empty string | SMTP password | sensitive; example present |
 
-### Artifact Storage
+### Object Storage
 
-No external object storage is used. All artifacts (reports, evidence, attack graphs) are stored in Neon PostgreSQL as TEXT/JSONB, and temporary PDFs are generated only when needed for download or email delivery.
+No external object storage is used. All reports and evidence artifacts are stored directly in Neon DB.
 
 ### AI Settings
 

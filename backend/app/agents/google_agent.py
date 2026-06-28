@@ -114,8 +114,6 @@ def run_google_agent(
     safe_risk_level = html_escape(risk_level)
     safe_recommendation = html_escape(recommendation)
 
-    dashboard_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard" if settings.FRONTEND_URL else "#"
-
     html_body = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
         <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
@@ -140,21 +138,12 @@ def run_google_agent(
         </ul>
 
         <div style="text-align: center; margin-top: 35px; margin-bottom: 15px;">
-            <a href="{html_escape(dashboard_url)}" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
+            <a href="http://localhost:3000/dashboard" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
         </div>
         
         <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 30px; text-align: center;">This analysis was autonomously formulated by the Fire Crow Google Security Agent orchestrator.</p>
     </div>
     """
-
-    if not recipient_email:
-        logs.append("No recipient email is available for Google Agent delivery. Skipping email transmission.")
-        return {
-            "google_agent_delivered": False,
-            "google_agent_pr_risks_analyzed": True,
-            "google_agent_risk_report": pr_risk_analysis,
-            "google_agent_logs": logs,
-        }
 
     # Send email
     delivered = False
@@ -185,9 +174,8 @@ def run_google_agent(
             import resend
             logger.info("Google Agent sending PR Risk email to %s via Resend", recipient_email)
             resend.api_key = settings.RESEND_API_KEY
-            sender_email = settings.SENDER_EMAIL or settings.SMTP_USER
             resend.Emails.send({
-                "from": f"Google Security Agent <{sender_email}>",
+                "from": f"Google Security Agent <{settings.SENDER_EMAIL}>",
                 "to": [recipient_email],
                 "subject": f"🤖 Google Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
                 "html": html_body
@@ -202,7 +190,6 @@ def run_google_agent(
         try:
             import httpx
             logger.info("Google Agent sending PR Risk email to %s via Brevo", recipient_email)
-            sender_email = settings.SENDER_EMAIL or settings.SMTP_USER
             response = httpx.post(
                 "https://api.brevo.com/v3/smtp/email",
                 headers={
@@ -211,7 +198,7 @@ def run_google_agent(
                     "accept": "application/json"
                 },
                 json={
-                    "sender": {"email": sender_email, "name": "Google Security Agent"},
+                    "sender": {"email": settings.SENDER_EMAIL, "name": "Google Security Agent"},
                     "to": [{"email": recipient_email}],
                     "subject": f"🤖 Google Agent Alert: PR Risk Assessment ({risk_level}) - Job {job_id[:8]}",
                     "htmlContent": html_body

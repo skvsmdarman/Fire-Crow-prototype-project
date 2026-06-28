@@ -3,7 +3,7 @@ import os
 import html
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from app.config import settings, WORKSPACE_DIR
+from app.config import settings, WORKSPACE_DIR, _global_state
 from app.schemas import Finding, Severity
 from app.services.redaction import redact_text
 
@@ -18,6 +18,27 @@ if os.name == "nt" and "WEASYPRINT_DLL_DIRECTORIES" not in os.environ:
             pass
 
 logger = logging.getLogger("firecrow.services.reporter")
+
+
+def _first_non_empty(*values: str | None) -> str:
+    for value in values:
+        if value:
+            return value
+    return ""
+
+
+def _is_r2_auth_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(
+        token in lowered
+        for token in (
+            "invalidaccesskeyid",
+            "accessdenied",
+            "signaturedoesnotmatch",
+            "malformed access key id",
+            "invalid access key id",
+        )
+    )
 
 
 def get_clean_repo_name(repo_url: str) -> str:
@@ -53,12 +74,18 @@ except ImportError:
 class ReportGenerator:
     """
     Handles generation of high-fidelity HTML templates,
-    compiles them to PDF using WeasyPrint, and sends notification emails.
+    compiles them to PDF using WeasyPrint, uploads reports to Cloudflare R2,
+    and sends notification emails using Resend.
     """
 
     def __init__(self):
+        # Prefer the app settings names, but keep the older Cloudflare aliases as a fallback.
+        self.r2_bucket = _first_non_empty(settings.R2_BUCKET_NAME, os.getenv("CLOUDFLARE_R2_BUCKET"), "firecrow-reports")
+        self.r2_endpoint = _first_non_empty(settings.R2_ENDPOINT_URL, os.getenv("CLOUDFLARE_R2_ENDPOINT"))
+        self.r2_access_key = _first_non_empty(settings.R2_ACCESS_KEY_ID, os.getenv("CLOUDFLARE_R2_ACCESS_KEY"))
+        self.r2_secret_key = _first_non_empty(settings.R2_SECRET_ACCESS_KEY, os.getenv("CLOUDFLARE_R2_SECRET_KEY"))
         self.resend_api_key = settings.RESEND_API_KEY
-        self.sender_email = settings.SENDER_EMAIL or settings.SMTP_USER
+        self.sender_email = settings.SENDER_EMAIL
         if RESEND_AVAILABLE and self.resend_api_key:
             resend.api_key = self.resend_api_key  # type: ignore
 
@@ -1000,6 +1027,65 @@ class ReportGenerator:
             logger.exception("WeasyPrint PDF compilation failed: %s", e)
             return False
 
+    def upload_to_r2(self, pdf_path: str, job_id: str) -> str:
+        """
+        Uploads report to Cloudflare R2 bucket.
+        Falls back to local file URI if R2 credentials are not set.
+        """
+        filename = os.path.basename(pdf_path)
+        if _global_state.get("r2_disabled", False):
+            logger.info("Cloudflare R2 operations are disabled due to a previous authentication failure. Serving locally.")
+            return f"/reports/{filename}"
+        if not (self.r2_endpoint and self.r2_access_key and self.r2_secret_key):
+            logger.info("Cloudflare R2 environment variables not fully configured. Serving locally.")
+            return f"/reports/{filename}"
+
+        try:
+            import boto3  # type: ignore
+            from botocore.client import Config  # type: ignore
+
+            endpoint = self.r2_endpoint
+            if endpoint and not (endpoint.startswith("http://") or endpoint.startswith("https://")):
+                endpoint = f"https://{endpoint}"
+
+            logger.info("Uploading report for job %s to R2 object storage.", job_id)
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=endpoint,
+                aws_access_key_id=self.r2_access_key,
+                aws_secret_access_key=self.r2_secret_key,
+                config=Config(signature_version="s3v4"),
+                region_name="auto"
+            )
+
+            key = f"reports/{filename}"
+            s3.upload_file(pdf_path, self.r2_bucket, key, ExtraArgs={"ContentType": "application/pdf"})
+            
+            # Generate pre-signed URL valid for 7 days
+            url = s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.r2_bucket, "Key": key},
+                ExpiresIn=604800
+            )
+            logger.info("Report uploaded successfully to R2 for job %s with object key %s.", job_id, key)
+            return url
+        except Exception as e:
+            redacted_error = redact_text(str(e))
+            if _is_r2_auth_error(redacted_error):
+                logger.warning(
+                    "R2 credentials were rejected for job %s. Disabling future R2 operations and serving local report.",
+                    job_id,
+                )
+                _global_state["r2_disabled"] = True
+            else:
+                logger.error(
+                    "R2 upload failed for job %s: %s. Falling back to local report endpoint.",
+                    job_id,
+                    redacted_error,
+                )
+            return f"/reports/{filename}"
+
+
     def send_email_report(
         self,
         to_email: str,
@@ -1010,10 +1096,6 @@ class ReportGenerator:
         pdf_path: Optional[str] = None,
     ) -> bool:
         """Sends a beautiful transactional email with the PDF link and attachment via Google/SMTP or Resend."""
-        if not to_email:
-            logger.info("Skipping audit report email for job %s because no recipient email is available.", job_id)
-            return False
-
         if report_url.startswith("/"):
             report_link = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
         else:

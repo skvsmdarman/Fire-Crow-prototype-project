@@ -2,7 +2,7 @@
 
 Fire Crow is a production-ready, repository-focused security audit and intelligence platform. It features a high-performance **FastAPI** backend, a responsive **Next.js** frontend, and a sophisticated **LangGraph** orchestration pipeline capable of chaining multiple deterministic and LLM-powered security agents.
 
-Users can securely authenticate, submit GitHub HTTPS repository URLs for analysis, stream real-time audit logs over Server-Sent Events (SSE), and review comprehensive vulnerability reports with visual charts and detailed findings.
+Users can securely authenticate, submit GitHub HTTPS repository URLs for analysis, stream real-time audit logs over Server-Sent Events (SSE), and download comprehensive vulnerability reports with visual charts and detailed findings.
 
 ## Key Features
 
@@ -12,7 +12,6 @@ Users can securely authenticate, submit GitHub HTTPS repository URLs for analysi
 - **Deep Security Tooling Integration**: Includes 14+ specialized scanners with AST-based analysis, configuration file scanning, and dynamic attack testing.
 - **Secure Authentication Flow**: Native password login with secure token revocation, along with OAuth integrations for GitHub and Google.
 - **Production Hardening**: Enforces SQLite blocklists in production, supports Redis/Celery job queues, and incorporates compliance filters.
-- **Neon-Only Artifact Persistence**: All artifacts (reports, evidence, attack graphs) are stored in Neon PostgreSQL as TEXT/JSONB.
 - **Automated Remediation (GitHub MCP)**: Creates GitHub issues with security labels (critical, high, medium, low, firecrow, security) and planning pull request structures.
 - **Adaptive Scanning**: Dynamically adjusts scanning depth based on initial findings and repository characteristics.
 - **Retry Mechanisms**: Automatic retry with exponential backoff for transient failures in non-critical phases.
@@ -64,7 +63,7 @@ Users can securely authenticate, submit GitHub HTTPS repository URLs for analysi
 20. **scoring**: CVSS v3.1 vector assignment and risk scoring
 21. **attack_graph**: Node-edge correlation for chained attack paths
 22. **remediation_planner**: Generates actionable fix plans
-23. **reporter**: Stores HTML reports in the database, generates on-demand PDFs for delivery workflows, and sends email notifications
+23. **reporter**: Generates PDF reports with charts and sends email notifications
 24. **github_mcp**: Creates GitHub issues with security labels
 25. **google_agent**: AI-powered PR risk analysis
 
@@ -128,8 +127,6 @@ LLM_ATTACK_CHAIN_NAMING=false
 LLM_PR_DESCRIPTION=false
 ```
 
-All `LLM_*` feature flags default to `false` and can be enabled independently when you are ready to activate those AI-assisted experiences.
-
 **Optional Provider Integrations**:
 ```bash
 GITHUB_CLIENT_ID=...
@@ -149,7 +146,7 @@ GOOGLE_CLIENT_SECRET=...
 Fire Crow executes active/dynamic penetration tools. To prevent misuse:
 - **Authorization Attestations**: Job submissions require cryptographically tracked consent fields
 - **Sandboxing**: Active tools run inside isolated container network partitions
-- **Data Protection**: Security audit logs and artifacts are persisted in Neon PostgreSQL
+- **Data Protection**: Security audit logs are persisted immutably in the DB
 
 ---
 
@@ -157,7 +154,7 @@ Fire Crow executes active/dynamic penetration tools. To prevent misuse:
 
 ### Package Management
 - **Removed**: `gitpython` (unused, potential security risk banned by cloud providers)
-- **Kept**: All actively used dependencies (`docker`, `weasyprint`, `celery`, `redis`)
+- **Kept**: All actively used dependencies (`docker`, `weasyprint`, `celery`, `redis`, `boto3`)
 - **Frontend**: `reactflow` retained for attack graph visualization
 
 ### Database Optimization
@@ -173,7 +170,7 @@ Fire Crow executes active/dynamic penetration tools. To prevent misuse:
 ### Report Generation
 - **SVG Charts**: Donut charts for severity distribution, bar charts for scanner performance
 - **Modular Design**: Chart generation methods separated for maintainability
-- **PDF Optimization**: WeasyPrint generates temporary PDFs on demand while canonical reports stay in the database as HTML
+- **PDF Optimization**: WeasyPrint with fallback for environments without GPU support
 
 ---
 

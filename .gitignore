@@ -1,6 +1,5 @@
 # Log files
 *.log
-logs/
 artifacts/
 
 # Python cache & virtualenvs
@@ -20,23 +19,14 @@ htmlcov/
 .env
 .env.local
 .env.*
-*.env.local
-*.env.production
-!.env.example
 
 # Database files
 *.db
 *.sqlite
 *.sqlite3
-firecrow.db
-test_firecrow.db
 
 # Workspace
 workspace/
-workspace/sent_emails/
-workspace/temp/
-workspace/storage/cache/
-workspace/scans/*/
 
 # VS Code
 .vscode/
@@ -53,8 +43,6 @@ index.html
 /build
 /dist
 *.egg-info/
-frontend/.next/
-frontend/out/
 
 # Root-level package files (managed via frontend/)
 package.json
@@ -63,8 +51,6 @@ node_modules/
 
 # IDE
 .idea/
-*.pid
-*.bak
 *.swp
 *.swo
 *~

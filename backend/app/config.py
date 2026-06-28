@@ -75,6 +75,9 @@ class Settings(BaseSettings):
                 raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
             if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):
                 raise ValueError("FIRE_CROW_SCANNER_IMAGE must be pinned in production and cannot use :latest.")
+            if not getattr(self, "REPORT_LOCAL_FALLBACK", True):
+                if not self.R2_ACCESS_KEY_ID or not self.R2_SECRET_ACCESS_KEY or not self.R2_BUCKET_NAME or not self.R2_ENDPOINT_URL:
+                    raise ValueError("Cloud storage configuration is missing, but REPORT_LOCAL_FALLBACK is False.")
 
         # Inject REDIS_PASSWORD into REDIS_URL if provided
         if self.REDIS_PASSWORD:
@@ -124,7 +127,6 @@ class Settings(BaseSettings):
     AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
     AUTH_COOKIE_SAMESITE: Literal['lax', 'strict', 'none'] | None = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
     CSRF_ENABLED: bool = Field(default=True, validation_alias="CSRF_ENABLED")
-    MOCK_AUTH_ENABLED: bool = Field(default=False, validation_alias="MOCK_AUTH_ENABLED")
 
 
     # --- Database & Cache ---
@@ -156,16 +158,28 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
 
+    # --- Neo4j Graph Database ---
+    NEO4J_URI: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
+    NEO4J_USER: str = Field(default="neo4j", validation_alias="NEO4J_USER")
+    NEO4J_PASSWORD: str = Field(default="", validation_alias="NEO4J_PASSWORD")
+    NEO4J_DATABASE: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")
+
     # --- Communication ---
     RESEND_API_KEY: str = Field(default="", validation_alias="RESEND_API_KEY")
     BREVO_API_KEY: str = Field(default="", validation_alias="BREVO_API_KEY")
-    SENDER_EMAIL: str = Field(default="", validation_alias="SENDER_EMAIL")
+    SENDER_EMAIL: str = Field(default="reports@firecrow.dev", validation_alias="SENDER_EMAIL")
 
     # --- Google/SMTP Mail ---
     SMTP_HOST: str = Field(default="smtp.gmail.com", validation_alias="SMTP_HOST")
     SMTP_PORT: int = Field(default=587, validation_alias="SMTP_PORT")
     SMTP_USER: str = Field(default="", validation_alias="SMTP_USER")
     SMTP_PASSWORD: str = Field(default="", validation_alias="SMTP_PASSWORD")
+
+    # --- Report Storage (Cloudflare R2) ---
+    R2_ACCESS_KEY_ID: str = Field(default="", validation_alias="R2_ACCESS_KEY_ID")
+    R2_SECRET_ACCESS_KEY: str = Field(default="", validation_alias="R2_SECRET_ACCESS_KEY")
+    R2_ENDPOINT_URL: str = Field(default="", validation_alias="R2_ENDPOINT_URL")
+    R2_BUCKET_NAME: str = Field(default="firecrow-reports", validation_alias="R2_BUCKET_NAME")
 
     # --- AI Models API Keys ---
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
@@ -186,6 +200,8 @@ class Settings(BaseSettings):
     BROKER_CONNECTION_TIMEOUT: float = Field(default=0.5, validation_alias="BROKER_CONNECTION_TIMEOUT")
     SSE_POLL_INTERVAL: float = Field(default=0.5, validation_alias="SSE_POLL_INTERVAL")
     SSE_HEARTBEAT_INTERVAL: float = Field(default=15.0, validation_alias="SSE_HEARTBEAT_INTERVAL")
+    REPORT_PRESIGNED_TTL: int = Field(default=3600, validation_alias="REPORT_PRESIGNED_TTL")
+    REPORT_LOCAL_FALLBACK: bool = Field(default=True, validation_alias="REPORT_LOCAL_FALLBACK")
     MAX_SCAN_DURATION: int = Field(default=2700, validation_alias="MAX_SCAN_DURATION")
     DEFAULT_BUDGET_USD: float = Field(default=5.0, validation_alias="DEFAULT_BUDGET_USD")
     SCANNER_COMMAND_TIMEOUT: int = Field(default=600, validation_alias="SCANNER_COMMAND_TIMEOUT")
@@ -271,4 +287,7 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
+_global_state = {
+    "r2_disabled": False
+}
 

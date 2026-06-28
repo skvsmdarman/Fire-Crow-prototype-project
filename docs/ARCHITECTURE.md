@@ -20,6 +20,7 @@ flowchart TD
     Runtime --> Graph["LangGraph pipeline\nbackend/app/orchestrator/maestro.py"]
     Graph --> DB["SQLAlchemy database\nbackend/app/models/*"]
     Graph --> Local["Local workspace files\nworkspace/reports\nworkspace/storage"]
+    Graph --> R2["Optional R2/S3 storage\nbackend/app/services/storage.py"]
     Graph --> Sandbox["Optional Docker/Kali sandbox\nbackend/app/services/sandbox.py"]
     Graph --> Email["Optional email delivery\nbackend/app/services/reporter.py\nbackend/app/agents/google_agent.py"]
     Graph --> GitHub["Optional GitHub/GitMCP actions\nbackend/app/agents/github_mcp.py"]
@@ -53,13 +54,14 @@ Source paths: `frontend/src/shared/api/endpoints.ts`, `frontend/src/features/aut
 - SSE is read directly by `frontend/src/shared/hooks/useSSE.ts`.
 - Report download uses a raw `fetch()` to `GET /api/v1/audit/job/{job_id}/report` and opens the returned blob in a new tab.
 
-## Database And Artifact Boundary
+## Database And Object Storage Boundary
 
 Source paths: `backend/app/models/*`, `backend/app/services/storage.py`, `backend/app/api/routes_storage.py`.
 
 - Relational state lives in the configured SQL database: users, sessions, jobs, findings, logs, artifacts, memberships, policy/security logs, and attestation records.
-- Reports, attack graphs, and HTML evidence snapshots are persisted in the database.
-- Temporary or overflow artifact files managed by `StorageService` stay on the authenticated local workspace path under `workspace/storage`.
+- Large report and evidence files go through `StorageService.upload_artifact()`.
+- If R2/S3-compatible storage is configured, artifact metadata still lands in the database and the file object goes to object storage.
+- If object storage is unavailable, files are stored under `workspace/storage`.
 
 ## Background Worker Behavior
 
@@ -91,8 +93,8 @@ Source paths: `backend/app/orchestrator/maestro.py`, `backend/app/services/repor
 2. `ReportGenerator.generate_html_report()` renders the report body.
 3. `compile_pdf()` uses WeasyPrint when available.
 4. If WeasyPrint is unavailable, the code writes an `.html` file plus a simulated placeholder `.pdf`.
-5. The report HTML is stored in `audit_reports`, and a matching HTML snapshot is written to `audit_artifacts`.
-6. `GET /api/v1/audit/job/{job_id}/report` serves HTML directly from the database, with legacy local-file fallback only for older jobs.
+5. The report is uploaded through `StorageService.upload_artifact()`, and the job stores an `artifact://...` URL.
+6. `GET /api/v1/audit/job/{job_id}/report` resolves the artifact to either a presigned URL, a local file, or an HTML fallback.
 
 ## Optional Integrations
 
@@ -103,6 +105,7 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/agents/github_mcp.p
 - GitHub/GitMCP issue and PR creation: optional
 - Gemini/OpenAI-assisted analysis: optional
 - Email sending through SMTP, Resend, or Brevo: optional
+- Cloudflare R2 / S3-compatible artifact storage: optional
 
 The code usually degrades gracefully in debug mode and more conservatively in non-debug mode.
 
