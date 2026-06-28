@@ -46,6 +46,16 @@ REPORTS_DIR = WORKSPACE_DIR / "workspace" / "reports"
 
 _bg_semaphore = asyncio.Semaphore(5)
 
+import threading
+from collections import defaultdict
+
+_submission_locks = defaultdict(threading.Lock)
+_locks_mutex = threading.Lock()
+
+def _get_user_lock(user_id: str) -> threading.Lock:
+    with _locks_mutex:
+        return _submission_locks[user_id]
+
 
 def _is_broker_reachable() -> bool:
     if not settings.REDIS_URL:
@@ -224,38 +234,41 @@ async def submit_audit(
         except EmailNotValidError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-    if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
+    lock = _get_user_lock(user_id)
+    with lock:
+        db.rollback()  # Reset transaction snapshot to read latest committed data
+        if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
+            )
+
+        from app.services.auth import _get_redis_client
+        redis_client = _get_redis_client()
+        celery_alive = False
+        if redis_client and redis_client.get("celery:heartbeat"):
+            celery_alive = True
+
+        if not celery_alive and _bg_semaphore.locked():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Server is currently at maximum background capacity. Please try again later.",
+            )
+
+        # Scoping job to user's tenant_id
+        user = db.query(User).filter(User.id == user_id).with_for_update().first()
+        tenant_id = user.tenant_id if user else None
+
+        job = AuditJob(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            repo_url=payload.repo_url,
+            repo_branch=payload.repo_branch,
+            status=JobStatus.QUEUED
         )
-
-    from app.services.auth import _get_redis_client
-    redis_client = _get_redis_client()
-    celery_alive = False
-    if redis_client and redis_client.get("celery:heartbeat"):
-        celery_alive = True
-
-    if not celery_alive and _bg_semaphore.locked():
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Server is currently at maximum background capacity. Please try again later.",
-        )
-
-    # Scoping job to user's tenant_id
-    user = db.query(User).filter(User.id == user_id).first()
-    tenant_id = user.tenant_id if user else None
-
-    job = AuditJob(
-        user_id=user_id,
-        tenant_id=tenant_id,
-        repo_url=payload.repo_url,
-        repo_branch=payload.repo_branch,
-        status=JobStatus.QUEUED
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+        db.add(job)
+        db.commit()
+        db.refresh(job)
 
     # Create authorization attestation record for compliance logging
     owner, name = _extract_repo_owner_name(payload.repo_url)

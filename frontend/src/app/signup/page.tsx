@@ -1,5 +1,10 @@
-import { redirect } from "next/navigation";
+import { AuthConsole } from "../../components/auth/AuthConsole";
+import { Suspense } from "react";
 
 export default function SignUpPage() {
-  redirect("/signin");
+  return (
+    <Suspense fallback={null}>
+      <AuthConsole mode="signup" />
+    </Suspense>
+  );
 }

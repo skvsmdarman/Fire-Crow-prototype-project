@@ -10,6 +10,24 @@ WORKSPACE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_sqlite_database_url(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        if not value.startswith("sqlite:///"):
+            return value
+
+        raw_path = value.removeprefix("sqlite:///")
+        if raw_path in {"", ":memory:"}:
+            return value
+
+        database_path = Path(raw_path)
+        if not database_path.is_absolute():
+            database_path = (WORKSPACE_DIR / database_path).resolve()
+
+        return f"sqlite:///{database_path.as_posix()}"
+
     @model_validator(mode="after")
     def _ensure_critical_secrets(self) -> "Settings":
         """Validate that all production‑critical secrets are set.
@@ -34,6 +52,14 @@ class Settings(BaseSettings):
                 object.__setattr__(self, "SECRET_KEY", "local_dev_secret_key_change_me_1234567890")
             if not self.ENCRYPTION_KEY:
                 object.__setattr__(self, "ENCRYPTION_KEY", "local_dev_encryption_key_change_me_1234567890")
+            if not self.GITHUB_CLIENT_ID:
+                object.__setattr__(self, "GITHUB_CLIENT_ID", "mock_github_client_id")
+            if not self.GITHUB_CLIENT_SECRET:
+                object.__setattr__(self, "GITHUB_CLIENT_SECRET", "mock_github_client_secret")
+            if not self.GOOGLE_CLIENT_ID:
+                object.__setattr__(self, "GOOGLE_CLIENT_ID", "mock_google_client_id")
+            if not self.GOOGLE_CLIENT_SECRET:
+                object.__setattr__(self, "GOOGLE_CLIENT_SECRET", "mock_google_client_secret")
         else:
             if not self.SECRET_KEY:
                 raise ValueError("SECRET_KEY is required. Set a strong random value (min 32 chars).")
@@ -242,9 +268,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(
             WORKSPACE_DIR / ".env",
-            BACKEND_DIR / ".env",
             WORKSPACE_DIR / ".env.local",
-            BACKEND_DIR / ".env.local",
         ),
         env_file_encoding="utf-8",
         extra="ignore"

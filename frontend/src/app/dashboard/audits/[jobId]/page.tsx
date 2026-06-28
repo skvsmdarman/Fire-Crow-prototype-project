@@ -1,7 +1,19 @@
-"use client";
-import React from "react";
-import ClientAuditRunPage from "./ClientAuditRunPage";
+import { AuditRunPage } from "../../../../components/dashboard/AuditRunPage";
+import { Suspense } from "react";
 
-export default function AuditRunPage() {
-  return <ClientAuditRunPage />;
+export function generateStaticParams() {
+  return [{ jobId: "default" }];
+}
+
+export default async function AuditDetailPage({
+  params,
+}: {
+  params: Promise<{ jobId: string }>;
+}) {
+  const { jobId } = await params;
+  return (
+    <Suspense fallback={null}>
+      <AuditRunPage jobId={jobId} />
+    </Suspense>
+  );
 }

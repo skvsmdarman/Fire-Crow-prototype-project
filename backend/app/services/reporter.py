@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings, WORKSPACE_DIR, _global_state
 from app.schemas import Finding, Severity
+from app.services.frontend_urls import build_audit_job_url
 from app.services.redaction import redact_text
 
 # Ensure WeasyPrint can find GTK/Pango libraries on Windows
@@ -1097,7 +1098,7 @@ class ReportGenerator:
     ) -> bool:
         """Sends a beautiful transactional email with the PDF link and attachment via Google/SMTP or Resend."""
         if report_url.startswith("/"):
-            report_link = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+            report_link = build_audit_job_url(job_id)
         else:
             report_link = report_url
 

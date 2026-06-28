@@ -3,12 +3,13 @@ import time
 from threading import Lock
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from app.config import settings
+from app.config import WORKSPACE_DIR, settings
 from app.services.redaction import redact_text
 
 from typing import Any, Optional
 
 logger = logging.getLogger("firecrow.models.database")
+LOCAL_SQLITE_URL = f"sqlite:///{(WORKSPACE_DIR / 'firecrow.db').resolve().as_posix()}"
 
 
 class _QueryCache:
@@ -103,7 +104,7 @@ if "postgresql" in db_url:
             "Falling back to local SQLite database 'firecrow.db'.",
             redact_text(str(e)),
         )
-        db_url = "sqlite:///firecrow.db"
+        db_url = LOCAL_SQLITE_URL
 
 if engine is None:
     # Initialize engine for SQLite or other URL

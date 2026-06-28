@@ -1,65 +1,37 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Rajdhani } from "next/font/google";
+import { ReactNode } from "react";
 import "./globals.css";
-import "./mobile-pwa.css";
-import { ToastProvider } from "../components/ui/Toast";
-import PWARegister from "../components/PWARegister";
 
-const dmSans = DM_Sans({
-  variable: "--font-body",
+const sans = DM_Sans({
   subsets: ["latin"],
+  variable: "--font-sans",
 });
 
-const jetBrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
+const display = Rajdhani({
   subsets: ["latin"],
-});
-
-const rajdhani = Rajdhani({
   variable: "--font-display",
+  weight: ["500", "600", "700"],
+});
+
+const mono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["600", "700"],
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
-  applicationName: "Fire Crow",
-  title: "Fire Crow FCv1",
-  description:
-    "Authorization-only security audit operations for SaaS repositories, controlled sandbox validation, CVSS scoring, and founder-ready remediation reports.",
-  manifest: "/manifest.webmanifest",
+  title: "Fire Crow",
+  description: "Authorization-first security orchestration console for Fire Crow.",
   icons: {
-    icon: "/icons/firecrow-icon.svg",
-    shortcut: "/icons/firecrow-icon.svg",
-    apple: "/icons/firecrow-icon.svg",
-  },
-  appleWebApp: {
-    capable: true,
-    title: "Fire Crow",
-    statusBarStyle: "black-translucent",
+    icon: "/fire_crow_logo.png",
+    apple: "/fire_crow_logo.png",
   },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: "#050609",
-  colorScheme: "dark",
-};
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable} ${rajdhani.variable}`}>
-      <body>
-        <ToastProvider>
-          {children}
-          <PWARegister />
-        </ToastProvider>
-      </body>
+    <html lang="en">
+      <body className={`${sans.variable} ${display.variable} ${mono.variable}`}>{children}</body>
     </html>
   );
 }

@@ -204,6 +204,13 @@ def build_processes(
 
 
 def main() -> int:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(ROOT / ".env")
+        load_dotenv(ROOT / ".env.local", override=True)
+    except ImportError:
+        pass
+
     parser = argparse.ArgumentParser(description="Start Fire Crow frontend, backend, and optional worker together.")
     parser.add_argument("--skip-worker", action="store_true", help="Do not start the Celery worker.")
     parser.add_argument("--backend-port", type=int, default=8000, help="Preferred backend port. Falls forward if busy.")

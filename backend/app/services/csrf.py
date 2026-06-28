@@ -22,11 +22,12 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
 
 
+def _cookie_secure() -> bool:
+    return (not settings.DEBUG) or settings.FRONTEND_URL.startswith("https://")
+
+
 def get_csrf_token_from_request(request: Request) -> Optional[str]:
-    token = request.headers.get(CSRF_HEADER_NAME)
-    if token:
-        return token
-    return request.cookies.get(CSRF_COOKIE_NAME)
+    return request.headers.get(CSRF_HEADER_NAME)
 
 
 def verify_csrf_token(request: Request, token: str) -> bool:
@@ -67,6 +68,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     def _set_csrf_cookie_if_missing(self, request: Request, response: Response):
         if CSRF_COOKIE_NAME not in request.cookies:
             token = generate_csrf_token()
+            cookie_secure = settings.AUTH_COOKIE_SECURE
+            if settings.DEBUG:
+                cookie_secure = _cookie_secure()
             # The CSRF cookie must be readable by client‑side JavaScript so that the token can be
             # placed into the X‑CSRF‑Token header for protected requests. Therefore ``httponly`` is set
             # to ``False``. All other security flags remain in place.
@@ -74,7 +78,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 key=CSRF_COOKIE_NAME,
                 value=token,
                 httponly=False,
-                secure=settings.AUTH_COOKIE_SECURE,
+                secure=cookie_secure,
                 samesite=settings.AUTH_COOKIE_SAMESITE,
                 path="/",
                 max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,

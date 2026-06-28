@@ -44,6 +44,7 @@ from app.orchestrator.runtime_context import (
 )
 from app.schemas import AuditState, Finding, JobStatus, Severity
 from app.config import settings
+from app.services.frontend_urls import build_audit_job_url
 from app.services.reporter import ReportGenerator, get_clean_repo_name
 from app.services.sandbox import SandboxManager
 from app.services.redaction import redact_text
@@ -901,7 +902,7 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         user_email = "audit-recipient@firecrow.dev"
 
     # 4. Target link in the email goes directly to the web dashboard
-    email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={state.job_id}"
+    email_url = build_audit_job_url(state.job_id)
 
     counts = {
         Severity.CRITICAL: len([finding for finding in all_findings if finding.severity == Severity.CRITICAL]),

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config import Settings, settings
+from app.config import Settings, WORKSPACE_DIR, settings
 
 # Minimal production-valid defaults that all DEBUG=False test cases need.
 # Individual tests can override any of these to trigger validation errors.
@@ -67,6 +67,19 @@ def test_settings_rejects_default_secret_in_production():
 def test_settings_rejects_sqlite_in_production():
     with pytest.raises(ValidationError):
         _prod_settings(DATABASE_URL="sqlite:///firecrow.db")
+
+
+def test_settings_normalize_relative_sqlite_database_url():
+    configured = Settings(
+        _env_file=None,  # type: ignore
+        DEBUG=True,
+        SECRET_KEY="x" * 40,
+        ENCRYPTION_KEY="y" * 40,
+        DATABASE_URL="sqlite:///./firecrow.db",
+    )
+
+    expected = f"sqlite:///{(WORKSPACE_DIR / 'firecrow.db').resolve().as_posix()}"
+    assert configured.DATABASE_URL == expected
 
 
 def test_settings_rejects_latest_scanner_image_in_production():

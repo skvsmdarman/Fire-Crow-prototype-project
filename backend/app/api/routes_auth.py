@@ -409,8 +409,8 @@ async def policy_context():
         "privacy_policy_version": PRIVACY_POLICY_VERSION,
         "terms_version": TERMS_VERSION,
         "providers": {
-            "github": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET) or settings.DEBUG,
-            "google": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET) or settings.DEBUG,
+            "github": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
+            "google": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
             "password": True,
         },
     }
@@ -716,49 +716,19 @@ async def github_login(
     db: Session = Depends(get_db),
 ):
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
-        if settings.DEBUG:
-            _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-            mock_github_id = "mock_github_user_123"
-            username = "mock_github_user"
-            email = "mock_github@example.com"
-            user = db.query(User).filter(User.github_id == mock_github_id).first()
-            if not user:
-                username = _ensure_unique_username(db, username)
-                user = User(
-                    id=_new_user_id(),
-                    username=username,
-                    email=email,
-                    github_id=mock_github_id,
-                )
-                db.add(user)
-            _apply_consents(user, privacy_policy_version)
-            from datetime import timezone as dt_timezone
-            now = datetime.now(dt_timezone.utc)
-            if not user.first_login_at:
-                user.first_login_at = now
-            user.last_login_at = now
-            user.github_access_token = encrypt_provider_token("mock_access_token")
-            user.github_token_scopes = "read:user,user:email"
-            user.github_token_updated_at = now
-            db.commit()
-            db.refresh(user)
+        raise HTTPException(status_code=503, detail="GitHub OAuth is not configured.")
 
-            token = create_access_token(
-                user_id=user.id,
-                username=user.username,
-                db=db,
-                ip=_client_ip(request),
-                user_agent=request.headers.get("user-agent"),
-            )
-            refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
-            
-            code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-            response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
-            _set_session_cookie(response, token)
-            _set_refresh_cookie(response, refresh_token)
-            return response
-        else:
-            raise HTTPException(status_code=503, detail="GitHub OAuth is not configured.")
+    if settings.DEBUG and settings.GITHUB_CLIENT_ID == "mock_github_client_id":
+        _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
+        oauth_state = create_oauth_state(
+            "github",
+            privacy_policy_version,
+            timezone_name=timezone,
+            region=region,
+        )
+        callback_url = _oauth_redirect_url(request, "github_callback")
+        redirect_url = f"{callback_url}?code=mock_github_code&state={oauth_state}"
+        return RedirectResponse(redirect_url)
 
     _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
     oauth_state = create_oauth_state(
@@ -803,53 +773,60 @@ async def github_callback(
     if not oauth_state or oauth_state.get("provider") != "github":
         raise HTTPException(status_code=400, detail="Invalid or expired GitHub OAuth state.")
 
-    async with httpx.AsyncClient() as client:
-        token_res = await client.post(
-            "https://github.com/login/oauth/access_token",
-            headers={"Accept": "application/json"},
-            data={
-                "client_id": settings.GITHUB_CLIENT_ID,
-                "client_secret": settings.GITHUB_CLIENT_SECRET,
-                "code": code,
-                "redirect_uri": _oauth_redirect_url(request, "github_callback"),
-            },
-        )
-        if token_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to retrieve access token from GitHub.")
-
-        token_data = token_res.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise HTTPException(
-                status_code=400,
-                detail=f"GitHub OAuth error: {token_data.get('error_description', 'No access token')}",
+    if settings.DEBUG and code == "mock_github_code":
+        github_id = "999999"
+        username = "mock_github_user"
+        email = "mock_github_user@example.com"
+        granted_scope_string = "repo,workflow,read:org,user:email"
+        access_token = "mock_github_access_token"
+    else:
+        async with httpx.AsyncClient() as client:
+            token_res = await client.post(
+                "https://github.com/login/oauth/access_token",
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": settings.GITHUB_CLIENT_ID,
+                    "client_secret": settings.GITHUB_CLIENT_SECRET,
+                    "code": code,
+                    "redirect_uri": _oauth_redirect_url(request, "github_callback"),
+                },
             )
-        granted_scope_string = str(token_data.get("scope") or "")
+            if token_res.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to retrieve access token from GitHub.")
 
-        user_res = await client.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"token {access_token}"},
-        )
-        if user_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to retrieve user profile from GitHub.")
-        if not granted_scope_string:
-            granted_scope_string = str(getattr(user_res, "headers", {}).get("X-OAuth-Scopes", ""))
+            token_data = token_res.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"GitHub OAuth error: {token_data.get('error_description', 'No access token')}",
+                )
+            granted_scope_string = str(token_data.get("scope") or "")
 
-        profile = user_res.json()
-        github_id = str(profile.get("id"))
-        username = profile.get("login") or f"github_{github_id}"
-        email = _normalize_email(profile.get("email"))
-
-        if not email:
-            emails_res = await client.get(
-                "https://api.github.com/user/emails",
+            user_res = await client.get(
+                "https://api.github.com/user",
                 headers={"Authorization": f"token {access_token}"},
             )
-            if emails_res.status_code == 200:
-                for email_obj in emails_res.json():
-                    if email_obj.get("primary"):
-                        email = _normalize_email(email_obj.get("email"))
-                        break
+            if user_res.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to retrieve user profile from GitHub.")
+            if not granted_scope_string:
+                granted_scope_string = str(getattr(user_res, "headers", {}).get("X-OAuth-Scopes", ""))
+
+            profile = user_res.json()
+            github_id = str(profile.get("id"))
+            username = profile.get("login") or f"github_{github_id}"
+            email = _normalize_email(profile.get("email"))
+
+            if not email:
+                emails_res = await client.get(
+                    "https://api.github.com/user/emails",
+                    headers={"Authorization": f"token {access_token}"},
+                )
+                if emails_res.status_code == 200:
+                    for email_obj in emails_res.json():
+                        if email_obj.get("primary"):
+                            email = _normalize_email(email_obj.get("email"))
+                            break
 
     user = db.query(User).filter(User.github_id == github_id).first()
     if not user and email:
@@ -945,46 +922,19 @@ async def google_login(
     db: Session = Depends(get_db),
 ):
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        if settings.DEBUG:
-            _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-            mock_google_id = "mock_google_user_123"
-            username = "mock_google_user"
-            email = "mock_google@example.com"
-            user = db.query(User).filter(User.google_id == mock_google_id).first()
-            if not user:
-                username = _ensure_unique_username(db, username)
-                user = User(
-                    id=_new_user_id(),
-                    username=username,
-                    email=email,
-                    google_id=mock_google_id,
-                )
-                db.add(user)
-            _apply_consents(user, privacy_policy_version)
-            from datetime import timezone as dt_timezone
-            now = datetime.now(dt_timezone.utc)
-            if not user.first_login_at:
-                user.first_login_at = now
-            user.last_login_at = now
-            db.commit()
-            db.refresh(user)
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
 
-            token = create_access_token(
-                user_id=user.id,
-                username=user.username,
-                db=db,
-                ip=_client_ip(request),
-                user_agent=request.headers.get("user-agent"),
-            )
-            refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
-            
-            code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-            response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
-            _set_session_cookie(response, token)
-            _set_refresh_cookie(response, refresh_token)
-            return response
-        else:
-            raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
+    if settings.DEBUG and settings.GOOGLE_CLIENT_ID == "mock_google_client_id":
+        _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
+        oauth_state = create_oauth_state(
+            "google",
+            privacy_policy_version,
+            timezone_name=timezone,
+            region=region,
+        )
+        callback_url = _oauth_redirect_url(request, "google_callback")
+        redirect_url = f"{callback_url}?code=mock_google_code&state={oauth_state}"
+        return RedirectResponse(redirect_url)
 
     _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
     oauth_state = create_oauth_state(
@@ -1030,36 +980,42 @@ async def google_callback(
     if not oauth_state or oauth_state.get("provider") != "google":
         raise HTTPException(status_code=400, detail="Invalid or expired Google OAuth state.")
 
-    async with httpx.AsyncClient() as client:
-        token_res = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "client_id": settings.GOOGLE_CLIENT_ID,
-                "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": _oauth_redirect_url(request, "google_callback"),
-            },
-        )
-        if token_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to retrieve access token from Google.")
+    if settings.DEBUG and code == "mock_google_code":
+        google_id = "999999"
+        email = "mock_google_user@example.com"
+        username = "mock_google_user"
+        access_token = "mock_google_access_token"
+    else:
+        async with httpx.AsyncClient() as client:
+            token_res = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": _oauth_redirect_url(request, "google_callback"),
+                },
+            )
+            if token_res.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to retrieve access token from Google.")
 
-        token_data = token_res.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise HTTPException(status_code=400, detail="No access token returned by Google.")
+            token_data = token_res.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                raise HTTPException(status_code=400, detail="No access token returned by Google.")
 
-        user_res = await client.get(
-            "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        if user_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to retrieve user profile from Google.")
+            user_res = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if user_res.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to retrieve user profile from Google.")
 
-        profile = user_res.json()
-        google_id = str(profile.get("id"))
-        email = _normalize_email(profile.get("email"))
-        username = email.split("@")[0] if email else f"google_{google_id}"
+            profile = user_res.json()
+            google_id = str(profile.get("id"))
+            email = _normalize_email(profile.get("email"))
+            username = email.split("@")[0] if email else f"google_{google_id}"
 
     user = db.query(User).filter(User.google_id == google_id).first()
     if not user and email:

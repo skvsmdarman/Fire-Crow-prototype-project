@@ -221,8 +221,42 @@ def test_login_requires_privacy_consent():
     assert "Privacy Policy consent" in response.json()["detail"]
 
 
+def test_policy_context_hides_unconfigured_oauth_providers(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+
+    response = client.get("/api/v1/auth/policy-context")
+
+    assert response.status_code == 200
+    providers = response.json()["providers"]
+    assert providers["github"] is False
+    assert providers["google"] is False
+    assert providers["password"] is True
+
+
+def test_policy_context_sets_local_csrf_cookie_without_secure_flag_in_debug(monkeypatch):
+    monkeypatch.setattr(settings, "CSRF_ENABLED", True)
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:3000")
+    monkeypatch.setattr(settings, "AUTH_COOKIE_SECURE", True)
+    with TestClient(app) as local_client:
+        response = local_client.get("/api/v1/auth/policy-context")
+
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "fc_csrf_token=" in set_cookie
+    assert "Secure" not in set_cookie
+
+
 def test_oauth_redirects_fail_when_provider_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
     github_response = client.get(
         "/api/v1/auth/github",
         params={
@@ -694,4 +728,86 @@ def test_auth_me_bearer_no_cookies():
     assert response.status_code == 200
     assert response.json()["user_id"] == user_id
     assert response.json()["username"] == "cleanclient"
+
+
+def test_github_mock_oauth_flow(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "mock_github_client_id")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "mock_github_client_secret")
+
+    # Step 1: Login redirect
+    login_response = client.get(
+        "/api/v1/auth/github",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    )
+    assert login_response.status_code in {302, 307}
+    location = login_response.headers["location"]
+    
+    # Parse the redirect URL
+    parsed = urlparse(location)
+    query_params = parse_qs(parsed.query)
+    assert "code" in query_params
+    assert "state" in query_params
+    
+    code = query_params["code"][0]
+    state = query_params["state"][0]
+    assert code == "mock_github_code"
+    
+    # Step 2: Callback
+    callback_response = client.get(
+        "/api/v1/auth/github/callback",
+        params={
+            "code": code,
+            "state": state,
+        },
+        follow_redirects=False,
+    )
+    assert callback_response.status_code in {302, 307}
+    callback_location = callback_response.headers["location"]
+    assert "code=" in callback_location
+
+
+def test_google_mock_oauth_flow(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "mock_google_client_id")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "mock_google_client_secret")
+
+    # Step 1: Login redirect
+    login_response = client.get(
+        "/api/v1/auth/google",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    )
+    assert login_response.status_code in {302, 307}
+    location = login_response.headers["location"]
+    
+    # Parse the redirect URL
+    parsed = urlparse(location)
+    query_params = parse_qs(parsed.query)
+    assert "code" in query_params
+    assert "state" in query_params
+    
+    code = query_params["code"][0]
+    state = query_params["state"][0]
+    assert code == "mock_google_code"
+    
+    # Step 2: Callback
+    callback_response = client.get(
+        "/api/v1/auth/google/callback",
+        params={
+            "code": code,
+            "state": state,
+        },
+        follow_redirects=False,
+    )
+    assert callback_response.status_code in {302, 307}
+    callback_location = callback_response.headers["location"]
+    assert "code=" in callback_location
 
