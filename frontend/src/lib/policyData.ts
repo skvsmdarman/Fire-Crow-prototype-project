@@ -92,7 +92,7 @@ export const TERMS_SECTIONS: PolicySection[] = [
   {
     id: "eu-subprocessors",
     title: "14. Sub-processors and Consent",
-    body: "Nova Devs engages third-party sub-processors (including hosting services, Neon database provider, and R2/S3 storage providers) to deliver the service. A complete list of current sub-processors is available in our DPA. We will provide 30 days' advance notice of any additions or replacements of sub-processors, giving you the right to object in writing on reasonable privacy grounds.",
+    body: "Nova Devs engages third-party sub-processors, including hosting services and the Neon database provider, to deliver the service. A complete list of current sub-processors is available in our DPA. We will provide 30 days' advance notice of any additions or replacements of sub-processors, giving you the right to object in writing on reasonable privacy grounds.",
     regions: ["eu"]
   },
   {
@@ -169,7 +169,7 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
   {
     id: "retention-policy",
     title: "4. Storage and Data Retention",
-    body: "Audit logs, code manifests, and findings are stored in secure Neon PostgreSQL and Cloudflare R2 storage. All local temporary reports are purged from local filesystems immediately after email transmission. Historical audit records are retained for the active duration of your subscription and permanently deleted within 30 days of subscription termination.",
+    body: "Audit logs, code manifests, findings, reports, evidence, and attack graphs are stored in secure Neon PostgreSQL. Local temporary PDFs are generated on demand for delivery workflows and purged after use. Historical audit records are retained for the active duration of your subscription and permanently deleted within 30 days of subscription termination.",
     regions: ["global", "in", "eu", "us"]
   },
   {

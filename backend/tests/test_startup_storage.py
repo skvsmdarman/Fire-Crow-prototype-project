@@ -1,6 +1,4 @@
-import pytest
-import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 def test_import_storage_service_succeeds():
     """Test importing app.services.storage succeeds."""
@@ -25,17 +23,12 @@ def test_import_main_app_succeeds():
         from app.main import app
         assert app is not None
 
-def test_missing_optional_storage_env_does_not_crash_app_import():
-    """Test missing optional storage env does not crash app import."""
-    with patch("app.config.settings.R2_ENDPOINT_URL", None), \
-         patch("app.config.settings.R2_ACCESS_KEY_ID", None), \
-         patch("app.config.settings.R2_SECRET_ACCESS_KEY", None), \
-         patch("app.config.settings.SECRET_KEY", "test-key-123"):
-
-        # Import the storage module explicitly to trigger the init without the env variables
+def test_storage_service_is_local_only():
+    """Storage service should stay importable without any cloud-storage configuration."""
+    with patch("app.config.settings.SECRET_KEY", "test-key-123"):
         from app.services.storage import StorageService
+
         service = StorageService()
 
-        # S3 should be deactivated due to missing variables
         assert service.is_s3_active() is False
         assert service.s3_client is None

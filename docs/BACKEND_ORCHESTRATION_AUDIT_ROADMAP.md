@@ -21,13 +21,13 @@ This roadmap outlines the systematic plan to audit, refactor, and harden the cor
 - A basic deduplication helper (`_dedupe_findings`) is used.
 
 ### Current Report/Artifact Flow
-- PDF reports are generated and uploaded directly to Cloudflare R2 bucket.
-- The presigned URL is returned and written as canonical job state in `AuditJob.report_pdf_url`.
+- HTML reports are stored directly in `audit_reports`.
+- The authenticated backend report endpoint is written as canonical job state in `AuditJob.report_pdf_url`.
 
 ### Current Failure/Cancel/Cleanup Behavior
 - Cancellation checks (`check_cancel_requested`) are performed before and after each phase execution.
 - If cancelled, resource cleanup runs.
-- During cleanup, a global `clean_r2_bucket_clutter()` sweeps the bucket, which is unsafe since it scans the entire bucket rather than just the specific job assets.
+- Cleanup is scoped to local workspace resources for the current job.
 
 ### Current Scanner Capability Model
 - The orchestrator assumes capability availability (e.g. nmap, docker, semgrep) based on whether it is running in mock mode or not, without checking if those binaries are actually installed on the system.
@@ -61,7 +61,7 @@ graph TD
 2. **Deterministic Scan Planning**: A dedicated `ScanPlan` verifies repo characteristics, agent capabilities, and attestation status before graph invocation.
 3. **Robust State Merging**: Extract list fields dynamically from Pydantic `AuditState` annotations containing `operator.add` metadata.
 4. **Persisted Phase Ledger**: Record the outcome and capability mode of each node execution in a database table.
-5. **Secure Private Artifact Retrieval**: Stop saving presigned URLs in the DB; use `ArtifactObject` references instead and require authenticated token scoping at the download endpoint.
+5. **Secure Private Artifact Retrieval**: Keep report delivery on authenticated backend endpoints instead of storing public links in the database.
 6. **No Dangerous Sweeps**: Deprecate global bucket cleanup from normal job flows in favor of scoped retention cycles.
 
 ---
@@ -73,7 +73,7 @@ graph TD
 - **Phase 4**: Refactor `runtime_context.py` to dynamically inspect `AuditState.model_fields` to find `operator.add` metadata and build the additive fields set.
 - **Phase 5**: Create the persisted phase ledger schema and transition jobs to completed, partial, or failed statuses based on phase status.
 - **Phase 6**: Update `FindingModel` persistence to automatically redact evidence and offload large evidence fields into the artifact storage service.
-- **Phase 7**: Implement `artifact_storage.py` to upload private artifacts, return `artifact_id`, and generate transient presigned download URLs on-the-fly.
+- **Phase 7**: Continue consolidating artifact persistence so database-backed reports and evidence remain the default production path.
 - **Phase 8**: Refactor cleanup logic to invoke the new `retention.py` service.
 - **Phase 9**: Integrate active sandbox checks with user authorization attestations.
 - **Phase 10**: Create a scanner registry config parser (`scanners.yaml` or `.json` / capability checker).

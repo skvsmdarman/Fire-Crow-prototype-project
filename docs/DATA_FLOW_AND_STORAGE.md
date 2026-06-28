@@ -70,7 +70,7 @@ Source paths: `backend/app/orchestrator/maestro.py`, `backend/app/models/audit_j
 Large evidence handling:
 
 - Evidence is redacted before persistence.
-- If redacted evidence exceeds 1000 characters, the full redacted text is uploaded as a private artifact and the database stores a truncated reference string instead.
+- If redacted evidence exceeds 1000 characters, the full redacted text is persisted as a private artifact and the database stores a truncated reference string instead.
 
 ## Log Persistence
 
@@ -85,26 +85,18 @@ Source paths: `backend/app/orchestrator/maestro.py`, `backend/app/models/audit_j
 Source paths: `backend/app/orchestrator/maestro.py`, `backend/app/services/reporter.py`, `backend/app/services/storage.py`.
 
 1. The reporter phase renders HTML from reportable findings.
-2. WeasyPrint is attempted for PDF output.
-3. If WeasyPrint is missing, an HTML file plus a placeholder PDF file is written.
-4. The report is uploaded through `StorageService.upload_artifact()`.
-5. The job stores an `artifact://{artifact_id}` reference, not a public URL.
-6. Email delivery is attempted using SMTP, Resend, then Brevo, with a debug-only local email fallback.
+2. The HTML report is stored in `audit_reports`.
+3. WeasyPrint is attempted only when a temporary PDF is needed for email delivery.
+4. The job stores the authenticated backend report route in `report_pdf_url`.
+5. Email delivery is attempted using SMTP, Resend, then Brevo, with a debug-only local email fallback.
 
-## Object Storage Behavior
+## Artifact Storage Behavior
 
 Source paths: `backend/app/services/storage.py`, `backend/app/api/routes_audit.py`.
 
-When R2/S3-compatible storage is configured:
-
-- `StorageService` writes the object to the remote bucket and stores artifact metadata in `artifact_objects`.
-- report downloads can redirect to a presigned URL
-- local cache may still be used for downloads
-
-When object storage is not configured:
-
-- artifacts are written under `workspace/storage`
-- report downloads are served from the local filesystem through authenticated routes
+- `StorageService` writes private overflow artifacts under `workspace/storage` and stores metadata in `artifact_objects`.
+- Reports, attack graphs, and HTML snapshots are stored directly in the database.
+- Report downloads are served through authenticated backend routes and prefer database HTML content.
 
 ## Local Fallback Behavior
 
@@ -138,29 +130,26 @@ Verified tables from `backend/app/models/*`:
 - `authorization_attestations`
 - `secret_redaction_events`
 
-## What Is Stored On Disk Or In Object Storage
+## What Is Stored On Disk
 
 From `backend/app/services/storage.py` and `backend/app/services/reporter.py`:
 
-- report PDFs
-- report HTML fallback files
+- temporary report PDFs
 - uploaded large evidence text artifacts
-- cached remote downloads
 - debug email HTML files
 
 ## Sensitive Data Handling And Redaction
 
 Source paths: `backend/app/services/redaction.py`, `backend/app/services/security_log.py`, `backend/app/orchestrator/maestro.py`.
 
-- JWTs, GitHub tokens, AWS keys, generic secrets, and presigned URL query strings are redacted before logging or serialization.
+- JWTs, GitHub tokens, AWS keys, and generic secrets are redacted before logging or serialization.
 - Policy-event logging strips query strings from `href` and `referrer` style fields.
 - Secret-history findings replace discovered secret values with `<REDACTED SECRET VALUE>`.
 - Large evidence uploads are stored after redaction, not before.
 
 ## Known Storage Limitations
 
-- `ReportGenerator.clean_r2_bucket_clutter()` deletes non-PDF objects from the configured bucket, which may conflict with the broader artifact model.
-- The reporter deletes the temporary local PDF/HTML after email dispatch, so local report inspection depends on the artifact copy, not the temporary file.
+- The reporter deletes temporary PDFs after successful email dispatch, so durable report review depends on the database HTML copy, not the transient file.
 - Legal-hold behavior exists only for artifact objects, not for every persisted record type.
 
 ---

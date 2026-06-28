@@ -53,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable} ${rajdhani.variable}`}>
+    <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable} ${rajdhani.variable}`} data-scroll-behavior="smooth">
       <body>
         <ToastProvider>
           {children}

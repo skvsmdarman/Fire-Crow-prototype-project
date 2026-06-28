@@ -148,7 +148,7 @@ def persist_findings(db: Session, job_id: str, findings: Sequence[Finding]) -> N
                 )
                 db_evidence = f"{redacted_evidence[:1000]}\n\n[Full evidence stored securely as private artifact ID: {artifact.id}]"
             except Exception as e:
-                logger.error(f"Failed to upload large evidence for finding {finding.id} to object storage: {str(e)}")
+                logger.error(f"Failed to persist large evidence for finding {finding.id}: {str(e)}")
                 db_evidence = redacted_evidence[:1000] + "\n\n[Full evidence could not be uploaded; truncated for database safety]"
 
         db.add(
@@ -897,9 +897,6 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
         if user and user.email:
             user_email = user.email
 
-    if not user_email:
-        user_email = "audit-recipient@firecrow.dev"
-
     # 4. Target link in the email goes directly to the web dashboard
     email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={state.job_id}"
 
@@ -912,15 +909,24 @@ def reporter_body(db: Session, state: AuditState) -> Dict[str, Any]:
     }
     
     generator = ReportGenerator()
-    success = generator.send_email_report(
-        to_email=user_email,
-        report_url=email_url,
-        job_id=state.job_id,
-        counts=counts,
-        repo_url=state.repo_url,
-        pdf_path=pdf_path
-    )
-    if not success:
+    success = False
+    if user_email:
+        success = generator.send_email_report(
+            to_email=user_email,
+            report_url=email_url,
+            job_id=state.job_id,
+            counts=counts,
+            repo_url=state.repo_url,
+            pdf_path=pdf_path
+        )
+    if not user_email:
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)
+            except OSError:
+                logger.warning("Failed to remove transient PDF for job %s after skipping email delivery.", state.job_id)
+        log_agent_message(db, state.job_id, "REPORTER", "Report generated without email delivery because no recipient email is available.")
+    elif not success:
         logger.error(f"Failed to deliver report to {user_email}")
         log_agent_message(db, state.job_id, "REPORTER", f"Warning: Failed to deliver email report to {user_email}.")
     else:
@@ -938,7 +944,7 @@ def reporter_node(state: AuditState) -> Dict[str, Any]:
         state,
         phase_name="reporter",
         agent_name="REPORTER",
-        start_message="Generating premium PDF report and transmitting notification emails...",
+        start_message="Persisting the HTML audit report and transmitting notification emails...",
         body=reporter_body,
     )
 
@@ -972,7 +978,7 @@ def google_agent_body(db: Session, state: AuditState) -> Dict[str, Any]:
     all_findings = get_reportable_findings(state)
         
     db_job = db.query(AuditJob).filter(AuditJob.id == state.job_id).first()
-    recipient_email = "audit-recipient@firecrow.dev"
+    recipient_email = state.custom_email or ""
     if db_job:
         from app.models.user import User
         user = db.query(User).filter(User.id == db_job.user_id).first()

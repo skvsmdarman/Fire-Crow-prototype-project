@@ -28,7 +28,7 @@ This list only includes limitations verified in the current repository.
 ## Frontend Content Drift
 
 - `frontend/src/app/signup/page.tsx` still advertises "6 offensive agents", "Neon", and guaranteed email/report behavior that are not grounded in current backend code.
-- `frontend/src/lib/policyData.ts` includes strong claims about SLAs, Neon, R2, GDPR/DPDP/CCPA compliance, and subscription operations that are not proven by the backend implementation.
+- `frontend/src/lib/policyData.ts` includes strong claims about SLAs, GDPR/DPDP/CCPA compliance, and subscription operations that are not proven by the backend implementation.
 
 ## Test And Validation Gaps
 

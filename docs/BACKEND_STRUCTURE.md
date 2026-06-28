@@ -136,7 +136,7 @@ Important files:
 
 - `auth.py`: JWT creation, verification, logout, OAuth state, session revocation
 - `sandbox.py`: Docker/Kali lifecycle and mock mode
-- `storage.py`: local/R2 artifact storage
+- `storage.py`: local workspace artifact storage with database metadata
 - `reporter.py`: report rendering and email delivery
 - `redaction.py`: text and structured data redaction
 - `limiter.py`: SlowAPI limiter

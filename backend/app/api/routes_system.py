@@ -124,12 +124,6 @@ async def system_status(
             "github_oauth": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
             "google_oauth": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
             "redis": bool(settings.REDIS_URL),
-            "report_storage": bool(
-                settings.R2_ACCESS_KEY_ID
-                and settings.R2_SECRET_ACCESS_KEY
-                and settings.R2_ENDPOINT_URL
-                and settings.R2_BUCKET_NAME
-            ),
             "email": bool(settings.RESEND_API_KEY),
             "ai_models": bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY),
         }

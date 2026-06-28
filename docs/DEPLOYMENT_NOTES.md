@@ -12,13 +12,14 @@ The repo contains a single-service Docker deployment path:
 
 ## Render Notes
 
-Current `render.yaml` only provisions:
+Current `render.yaml` provisions:
 
 - `DATABASE_URL`
 - `DEBUG=false`
 - `SECRET_KEY`
+- `ENCRYPTION_KEY`
 
-That is enough for a minimal boot, not for all optional features.
+`SECRET_KEY` and `ENCRYPTION_KEY` are automatically generated on Render using `generateValue: true`.
 
 The Docker container now runs `alembic -c backend/alembic.ini upgrade head` before starting `uvicorn`. That keeps the production startup guard in `backend/app/main.py` intact while making the default Render boot path compatible with pending schema changes.
 
@@ -85,12 +86,12 @@ The codebase itself does not encode Render pricing or sleep behavior, but curren
 
 - cold starts can affect startup probes
 - Redis and Docker-dependent active stages may not be present
-- filesystem-backed local artifact storage is not a strong persistence strategy for scaled or ephemeral instances
+- temporary workspace files remain ephemeral, so long-term retention depends on Neon DB rather than container disks
 
 ## Production-Hardening Checklist
 
 - Use PostgreSQL (Neon DB), not SQLite.
-- Set a strong `SECRET_KEY` and preferably a separate `ENCRYPTION_KEY`.
+- Set a strong `SECRET_KEY` and `ENCRYPTION_KEY` (both are required in production).
 - Decide whether Redis/Celery is required or whether in-process execution is acceptable.
 - Ensure Neon DB has appropriate backup policies, as all artifacts and reports are stored directly in the database.
 - Decide whether email delivery is required and configure one provider.

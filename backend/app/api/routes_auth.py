@@ -716,49 +716,7 @@ async def github_login(
     db: Session = Depends(get_db),
 ):
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
-        if settings.DEBUG:
-            _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-            mock_github_id = "mock_github_user_123"
-            username = "mock_github_user"
-            email = "mock_github@example.com"
-            user = db.query(User).filter(User.github_id == mock_github_id).first()
-            if not user:
-                username = _ensure_unique_username(db, username)
-                user = User(
-                    id=_new_user_id(),
-                    username=username,
-                    email=email,
-                    github_id=mock_github_id,
-                )
-                db.add(user)
-            _apply_consents(user, privacy_policy_version)
-            from datetime import timezone as dt_timezone
-            now = datetime.now(dt_timezone.utc)
-            if not user.first_login_at:
-                user.first_login_at = now
-            user.last_login_at = now
-            user.github_access_token = encrypt_provider_token("mock_access_token")
-            user.github_token_scopes = "read:user,user:email"
-            user.github_token_updated_at = now
-            db.commit()
-            db.refresh(user)
-
-            token = create_access_token(
-                user_id=user.id,
-                username=user.username,
-                db=db,
-                ip=_client_ip(request),
-                user_agent=request.headers.get("user-agent"),
-            )
-            refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
-            
-            code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-            response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
-            _set_session_cookie(response, token)
-            _set_refresh_cookie(response, refresh_token)
-            return response
-        else:
-            raise HTTPException(status_code=503, detail="GitHub OAuth is not configured.")
+        raise HTTPException(status_code=503, detail="GitHub OAuth is not configured.")
 
     _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
     oauth_state = create_oauth_state(
@@ -945,46 +903,7 @@ async def google_login(
     db: Session = Depends(get_db),
 ):
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        if settings.DEBUG:
-            _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-            mock_google_id = "mock_google_user_123"
-            username = "mock_google_user"
-            email = "mock_google@example.com"
-            user = db.query(User).filter(User.google_id == mock_google_id).first()
-            if not user:
-                username = _ensure_unique_username(db, username)
-                user = User(
-                    id=_new_user_id(),
-                    username=username,
-                    email=email,
-                    google_id=mock_google_id,
-                )
-                db.add(user)
-            _apply_consents(user, privacy_policy_version)
-            from datetime import timezone as dt_timezone
-            now = datetime.now(dt_timezone.utc)
-            if not user.first_login_at:
-                user.first_login_at = now
-            user.last_login_at = now
-            db.commit()
-            db.refresh(user)
-
-            token = create_access_token(
-                user_id=user.id,
-                username=user.username,
-                db=db,
-                ip=_client_ip(request),
-                user_agent=request.headers.get("user-agent"),
-            )
-            refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
-            
-            code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-            response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
-            _set_session_cookie(response, token)
-            _set_refresh_cookie(response, refresh_token)
-            return response
-        else:
-            raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
 
     _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
     oauth_state = create_oauth_state(

@@ -32,18 +32,9 @@ def test_runtime_settings_loaded_for_tests():
     assert settings.SECRET_KEY
 
 
-def test_storage_config_validation():
-    with pytest.raises(ValueError, match="Cloud storage configuration is missing"):
-        _prod_settings(
-            FIRE_CROW_SCANNER_IMAGE="image:1.0",
-            REPORT_LOCAL_FALLBACK=False,
-            R2_ACCESS_KEY_ID="",
-        )
-
-    _prod_settings(
-        FIRE_CROW_SCANNER_IMAGE="image:1.0",
-        REPORT_LOCAL_FALLBACK=True,
-    )
+def test_production_settings_allow_database_backed_report_storage():
+    configured = _prod_settings(FIRE_CROW_SCANNER_IMAGE="image:1.0")
+    assert configured.FIRE_CROW_SCANNER_IMAGE == "image:1.0"
 
 
 def test_settings_debug_defaults_safe_when_secret_provided():

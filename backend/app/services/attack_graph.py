@@ -63,7 +63,9 @@ def build_attack_graph(state: AuditState) -> Dict[str, Any]:
         route_path = route.get("path", "unknown")
         for f in state.authz_findings:
             if f.route == route_path or (f.file_path and f.file_path == route.get("file")):
+                edge_id = f"e_route_{route_path}_vuln_{f.id}"
                 edges.append({
+                    "id": edge_id,
                     "source": f"route_{route_path}",
                     "target": f"vuln_{f.id}",
                     "relation": "exposes"

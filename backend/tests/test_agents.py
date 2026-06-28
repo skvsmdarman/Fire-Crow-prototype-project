@@ -85,7 +85,7 @@ def test_google_agent_uses_deterministic_risk_assessment_without_llm():
         mock_settings.SMTP_PORT = 587
         mock_settings.RESEND_API_KEY = ""
         mock_settings.BREVO_API_KEY = ""
-        mock_settings.SENDER_EMAIL = "reports@firecrow.dev"
+        mock_settings.SENDER_EMAIL = "alerts@example.com"
         mock_settings.DEBUG = False
 
         result = run_google_agent(

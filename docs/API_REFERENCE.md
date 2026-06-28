@@ -252,7 +252,7 @@ This reference is derived from `backend/app/main.py`, `backend/app/api/routes_au
 - Auth required: no
 - Response:
   - `200` or `503`
-  - includes database, local storage, and object storage states
+  - includes database, workspace storage, and artifact storage states
 - Source: `backend/app/main.py`
 
 ## Additional Storage Endpoints

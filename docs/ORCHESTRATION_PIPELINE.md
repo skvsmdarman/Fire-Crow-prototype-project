@@ -215,6 +215,7 @@ Source: `cleanup_resources()` in `backend/app/orchestrator/maestro.py` and final
 
 - Tries to remove the sandbox network, target container, and Kali container.
 - Deletes the cloned repository workspace.
+- Does not perform any bucket-wide or external artifact cleanup sweep.
 - If the graph never reaches `cleanup`, `runtime.py` still forces cleanup in `finally`.
 
 ## Cancellation Behavior
@@ -247,7 +248,6 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 - [x] SAST agent: extended exclude dirs list, expanded binary file skip list, replaced silent `errors='ignore'` with `errors='replace'`.
 - [x] Authz/IDOR agent: fixed `db: Any` type to `db: Session`.
 - [x] TelemetryMiddleware registered in main.py.
-- [x] Neo4j configuration and migration service added.
 - [x] API surface scanner: replaced `errors='ignore'` with `errors='replace'`.
 
 ---
