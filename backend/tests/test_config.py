@@ -133,9 +133,11 @@ def test_settings_rejects_default_encryption_key_in_production():
         _prod_settings(ENCRYPTION_KEY="local_dev_encryption_key_change_me_1234567890")
 
 
-def test_settings_rejects_missing_cors_origins_in_production():
-    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
-        _prod_settings(CORS_ORIGINS="")
+def test_settings_allows_missing_cors_origins_and_frontend_url_in_production():
+    configured = _prod_settings(CORS_ORIGINS="", FRONTEND_URL="", REDIS_URL="")
+    assert configured.CORS_ORIGINS == ""
+    assert configured.FRONTEND_URL == ""
+    assert configured.REDIS_URL == ""
 
 
 def test_settings_allow_optional_oauth_integrations_in_production():

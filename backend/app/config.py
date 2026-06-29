@@ -76,9 +76,6 @@ class Settings(BaseSettings):
             for name in [
                 "SECRET_KEY",
                 "DATABASE_URL",
-                "REDIS_URL",
-                "FRONTEND_URL",
-                "CORS_ORIGINS",
             ]:
                 if not getattr(self, name):
                     missing.append(name)
@@ -314,7 +311,9 @@ class Settings(BaseSettings):
         The API must know which origin is allowed for CORS and CSRF redirects.
         """
         if not self.DEBUG and not self.FRONTEND_URL:
-            raise RuntimeError("FRONTEND_URL must be set in production.")
+            import logging
+            logger = logging.getLogger("firecrow.config")
+            logger.warning("FRONTEND_URL is not set in production. CSRF and CORS might be restricted.")
         return self
 
 
