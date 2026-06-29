@@ -22,7 +22,9 @@ from app.models import (
 )
 from app.services.auth import get_current_user
 from app.services.housekeeping import run_housekeeping
+import logging
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/system", tags=["System"])
 
@@ -253,14 +255,17 @@ async def trigger_database_housekeeping(
         counts = run_housekeeping(db)
         return {"status": "success", "counts": counts}
     except Exception as e:
+        logger.error(f"Database housekeeping failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database housekeeping failed: {str(e)}",
+            detail="Database housekeeping failed.",
         )
 
 
 @router.get("/metrics")
-async def prometheus_metrics():
+async def prometheus_metrics(
+    admin_user: User = Depends(require_admin),
+):
     """Prometheus metrics endpoint for monitoring and alerting."""
     try:
         from prometheus_client import generate_latest, CONTENT_TYPE_LATEST

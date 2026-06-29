@@ -9,5 +9,10 @@ from app.api.routes_chat import router as chat_router
 from app.api.routes_leaderboard import router as leaderboard_router
 from app.api.routes_push import router as push_router
 from app.api.routes_user import router as user_router
+from app.api.routes_mfa import router as mfa_router
+from app.api.routes_sso import router as sso_router
+from app.api.routes_pam import router as pam_router
+from app.api.routes_iam import router as iam_router
+from app.api.routes_tenant import router as tenant_router
 
 

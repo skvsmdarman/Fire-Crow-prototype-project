@@ -229,6 +229,32 @@ class StorageService:
         artifact, file_path = result
         return file_path, artifact.object_key.split("/")[-1], artifact.mime_type
 
+    def get_presigned_url(
+        self,
+        db: Session,
+        artifact_id: str,
+        user_id: str,
+        *,
+        expires_in: int = 3600,
+    ) -> str:
+        result = self.get_artifact(db, artifact_id, user_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+
+        artifact, _ = result
+        if artifact.storage_provider != "cloudflare_r2" or self.s3_client is None:
+            raise HTTPException(status_code=400, detail="Presigned URLs are only available for cloud storage artifacts")
+
+        try:
+            return self.s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.r2_bucket, "Key": artifact.object_key},
+                ExpiresIn=expires_in,
+            )
+        except Exception as exc:
+            logger.error("Failed to generate presigned URL: %s", redact_text(str(exc)))
+            raise HTTPException(status_code=500, detail="Failed to generate presigned URL") from exc
+
     def delete_artifact(self, db: Session, artifact_id: str, user_id: str) -> bool:
         """
         Soft deletes an artifact from DB and optionally queues for hard deletion.

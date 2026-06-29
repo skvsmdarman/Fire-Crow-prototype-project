@@ -13,6 +13,11 @@ Important files:
 - `backend/app/api/routes_sse.py`
 - `backend/app/api/routes_system.py`
 - `backend/app/api/routes_storage.py`
+- `backend/app/api/routes_mfa.py`
+- `backend/app/api/routes_sso.py`
+- `backend/app/api/routes_pam.py`
+- `backend/app/api/routes_iam.py`
+- `backend/app/api/routes_tenant.py`
 - `backend/app/api/audit_queries.py`
 
 Interactions:
@@ -94,6 +99,12 @@ Important files:
 - `user.py`: users, login failures, user sessions
 - `compliance.py`: organizations, memberships, artifact objects, privacy and attestation records
 - `security_log.py`: security event records
+- `mfa.py`: MFA configs, recovery codes, and audit logs
+- `sso.py`: SSO providers and SSO sessions
+- `pam.py`: privilege escalation requests, grants, and PAM audits
+- `iam.py`: IAM policies, role permissions, account audit logs, service accounts
+- `tenant.py`: tenant records (plan, slug, domain, limits)
+- `role.py`: RBAC user roles
 
 Interactions:
 
@@ -142,6 +153,16 @@ Important files:
 - `limiter.py`: SlowAPI limiter
 - `housekeeping.py`: retention and pruning
 - `attack_graph.py`, `remediation_planner.py`, `confidence.py`, `evidence_normalizer.py`
+- `mfa_service.py`: MFA setup, verification, recovery, and deactivation logic
+- `sso_service.py`: SSO provider CRUD, user provisioning, and OIDC/SAML exchange
+- `pam_service.py`: request flows, grant validation, revocation, and cleanup for PAM
+- `iam_service.py`: IAM policy validation, RBAC mapping, dormancy detection, and service accounts
+- `tenant_service.py`: tenant CRUD, user counts, active jobs tracking, and settings
+- `neo4j_client.py` & `neo4j_migration.py`: client wrapper and migrations for Neo4j graph database
+- `push_notify.py`: push subscription and transmission service
+- `crypto.py`: AES-based data encryption helpers
+- `csrf.py`: anti-CSRF token verification middleware utilities
+- `safe_llm.py` & `report_service.py`: fallback LLM client routing and structured reports logic
 
 Interactions:
 
@@ -197,4 +218,4 @@ Coverage themes:
 The backend test suite is real and currently wired through `pytest.ini` and the root validation script.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

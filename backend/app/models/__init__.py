@@ -15,3 +15,8 @@ from app.models.compliance import (
     AuthorizationAttestation,
     SecretRedactionEvent,
 )
+from app.models.mfa import MFAConfiguration, MFARecoveryCode, MFAAuditLog
+from app.models.sso import SSOProvider, SSOSession
+from app.models.pam import PrivilegedAccessRequest, PrivilegedAccessGrant, PrivilegedAccessAudit
+from app.models.iam import IAMPolicy, RolePermission, AccountAuditLog, ServiceAccount
+from app.models.tenant import Tenant

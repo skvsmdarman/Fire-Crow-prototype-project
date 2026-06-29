@@ -115,28 +115,66 @@ Current local fallback paths:
 - local debug email output: `workspace/sent_emails`
 - local DB files in this repository: `firecrow.db` and `test_firecrow.db`
 
+## Enterprise Authentication Flows (MFA & SSO)
+
+Source paths: `backend/app/api/routes_mfa.py`, `backend/app/services/mfa_service.py`, `backend/app/api/routes_sso.py`, `backend/app/services/sso_service.py`.
+
+1. **MFA Enrollment & Verification**:
+   - Enrollment generates a unique TOTP secret and recovery codes (saved as SHA-256 hashes in `mfa_recovery_codes`).
+   - Every verification checks the time-based token using `pyotp` validation.
+   - Events are recorded in `mfa_audit_logs`.
+2. **SSO Authentication Flow**:
+   - Users are redirected to OIDC or SAML providers via `/sso/oidc/{provider_id}/login` or `/sso/saml/{provider_id}/login`.
+   - Callbacks receive code/assertion arguments, fetch/validate identity assertions, auto-provision user profiles if enabled, and store encrypted OIDC access/refresh tokens in `sso_sessions`.
+
+## Privileged Access Escalation Flow (PAM)
+
+Source paths: `backend/app/api/routes_pam.py`, `backend/app/services/pam_service.py`.
+
+1. Users create a request specifying target `role_name`, `permission`, `reason`, and `requested_duration_minutes`.
+2. Admins query pending requests and approve/deny them.
+3. Upon approval, a `PrivilegedAccessGrant` is written with an `expires_at` timestamp.
+4. Active grants are checked by permissions middleware.
+5. Expired grants are regularly terminated by a background worker sweep task.
+6. Actions are logged to `privileged_access_audits`.
+
+## IAM Authorization & Scoping Flow
+
+Source paths: `backend/app/api/routes_iam.py`, `backend/app/services/iam_service.py`.
+
+1. **RBAC/ABAC Evaluation**: When a route verifies a permission via `check_permission()`, the service evaluates assigned `RolePermission` entries and custom `IAMPolicies` against the resource pattern and action.
+2. **Service Account Tokens**: Service accounts authenticate programmatically using tokens prefix-matching `fc_svc_...`. Only token hashes are stored in `service_accounts`.
+3. **Auditing Sweeps**: Active session and login audits identify dormant accounts (no login for 90 days) and shared access (accounts used concurrently from more than 5 distinct IPs).
+
 ## What Is Stored In The Database
 
 Verified tables from `backend/app/models/*`:
 
-- `users`
-- `login_failures`
-- `user_sessions`
-- `audit_jobs`
-- `findings`
-- `agent_logs`
-- `audit_artifacts`
-- `phase_ledger`
-- `security_logs`
-- `organizations`
-- `memberships`
-- `data_processing_records`
-- `retention_policies`
-- `artifact_objects`
-- `compliance_events`
-- `privacy_requests`
-- `authorization_attestations`
-- `secret_redaction_events`
+- `users` (user records, credentials, Google/GitHub provider links)
+- `login_failures` (lockout failure tracking)
+- `user_sessions` (token family and revocation state)
+- `audit_jobs` (scan metadata and configuration details)
+- `findings` (redacted vulnerabilities and CWE classifications)
+- `agent_logs` (graph execution output)
+- `audit_artifacts` (HTML reports and evidence blobs)
+- `phase_ledger` (performance tracking)
+- `security_logs` (general authentication/security logs)
+- `organizations` & `memberships` (user scoping models)
+- `tenants` (multi-tenant slugs, domains, plan tiers, and usage limits)
+- `roles` (RBAC user roles)
+- `mfa_configurations` (TOTP secrets and activation statuses)
+- `mfa_recovery_codes` (hashed fallback recovery codes)
+- `mfa_audit_logs` (MFA event logs)
+- `sso_providers` (OIDC/SAML integration configuration)
+- `sso_sessions` (active federated OIDC provider session records)
+- `privileged_access_requests` (PAM escalation requests)
+- `privileged_access_grants` (PAM escalation authorization records)
+- `privileged_access_audits` (logs recording PAM actions)
+- `iam_policies` (custom RBAC/ABAC allow/deny rules)
+- `role_permissions` (maps roles to permissions and resource patterns)
+- `account_audit_logs` (security configuration logs)
+- `service_accounts` (programmatic service tokens)
+- `authorization_attestations` (tracked scan authorization agreements)
 
 ## What Is Stored On Disk Or In Object Storage
 
@@ -164,4 +202,4 @@ Source paths: `backend/app/services/redaction.py`, `backend/app/services/securit
 - Legal-hold behavior exists only for artifact objects, not for every persisted record type.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

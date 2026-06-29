@@ -68,3 +68,30 @@
 5. **Always limit concurrency** – background tasks, SSE connections, and external API calls.
 6. **Budget every paid service** – AI, email, storage – and stop when empty.
 7. **Validate every input** – especially emails, URLs, and branch names.
+
+# PART 2: HACKATHON SURGICAL FEATURES
+
+## Feature A: Verified Remediation PR
+- ✅ DONE (2026-06-08)
+- ⚠️ NEVER: Merge a remediation PR without validating that original findings are no longer present.
+- 📖 LESSON: Use clean temporary branches and runtime verification suite to check regression of original finding IDs.
+
+## Feature B: Dynamic Vulnerability Attack Path Graph
+- ✅ DONE (2026-06-08)
+- ⚠️ NEVER: Rely on basic flat tables to visualize complex multi-stage vulnerability chains.
+- 📖 LESSON: Use React Flow with dynamic node mapping to render clear, interactive topological representations of CVE pathways.
+
+## Feature C: Real‑time SSE Leaderboard
+- ✅ DONE (2026-06-08)
+- ⚠️ NEVER: Require users to refresh the dashboard to see global security scoreboard updates.
+- 📖 LESSON: Stream security score changes in real time using Server-Sent Events (SSE) and animate transitions smoothly in the UI.
+
+## Feature D: Inline AI Agent Chat Widget
+- ✅ DONE (2026-06-08)
+- ⚠️ NEVER: Direct users to a generic chatbot disconnected from the specific context of their current audit job.
+- 📖 LESSON: Scope AI chat history and runtime retrieval to the selected finding and active workspace database logs.
+
+## Feature E: Push Notifications (PWA)
+- ✅ DONE (2026-06-08)
+- ⚠️ NEVER: Leave users in the dark on audit completion when they navigate away from the application.
+- 📖 LESSON: Implement fully standard PWA push notification subscriptions using VAPID keys, service workers, and background triggers.

@@ -111,6 +111,50 @@ def parse_repo_url(url: str) -> tuple[str, str] | None:
         return match.group(1), match.group(2)
     return None
 
+def _get_smart_finding_details(finding: Finding) -> Dict[str, str]:
+    """Uses LLM to enrich findings with non-technical assessment and step-by-step fixes for GitHub reports."""
+    details = {
+        "non_technical_summary": f"This security issue is a {finding.severity.value} vulnerability which may expose sensitive application assets or logic. It was identified by {finding.agent_source} tools.",
+        "impact": "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the application, leading to unauthorized access, system degradation, or data disclosure.",
+        "remediation_steps": finding.remediation or "Follow secure coding practices, enforce strict parameter validation, sanitize all inputs, and use encrypted configuration parameters."
+    }
+
+    if not settings.GEMINI_API_KEY or not settings.GEMINI_MODEL:
+        return details
+
+    prompt = f"""You are a senior security researcher. Explain the following vulnerability so that even a non-technical manager (or junior developer) can understand:
+Title: {finding.title}
+Severity: {finding.severity.value}
+Description: {finding.description}
+CWE: {finding.cwe_id or 'N/A'}
+Evidence: {finding.evidence or 'None'}
+
+Provide your response in JSON format. Do not use markdown code block wrappers (like ```json). Respond with a raw JSON object containing these keys:
+- "non_technical_summary": A clear explanation of what this vulnerability means in plain English, why it is dangerous, and what the real-world business risk is.
+- "impact": The technical impact of this vulnerability on the systems and data.
+- "remediation_steps": Actionable, step-by-step coding instructions to fix the issue.
+"""
+    try:
+        res = safe_llm_call(prompt, max_tokens=1000, temperature=0.2)
+        if res:
+            res_clean = res.strip()
+            if res_clean.startswith("```json"):
+                res_clean = res_clean.removeprefix("```json").removesuffix("```").strip()
+            elif res_clean.startswith("```"):
+                res_clean = res_clean.removeprefix("```").removesuffix("```").strip()
+            parsed = json.loads(res_clean)
+            if "non_technical_summary" in parsed and "impact" in parsed and "remediation_steps" in parsed:
+                return {
+                    "non_technical_summary": parsed["non_technical_summary"],
+                    "impact": parsed["impact"],
+                    "remediation_steps": parsed["remediation_steps"]
+                }
+    except Exception as e:
+        logger.warning(f"Failed to generate smart details for finding {finding.title}: {e}")
+    
+    return details
+
+
 def format_findings_markdown(repo_url: str, findings: List[Finding]) -> str:
     """Formats the security audit findings into a premium markdown report."""
     if not findings:
@@ -139,15 +183,20 @@ def format_findings_markdown(repo_url: str, findings: List[Finding]) -> str:
     body += "### Vulnerability Details\n"
     for idx, finding in enumerate(findings, 1):
         severity_label = finding.severity.value.upper()
+        
+        # Call smart helper
+        smart_details = _get_smart_finding_details(finding)
+        
         body += f"#### {idx}. {_escape_markdown_text(finding.title)} ({severity_label})\n"
         body += f"- **Source**: {_escape_markdown_text(finding.agent_source)}\n"
         if finding.cwe_id:
             body += f"- **CWE**: {_escape_markdown_text(finding.cwe_id)}\n"
-        body += f"- **Description**: {_escape_markdown_text(finding.description)}\n"
+        body += f"- **Technical Description**: {_escape_markdown_text(finding.description)}\n"
+        body += f"- **Plain English Summary (For Non-Technical Users)**: {smart_details['non_technical_summary']}\n"
+        body += f"- **Security & Business Impact**: {smart_details['impact']}\n"
         if finding.evidence:
             body += f"- **Evidence/Proof**:\n\n{_code_block(finding.evidence)}\n"
-        if finding.remediation:
-            body += f"- **Remediation Plan**: {_escape_markdown_text(finding.remediation)}\n"
+        body += f"- **Actionable Remediation Guide**: {smart_details['remediation_steps']}\n"
         body += "\n---\n"
 
     body += "\n\n*Report generated automatically by Fire Crow Orchestration Engine.*"

@@ -44,6 +44,40 @@ Later files win.
 | `AUTH_COOKIE_HTTPONLY` | optional | `true` | httpOnly cookie flag | example missing |
 | `AUTH_COOKIE_SAMESITE` | optional | `lax` | SameSite value | example missing |
 
+### Multi-Factor Authentication (MFA)
+
+| Variable | Required | Default | Purpose | Notes |
+| --- | --- | --- | --- | --- |
+| `MFA_ENFORCE_FOR_ADMINS` | optional | `true` | Enforce active MFA for administrative accounts | Blocks admin actions unless MFA is enrolled |
+| `MFA_TOTP_ISSUER` | optional | `Fire Crow` | Name of the TOTP issuer displayed in authentication apps | e.g. Google Authenticator |
+| `MFA_MAX_FAILED_ATTEMPTS` | optional | `5` | Failed verification attempts before locking out the MFA config | Lockout safety counter |
+| `MFA_RECOVERY_CODE_COUNT` | optional | `8` | Number of backup recovery codes to generate | Generated on enrollment |
+
+### Single Sign-On (SSO)
+
+| Variable | Required | Default | Purpose | Notes |
+| --- | --- | --- | --- | --- |
+| `SSO_OIDC_SCOPES` | optional | `openid email profile` | Standard OIDC scope query string | Space-separated values |
+| `SSO_ALLOW_AUTO_PROVISION` | optional | `false` | Dynamically create user records for verified SSO identities | If false, users must be pre-registered |
+| `SSO_DEFAULT_ROLE_ID` | optional | empty string | Role assigned to auto-provisioned SSO users | Reference to role ID |
+
+### Privileged Access Management (PAM)
+
+| Variable | Required | Default | Purpose | Notes |
+| --- | --- | --- | --- | --- |
+| `PAM_MAX_DURATION_MINUTES` | optional | `480` | Cap on duration for elevated role request | Max 8 hours |
+| `PAM_MIN_DURATION_MINUTES` | optional | `1` | Floor on duration for elevated role request | Min 1 minute |
+| `PAM_MAX_PENDING_REQUESTS` | optional | `3` | Max concurrent pending PAM requests allowed per user | Avoids flood requests |
+| `PAM_CLEANUP_INTERVAL_MINUTES` | optional | `15` | Cron schedule trigger for stale grant cleanup | Background worker sweep |
+
+### Identity & Access Management (IAM)
+
+| Variable | Required | Default | Purpose | Notes |
+| --- | --- | --- | --- | --- |
+| `IAM_DORMANT_DAYS_THRESHOLD` | optional | `90` | Days of no-login inactivity before triggering account deactivation | Safety cleanup |
+| `IAM_SHARED_ACCOUNT_IP_THRESHOLD` | optional | `5` | IP footprint threshold before flagging suspected credential sharing | Session audit log check |
+| `IAM_SERVICE_TOKEN_PREFIX` | optional | `fc_svc_` | Enforced prefix string for programmatic Service Account tokens | For quick route identification |
+
 ### Database And Queue
 
 | Variable | Required | Default | Purpose | Notes |
@@ -90,7 +124,15 @@ Later files win.
 
 ### Object Storage
 
-No external object storage is used. All reports and evidence artifacts are stored directly in Neon DB.
+By default, reports and evidence are stored as HTML/JSON directly in the relational database. If `REPORT_LOCAL_FALLBACK` is set to `false`, Cloudflare R2 or an S3-compatible service is required:
+
+| Variable | Required | Default | Purpose | Notes |
+| --- | --- | --- | --- | --- |
+| `REPORT_LOCAL_FALLBACK` | optional | `true` | Use local filesystem/database storage fallback | If `false`, R2 storage is mandatory in production |
+| `R2_ACCESS_KEY_ID` | required if fallback is false | empty string | Cloudflare R2 Access Key | Sensitive; used to upload report PDFs |
+| `R2_SECRET_ACCESS_KEY` | required if fallback is false | empty string | Cloudflare R2 Secret Key | Sensitive; used to upload report PDFs |
+| `R2_ENDPOINT_URL` | required if fallback is false | empty string | Cloudflare R2 API connection URL | Endpoint for bucket connections |
+| `R2_BUCKET_NAME` | optional | `firecrow-reports` | Cloudflare R2 bucket name | Storage location bucket |
 
 ### AI Settings
 
@@ -166,4 +208,4 @@ If unset in the browser:
 - Several config constants exist in code without matching entries in `.env.example`; those are now documented here but still worth adding to examples in a later change.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

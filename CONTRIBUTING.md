@@ -12,6 +12,7 @@ Fire Crow is an authorization-only security audit project. Contribute in ways th
 
 - Inspect affected source files before editing.
 - Preserve tenant scoping, auth checks, redaction, and sandbox restrictions.
+- Ensure MFA, SSO, PAM, and IAM constraints are respected when adding new routes or admin capabilities.
 - Keep production and debug behavior clearly separated.
 
 ## No Hardcoding Policy
@@ -44,4 +45,4 @@ Fire Crow is an authorization-only security audit project. Contribute in ways th
 - Preserve the attestation and authorization model rather than weakening it.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

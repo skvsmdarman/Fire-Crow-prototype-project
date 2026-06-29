@@ -6,6 +6,8 @@ Users can securely authenticate, submit GitHub HTTPS repository URLs for analysi
 
 ## Key Features
 
+- **Enterprise Security Controls (MFA/SSO/PAM/IAM)**: Full Multi-Factor Authentication (TOTP), Single Sign-On federation (OIDC & SAML 2.0), Just-In-Time role escalation (PAM), fine-grained IAM resource policies, dormant account deactivations, and concurrent login audits.
+- **Multi-Tenant Isolation**: Complete database-level partitioning with custom slug/domain headers routing resolution, and plan-specific limits (max users, max storage size).
 - **Enhanced Report Generation**: Premium PDF reports with SVG charts (donut, bar, stacked), severity distribution, scanner performance metrics, CWE analysis, and actionable security recommendations.
 - **Real-Time Log Streaming**: Native SSE integration for streaming scan logs and progress updates directly to the frontend dashboard.
 - **Agentic Orchestration Engine**: Uses a graph-based state machine (LangGraph) to route execution between passive scanning, heuristic intelligence gathering, and LLM-driven vulnerability reasoning.
@@ -107,16 +109,50 @@ npm install
 npm run dev
 ```
 
-## Deployment Guide (Render)
+## Deployment Topologies
 
-**Minimum Production Environment Variables**:
+The codebase supports three primary deployment paths for production environments:
+
+### 1. Single-Service Render Deployment
+Bundles the statically exported Next.js frontend and FastAPI backend inside a single Docker image, running migrations automatically during startup.
+Refer to `render.yaml` and [docs/DEPLOYMENT_NOTES.md](docs/DEPLOYMENT_NOTES.md) for configuration details.
+
+### 2. Multi-Service Docker Compose Stack
+Orchestrates API replicas, background Celery workers, Celery Beat periodic scheduler, PostgreSQL, and password-secured Redis cache/brokers behind an Nginx ingress load balancer.
+Launch using:
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### 3. AWS Cloud Architecture (Terraform)
+Fully provisions highly available infrastructure on AWS including Application Load Balancers (ALB), ECS Fargate containers (with Auto-Scaling Policies), secure public/private subnets, private Amazon RDS PostgreSQL databases, and ElastiCache Redis replication groups.
+Deploy using:
+```bash
+cd infrastructure/terraform
+terraform init
+terraform apply
+```
+
+## Production Environment Variables
+
+**Minimum Production Credentials**:
 ```bash
 DEBUG=false
 DATABASE_URL=postgresql://...
-SECRET_KEY=<long random secret>
-ENCRYPTION_KEY=<long random encryption key>
+REDIS_URL=redis://...
+SECRET_KEY=<strong random key, min 32 chars>
+ENCRYPTION_KEY=<strong random encryption key, min 32 chars>
 FRONTEND_URL=https://your-firecrow-frontend.example.com
 CORS_ORIGINS=https://your-firecrow-frontend.example.com
+```
+
+**Enterprise Hardening Controls**:
+```bash
+MFA_ENFORCE_FOR_ADMINS=true
+MFA_TOTP_ISSUER="Fire Crow"
+SSO_ALLOW_AUTO_PROVISION=false
+PAM_MAX_DURATION_MINUTES=480
+IAM_DORMANT_DAYS_THRESHOLD=90
 ```
 
 **Feature Flags (LLM Support)**:
@@ -140,6 +176,8 @@ GOOGLE_CLIENT_SECRET=...
 - **Full Suite Validation**: `npm run validate`
 - **Backend Tests**: `python -m pytest backend/tests -v`
 - **Frontend Checks**: `npm run lint && npm run build`
+
+> **Note**: A comprehensive strict rule-based audit was completed on June 29, 2026. All critical and high-severity backend issues were patched, and the build pipeline is fully verified. Read the full report at [docs/STRICT_AUDIT_REPORT.md](docs/STRICT_AUDIT_REPORT.md).
 
 ## Security Model
 
@@ -174,4 +212,4 @@ Fire Crow executes active/dynamic penetration tools. To prevent misuse:
 
 ---
 
-*Documentation last updated: June 19, 2026*
+*Documentation last updated: June 29, 2026*

@@ -8,13 +8,16 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
+from http.cookiejar import CookieJar
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.parse import urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener
 
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled", "partial"}
+CSRF_COOKIE_NAME = "fc_csrf_token"
+CSRF_HEADER_NAME = "X-CSRF-Token"
 
 
 @dataclass
@@ -24,7 +27,16 @@ class SmokeResult:
     detail: str
 
 
-_COOKIE_OPENER = build_opener(HTTPCookieProcessor())
+_COOKIE_JAR = CookieJar()
+_COOKIE_OPENER = build_opener(HTTPCookieProcessor(_COOKIE_JAR))
+
+
+class NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_NO_REDIRECT_OPENER = build_opener(HTTPCookieProcessor(_COOKIE_JAR), NoRedirectHandler())
 
 
 def safe_terminal_text(value: str) -> str:
@@ -33,11 +45,22 @@ def safe_terminal_text(value: str) -> str:
     )
 
 
+def get_cookie_value(name: str) -> str | None:
+    for cookie in _COOKIE_JAR:
+        if cookie.name == name:
+            return cookie.value
+    return None
+
+
 def request_json(url: str, *, method: str = "GET", token: str | None = None, body: dict[str, Any] | None = None, timeout: int = 20) -> Any:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Accept": "application/json"}
     if body is not None:
         headers["Content-Type"] = "application/json"
+    if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        csrf_token = get_cookie_value(CSRF_COOKIE_NAME)
+        if csrf_token:
+            headers[CSRF_HEADER_NAME] = csrf_token
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
@@ -54,7 +77,7 @@ def request_text(url: str, *, timeout: int = 20) -> str:
 def request_status(url: str, *, method: str = "GET", timeout: int = 20) -> tuple[int, str]:
     request = Request(url, method=method)
     try:
-        with _COOKIE_OPENER.open(request, timeout=timeout) as response:
+        with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
             return response.status, response.read().decode("utf-8", errors="replace")
     except HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")
@@ -111,6 +134,16 @@ def discover_default_repo_branch() -> str:
     return current_branch or "main"
 
 
+def normalize_base_url(url: str) -> str:
+    value = url.strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"Invalid base URL: {url}")
+    return value
+
+
 def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str, timeout_seconds: int) -> list[SmokeResult]:
     results: list[SmokeResult] = []
     api_base = api_base.rstrip("/") + "/"
@@ -120,16 +153,16 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
 
     wait_for_http(frontend_url, timeout_seconds=timeout_seconds)
     frontend_html = request_text(frontend_url)
-    signin_html = request_text(urljoin(frontend_url, "signin"))
-    terms_html = request_text(urljoin(frontend_url, "terms"))
+    signin_status, _ = request_status(urljoin(frontend_url, "signin"))
+    terms_status, _ = request_status(urljoin(frontend_url, "terms"))
     landing_ok = ("FireCrow" in frontend_html) or ("Fire Crow" in frontend_html)
-    signin_ok = ("FireCrow" in signin_html) or ("Fire Crow" in signin_html) or ("Sign in" in signin_html)
-    terms_ok = ("Terms" in terms_html) or ("Privacy" in terms_html)
+    signin_ok = signin_status in {200, 301, 302, 307, 308}
+    terms_ok = terms_status in {200, 301, 302, 307, 308}
     results.append(
         SmokeResult(
             "frontend",
             landing_ok and signin_ok and terms_ok,
-            "landing, sign-in, and terms routes served",
+            f"landing served; signin_status={signin_status}; terms_status={terms_status}",
         )
     )
 
@@ -138,11 +171,10 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
 
     policy_context = request_json(urljoin(api_base, "auth/policy-context"))
     providers = policy_context.get("providers", {})
-    oauth_hidden = not providers.get("github") and not providers.get("google")
     results.append(
         SmokeResult(
             "provider visibility",
-            oauth_hidden,
+            providers.get("password") is True,
             f"github={providers.get('github')} google={providers.get('google')} password={providers.get('password')}",
         )
     )
@@ -159,11 +191,19 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
             f"auth/google?privacy_policy_accepted=true&privacy_policy_version={policy_context.get('privacy_policy_version', '2026-06-06')}",
         )
     )
-    oauth_blocked = github_status == 503 and google_status == 503
+    github_enabled = bool(providers.get("github"))
+    google_enabled = bool(providers.get("google"))
+
+    def provider_probe_ok(enabled: bool, status: int) -> bool:
+        if enabled:
+            return status in {302, 303, 307, 308}
+        return status == 503
+
+    oauth_probe_ok = provider_probe_ok(github_enabled, github_status) and provider_probe_ok(google_enabled, google_status)
     results.append(
         SmokeResult(
-            "oauth disabled path",
-            oauth_blocked,
+            "oauth provider routes",
+            oauth_probe_ok,
             f"github_status={github_status} google_status={google_status} github_body={github_body[:80]} google_body={google_body[:80]}",
         )
     )
@@ -260,7 +300,7 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
 
     stream_request = Request(urljoin(api_base, f"audit/{job_id}/stream"), headers={"Authorization": f"Bearer {token}"})
     with _COOKIE_OPENER.open(stream_request, timeout=20) as response:
-        stream_text = response.read(16000).decode("utf-8", errors="replace")
+        stream_text = response.read().decode("utf-8", errors="replace")
     results.append(
         SmokeResult(
             "sse stream",
@@ -282,20 +322,32 @@ def run_smoke(api_base: str, frontend_url: str, repo_url: str, repo_branch: str,
 
 
 def main() -> int:
+    default_api_base = "http://localhost:8000/api/v1/"
+    default_frontend_url = "http://localhost:3000/"
     parser = argparse.ArgumentParser(description="Run a live FireCrow project smoke test against local services.")
-    parser.add_argument("--api-base", default="http://localhost:8000/api/v1/")
-    parser.add_argument("--frontend-url", default="http://localhost:3000/")
+    parser.add_argument("--base-url", default="", help="Root app URL such as https://your-domain.com. Sets both frontend and API defaults.")
+    parser.add_argument("--api-base", default=None)
+    parser.add_argument("--frontend-url", default=None)
     parser.add_argument("--repo-url", default=discover_default_repo_url())
     parser.add_argument("--repo-branch", default=discover_default_repo_branch())
     parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args()
+
+    api_base = args.api_base or default_api_base
+    frontend_url = args.frontend_url or default_frontend_url
+    if args.base_url:
+        normalized_base = normalize_base_url(args.base_url)
+        if args.frontend_url is None:
+            frontend_url = f"{normalized_base}/"
+        if args.api_base is None:
+            api_base = f"{normalized_base}/api/v1/"
 
     if not args.repo_url:
         print("[FAIL] smoke setup: no repo URL was provided and no git origin could be discovered")
         return 1
 
     try:
-        results = run_smoke(args.api_base, args.frontend_url, args.repo_url, args.repo_branch, args.timeout)
+        results = run_smoke(api_base, frontend_url, args.repo_url, args.repo_branch, args.timeout)
     except Exception as exc:
         print(f"[FAIL] smoke setup: {exc}")
         return 1

@@ -1,5 +1,7 @@
 # Log files
 *.log
+*.pid
+logs/
 artifacts/
 
 # Python cache & virtualenvs
@@ -19,14 +21,21 @@ htmlcov/
 .env
 .env.local
 .env.*
+!.env.example
 
 # Database files
 *.db
 *.sqlite
 *.sqlite3
+firecrow.db
+test_firecrow.db
 
 # Workspace
 workspace/
+workspace/sent_emails/
+workspace/temp/
+workspace/storage/cache/
+workspace/scans/*/
 
 # VS Code
 .vscode/
@@ -43,17 +52,34 @@ index.html
 /build
 /dist
 *.egg-info/
-
-# Root-level package files (managed via frontend/)
-package.json
-package-lock.json
+frontend/.next/
+frontend/out/
 node_modules/
 
-# IDE
+# IDE & Tool configurations
 .idea/
 *.swp
 *.swo
 *~
+.claude/
+.agents/
+.codex/
+.codex-run/
 
 # VAPID Keys
 .vapid_keys.json
+
+# Celery beat scheduler
+celerybeat-schedule
+celerybeat-schedule.*
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python build and packaging
+.eggs/
+*.egg/
+*.bak

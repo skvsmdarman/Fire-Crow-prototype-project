@@ -116,7 +116,7 @@ if engine is None:
         pool_timeout=settings.DATABASE_POOL_TIMEOUT,
         pool_recycle=settings.DATABASE_POOL_RECYCLE,
     ) if not db_url.startswith("sqlite") else create_engine(db_url)
-    logger.info("Initialized database engine using URL: %s", db_url)
+    logger.info("Initialized database engine using URL: %s", redact_text(db_url))
 
 
 # Legacy auto-DDL is DEPRECATED. Use Alembic migrations instead.
@@ -243,6 +243,12 @@ def _ensure_user_compatibility() -> None:
             )
 
 def _ensure_finding_compatibility() -> None:
+    if not settings.DEBUG:
+        logger.warning(
+            "Auto-DDL is deprecated and disabled in production. "
+            "Use 'alembic upgrade head' to apply schema migrations."
+        )
+        return
     if engine is None:
         return
     inspector = inspect(engine)

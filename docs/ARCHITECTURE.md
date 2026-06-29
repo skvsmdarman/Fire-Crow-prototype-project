@@ -6,14 +6,19 @@ This document describes the current repository shape backed by `backend/app/main
 
 ```mermaid
 flowchart TD
-    Browser["Browser / PWA shell"] --> Frontend["Next.js frontend\nfrontend/src/app/*"]
-    Frontend --> API["FastAPI app\nbackend/app/main.py"]
-    API --> Auth["Auth routes\nbackend/app/api/routes_auth.py"]
-    API --> Audit["Audit routes\nbackend/app/api/routes_audit.py"]
-    API --> SSE["SSE route\nbackend/app/api/routes_sse.py"]
-    API --> System["System + health routes\nbackend/app/api/routes_system.py\nbackend/app/main.py"]
+    Browser["Browser / PWA shell"] --> Ingress["Nginx Load Balancer\n/ AWS ALB Ingress"]
+    Ingress --> Frontend["Next.js frontend\nfrontend/src/app/*"]
+    Ingress --> API["FastAPI app replicas\nbackend/app/main.py"]
+    API --> TenantMW["TenantMiddleware\nbackend/app/middleware/tenant.py"]
+    TenantMW --> MFAEnforce["MFA Enforcement\nbackend/app/middleware/mfa_enforcement.py"]
+    MFAEnforce --> Auth["Auth & SSO routes\nbackend/app/api/routes_auth.py\n/routes_sso.py"]
+    MFAEnforce --> MFA["MFA & security routes\nbackend/app/api/routes_mfa.py"]
+    MFAEnforce --> IAM["IAM & PAM routes\nbackend/app/api/routes_iam.py\n/routes_pam.py"]
+    MFAEnforce --> Audit["Audit & Jobs routes\nbackend/app/api/routes_audit.py"]
+    MFAEnforce --> SSE["SSE route\nbackend/app/api/routes_sse.py"]
+    MFAEnforce --> System["System & health routes\nbackend/app/api/routes_system.py"]
     Audit --> Dispatch{"Redis reachable?"}
-    Dispatch -- "yes" --> Celery["Celery worker\nbackend/app/workers/celery_app.py"]
+    Dispatch -- "yes" --> Celery["Celery worker cluster\nbackend/app/workers/celery_app.py"]
     Dispatch -- "no" --> BG["FastAPI BackgroundTasks\nbackend/app/api/routes_audit.py"]
     Celery --> Runtime["Runtime finalizer\nbackend/app/orchestrator/runtime.py"]
     BG --> Runtime
@@ -22,7 +27,7 @@ flowchart TD
     Graph --> Local["Local workspace files\nworkspace/reports\nworkspace/storage"]
     Graph --> R2["Optional R2/S3 storage\nbackend/app/services/storage.py"]
     Graph --> Sandbox["Optional Docker/Kali sandbox\nbackend/app/services/sandbox.py"]
-    Graph --> Email["Optional email delivery\nbackend/app/services/reporter.py\nbackend/app/agents/google_agent.py"]
+    Graph --> Email["Optional email delivery\nbackend/app/services/reporter.py"]
     Graph --> GitHub["Optional GitHub/GitMCP actions\nbackend/app/agents/github_mcp.py"]
 ```
 
@@ -109,5 +114,33 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/agents/github_mcp.p
 
 The code usually degrades gracefully in debug mode and more conservatively in non-debug mode.
 
+## Multi-Tenancy & Resource Scoping
+
+Source paths: `backend/app/middleware/tenant.py`, `backend/app/services/tenant_service.py`, `backend/app/models/tenant.py`, `backend/app/models/compliance.py`.
+
+- **Tenant Isolation**: All jobs, findings, assets, and reports are partitioned at the database layer by a `tenant_id` UUID field.
+- **Tenant Resolution**: The `TenantMiddleware` processes incoming requests, checking for the `X-Tenant-Slug` or `X-Tenant-ID` headers. If found, it looks up the tenant in the database, verifies that the tenant is active, and binds the corresponding `tenant_id` to the request's state. If headers are absent, it falls back to resolving the tenant associated with the authenticated user.
+- **Scoping Controls**: Access to reports, job statuses, and artifacts is validated at the endpoint level via `verify_tenant_access` checks. Users can only access resources belonging to their own tenant or tenants they have a verified membership with.
+- **Plan Enforcement**: The application limits user counts (`max_users`) and object storage allocations (`max_storage_gb`) according to the tenant's configured tier (`free`, `premium`, `enterprise`).
+
+## Platform Scaling & Redundancy
+
+Source paths: `docker-compose.prod.yml`, `infrastructure/terraform/*`.
+
+- **Horizontal Scaling**: In production environments, the application is divided into stateless API containers and background Worker containers. These can scale horizontally based on CPU/Memory load.
+- **Load Balancing & Ingress**: Nginx serves as the reverse proxy, load balancer, and SSL termination point. It routes client requests across multiple backend API container replicas (configured as a replicated service with 2 replicas in `docker-compose.prod.yml`).
+- **Distributed Job Queue**: Scalability of active security scans is achieved using a Redis-backed Celery cluster. Workers pick up scanning tasks asynchronously, ensuring the API remains highly responsive.
+- **High-Availability Database**: A PostgreSQL database (e.g. AWS RDS or Neon DB) with connection pooling handles the relational data, while Redis handles caching, session storage, and the Celery broker queue.
+- **Terraform Deployments**: The cloud architecture is fully defined in AWS via Terraform, employing an ALB, a public-private VPC subnet partition, an ECS Fargate cluster with Auto-Scaling Policies, multi-AZ RDS databases, and ElastiCache Redis replication groups.
+
+## Enterprise Security Architecture
+
+Source paths: `backend/app/api/routes_mfa.py`, `backend/app/api/routes_sso.py`, `backend/app/api/routes_pam.py`, `backend/app/api/routes_iam.py`.
+
+- **Federated Authentication (SSO)**: Supports OpenID Connect (OIDC) and SAML 2.0. Domain-level restrictions route logins to corresponding identity providers automatically.
+- **Multi-Factor Authentication (MFA)**: Built-in TOTP support requiring verification codes during authentication. Admins are blocked from taking actions unless MFA is enrolled (`MFA_ENFORCE_FOR_ADMINS`).
+- **Just-In-Time Privilege Escalation (PAM)**: Implements temporary role escalation to minimize permanent administrative privilege footprint. Grants automatically expire and are pruned.
+- **RBAC & ABAC Policies (IAM)**: Fine-grained permissions are assigned to roles, validated by checking resources and actions against policies before allowing request execution. Programmatic API tokens (Service Accounts) use strong hashing.
+
 ---
-*Documentation last updated: June 19, 2026*
+*Documentation last updated: June 29, 2026*

@@ -75,6 +75,18 @@ The system uses a modular orchestrator (maestro.py) with sequential phases:
 - Kubernetes/YAML scanning with kube-linter
 - Terraform scanning with tfsec
 
+### 8. Added Enterprise Identity & Hardening (MFA/SSO/PAM/IAM) ✅
+- Implemented Multi-Factor Authentication (MFA) via TOTP (RFC 6238) with secure recovery codes.
+- Added Single Sign-On (SSO) with OpenID Connect (OIDC) and SAML 2.0 federation.
+- Designed Just-In-Time Privilege Access Management (PAM) for temporary administrative escalation.
+- Created fine-grained IAM resource/action authorization policies and service accounts.
+- Integrated security auditing, shared account detection, and account dormancy sweeps.
+
+### 9. Added Multi-Tenant Isolation & Partitioning ✅
+- Enforced complete database partitioning using `tenant_id` scopes.
+- Designed middleware to dynamically resolve tenants using header values or user details.
+- Integrated tier constraints (max user limits, max storage volume limits) for free/premium/enterprise plans.
+
 ## Implementation Complete
 
 All tasks have been successfully implemented and tested:
@@ -83,4 +95,4 @@ All tasks have been successfully implemented and tested:
 - Documentation updated
 
 ---
-*Documentation last updated: June 19, 2026*
+*Documentation last updated: June 29, 2026*

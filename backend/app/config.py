@@ -52,14 +52,6 @@ class Settings(BaseSettings):
                 object.__setattr__(self, "SECRET_KEY", "local_dev_secret_key_change_me_1234567890")
             if not self.ENCRYPTION_KEY:
                 object.__setattr__(self, "ENCRYPTION_KEY", "local_dev_encryption_key_change_me_1234567890")
-            if not self.GITHUB_CLIENT_ID:
-                object.__setattr__(self, "GITHUB_CLIENT_ID", "mock_github_client_id")
-            if not self.GITHUB_CLIENT_SECRET:
-                object.__setattr__(self, "GITHUB_CLIENT_SECRET", "mock_github_client_secret")
-            if not self.GOOGLE_CLIENT_ID:
-                object.__setattr__(self, "GOOGLE_CLIENT_ID", "mock_google_client_id")
-            if not self.GOOGLE_CLIENT_SECRET:
-                object.__setattr__(self, "GOOGLE_CLIENT_SECRET", "mock_google_client_secret")
         else:
             if not self.SECRET_KEY:
                 raise ValueError("SECRET_KEY is required. Set a strong random value (min 32 chars).")
@@ -71,25 +63,22 @@ class Settings(BaseSettings):
                 raise ValueError("SECRET_KEY must be at least 32 characters.")
 
             if not self.ENCRYPTION_KEY:
-                raise ValueError("ENCRYPTION_KEY is required. Set a strong random value (min 32 chars).")
+                object.__setattr__(self, "ENCRYPTION_KEY", self.SECRET_KEY)
+            else:
+                if self.ENCRYPTION_KEY.strip() in insecure_dev_values:
+                    raise ValueError("ENCRYPTION_KEY cannot use a known development value. Generate a secure random key.")
 
-            if self.ENCRYPTION_KEY.strip() in insecure_dev_values:
-                raise ValueError("ENCRYPTION_KEY cannot use a known development value. Generate a secure random key.")
-
-            if len(self.ENCRYPTION_KEY) < 32:
-                raise ValueError("ENCRYPTION_KEY must be at least 32 characters.")
+                if len(self.ENCRYPTION_KEY) < 32:
+                    raise ValueError("ENCRYPTION_KEY must be at least 32 characters.")
 
         if not self.DEBUG:
             missing = []
             for name in [
                 "SECRET_KEY",
-                "ENCRYPTION_KEY",
                 "DATABASE_URL",
                 "REDIS_URL",
-                "GITHUB_CLIENT_ID",
-                "GITHUB_CLIENT_SECRET",
-                "GOOGLE_CLIENT_ID",
-                "GOOGLE_CLIENT_SECRET",
+                "FRONTEND_URL",
+                "CORS_ORIGINS",
             ]:
                 if not getattr(self, name):
                     missing.append(name)
@@ -147,13 +136,34 @@ class Settings(BaseSettings):
     LOGIN_FAILURE_LIMIT: int = Field(default=5, validation_alias="LOGIN_FAILURE_LIMIT")
     MAX_REQUEST_BODY_BYTES: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB
     MAX_JSON_BODY_BYTES: int = Field(default=2 * 1024 * 1024, validation_alias="MAX_JSON_BODY_BYTES")  # 2MB
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60 * 24, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
     AUTH_COOKIE_NAME: str = Field(default="fc_access_token", validation_alias="AUTH_COOKIE_NAME")
     AUTH_COOKIE_SECURE: bool = Field(default=True, validation_alias="AUTH_COOKIE_SECURE")
     AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
     AUTH_COOKIE_SAMESITE: Literal['lax', 'strict', 'none'] | None = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
     CSRF_ENABLED: bool = Field(default=True, validation_alias="CSRF_ENABLED")
 
+    # --- MFA Settings ---
+    MFA_ENFORCE_FOR_ADMINS: bool = Field(default=True, validation_alias="MFA_ENFORCE_FOR_ADMINS")
+    MFA_TOTP_ISSUER: str = Field(default="Fire Crow", validation_alias="MFA_TOTP_ISSUER")
+    MFA_MAX_FAILED_ATTEMPTS: int = Field(default=5, validation_alias="MFA_MAX_FAILED_ATTEMPTS")
+    MFA_RECOVERY_CODE_COUNT: int = Field(default=8, validation_alias="MFA_RECOVERY_CODE_COUNT")
+
+    # --- SSO Settings ---
+    SSO_OIDC_SCOPES: str = Field(default="openid email profile", validation_alias="SSO_OIDC_SCOPES")
+    SSO_ALLOW_AUTO_PROVISION: bool = Field(default=False, validation_alias="SSO_ALLOW_AUTO_PROVISION")
+    SSO_DEFAULT_ROLE_ID: str = Field(default="", validation_alias="SSO_DEFAULT_ROLE_ID")
+
+    # --- PAM Settings ---
+    PAM_MAX_DURATION_MINUTES: int = Field(default=480, validation_alias="PAM_MAX_DURATION_MINUTES")
+    PAM_MIN_DURATION_MINUTES: int = Field(default=1, validation_alias="PAM_MIN_DURATION_MINUTES")
+    PAM_MAX_PENDING_REQUESTS: int = Field(default=3, validation_alias="PAM_MAX_PENDING_REQUESTS")
+    PAM_CLEANUP_INTERVAL_MINUTES: int = Field(default=15, validation_alias="PAM_CLEANUP_INTERVAL_MINUTES")
+
+    # --- IAM Settings ---
+    IAM_DORMANT_DAYS_THRESHOLD: int = Field(default=90, validation_alias="IAM_DORMANT_DAYS_THRESHOLD")
+    IAM_SHARED_ACCOUNT_IP_THRESHOLD: int = Field(default=5, validation_alias="IAM_SHARED_ACCOUNT_IP_THRESHOLD")
+    IAM_SERVICE_TOKEN_PREFIX: str = Field(default="fc_svc_", validation_alias="IAM_SERVICE_TOKEN_PREFIX")
 
     # --- Database & Cache ---
     DATABASE_URL: str = Field(

@@ -2,25 +2,31 @@
 
 These notes are based on `render.yaml`, `Dockerfile`, `backend/app/config.py`, `backend/app/models/database.py`, `backend/app/main.py`, `backend/app/services/sandbox.py`, and `backend/app/services/storage.py`.
 
-## Current Deploy Shape
+## Production Deploy Topologies
 
-The repo contains a single-service Docker deployment path:
+The codebase supports three primary deployment paths for production, ranging from single-container deployments to multi-container on-premise orchestration and full cloud architectures on AWS:
 
-- `Dockerfile` builds the frontend static export and the backend image.
-- `backend/app/main.py` mounts `frontend/out` if it exists.
-- `render.yaml` declares one Docker web service named `firecrow`.
+### 1. Single-Service Render Deployment
+- **Architecture**: Encods a single-service Docker deployment path. The `Dockerfile` builds the frontend static export and bundles it with the backend API.
+- **Boot Flow**: Runs `alembic -c backend/alembic.ini upgrade head` to apply pending migrations before launching `uvicorn`.
+- **Render Spec**: `render.yaml` provisions `DATABASE_URL`, `DEBUG=false`, and `SECRET_KEY`.
 
-## Render Notes
+### 2. Multi-Service Docker Compose Stack (`docker-compose.prod.yml`)
+For self-hosted, scalable on-premise environments, a multi-service orchestration is provided:
+- **Nginx Ingress Load Balancer**: Replicated reverse proxy mapping ports `80` and `443` with custom SSL volume mounts, distributing incoming traffic across API services.
+- **Stateless API Services (FastAPI)**: Configured with `mode: replicated` and `replicas: 2`. Restricts resources per replica to `1 CPU` and `1GB RAM`.
+- **Background Worker Nodes (Celery)**: Configured with `replicas: 2` to fetch tasks asynchronously from the message broker. Restricts resources per replica to `2 CPUs` and `2GB RAM`. Run using the command `celery -A app.workers.celery_app worker --loglevel=info --concurrency=4`.
+- **Beat Scheduler (Celery Beat)**: A singleton container coordinating scheduled database cleanup routines and audit jobs.
+- **Relational Storage (PostgreSQL)**: Replicated Postgres database mapping database state persistent volumes, featuring automated pg_isready health checks.
+- **Cache & Message Broker (Redis)**: Replicated Redis instance running on port `6379`, secured with password verification and write-ahead persistence logs (`appendonly yes`).
 
-Current `render.yaml` only provisions:
-
-- `DATABASE_URL`
-- `DEBUG=false`
-- `SECRET_KEY`
-
-That is enough for a minimal boot, not for all optional features.
-
-The Docker container now runs `alembic -c backend/alembic.ini upgrade head` before starting `uvicorn`. That keeps the production startup guard in `backend/app/main.py` intact while making the default Render boot path compatible with pending schema changes.
+### 3. Terraform Cloud Infrastructure (`infrastructure/terraform/*`)
+For enterprise deployments on AWS, the architecture is fully provisioned using Terraform:
+- **Secure Network VPC**: Segmented across 2 Availability Zones, separating public subnets (hosting the ALB) and private subnets (hosting ECS containers, RDS, and ElastiCache nodes) with a NAT Gateway for private internet egress.
+- **Elastic Container Service (ECS) Fargate**: Runs API and Celery worker task definitions on AWS serverless compute with Auto-Scaling Policies linked to CPU utilization.
+- **Application Load Balancer (ALB)**: Exposes endpoints securely with SSL termination and distributes traffic to ECS tasks.
+- **Amazon RDS (PostgreSQL)**: Provisioned within a private DB subnet with restricted security groups accepting connections only from ECS security groups.
+- **Amazon ElastiCache (Redis)**: Provisioned inside private subnets for fast session management, rate limiting, and task queues.
 
 ## Production Database Requirements
 
@@ -99,4 +105,4 @@ The codebase itself does not encode Render pricing or sleep behavior, but curren
 - Verify that frontend and backend audit-submit contracts match before relying on the dashboard UI.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

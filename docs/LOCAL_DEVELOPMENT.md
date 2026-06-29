@@ -145,7 +145,7 @@ Check:
 - Docker must be reachable
 - repo must look like a supported Python or Node target
 
-Current note: the shipped dashboard UI does not yet send the required attestation fields.
+Note: The dashboard frontend correctly sends the required attestation fields to the backend.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

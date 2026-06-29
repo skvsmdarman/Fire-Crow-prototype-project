@@ -107,4 +107,4 @@ The current CI runs:
 - Hosted deployment behavior for Docker-backed active stages is not fully covered by automated tests.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

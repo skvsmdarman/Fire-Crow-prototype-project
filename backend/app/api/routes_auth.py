@@ -356,45 +356,41 @@ async def refresh_token(
     payload: RefreshPayload | None = None,
     db: Session = Depends(get_db),
 ):
-    # Get refresh token from cookie or body
-    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    refresh_token_val = request.cookies.get(REFRESH_COOKIE_NAME)
     if payload and payload.refresh_token:
-        refresh_token = payload.refresh_token
-    
-    if not refresh_token:
+        refresh_token_val = payload.refresh_token
+
+    if not refresh_token_val:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token not provided",
         )
-    
-    token_data = verify_refresh_token(refresh_token, db=db)
-    if not token_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        )
-    
-    user_id = token_data.get("sub")
-    raw_username = token_data.get("username")
-    username: str = raw_username if isinstance(raw_username, str) and raw_username else (user_id or "")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token payload",
-        )
-    
-    # Create new access token
-    access_token = create_access_token(
-        user_id=user_id,
-        username=username,
+
+    from app.services.auth import verify_refresh_token_with_rotation
+    rotation_result = verify_refresh_token_with_rotation(
+        refresh_token_val,
         db=db,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
     )
+
+    if not rotation_result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid, expired, or revoked refresh token. Please sign in again.",
+        )
+
+    old_payload = rotation_result["old_payload"]
+    access_token = rotation_result["new_access_token"]
+    new_refresh_token = rotation_result["new_refresh_token"]
+
+    user_id = old_payload.get("sub")
+    raw_username = old_payload.get("username")
+    username: str = raw_username if isinstance(raw_username, str) and raw_username else (user_id or "")
+
     _set_session_cookie(response, access_token)
-    
-    # Optionally rotate refresh token (create new one)
-    new_refresh_token = create_refresh_token(user_id=user_id, username=username, db=db)
     _set_refresh_cookie(response, new_refresh_token)
-    
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",

@@ -90,6 +90,51 @@ class ReportGenerator:
         if RESEND_AVAILABLE and self.resend_api_key:
             resend.api_key = self.resend_api_key  # type: ignore
 
+    def _get_smart_finding_details(self, finding: Finding) -> Dict[str, str]:
+        """Uses LLM to enrich findings with non-technical assessment and step-by-step fixes."""
+        details = {
+            "non_technical_summary": f"This security issue is a {finding.severity.value} vulnerability which may expose sensitive application assets or logic. It was identified by {finding.agent_source} tools.",
+            "impact": "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the application, leading to unauthorized access, system degradation, or data disclosure.",
+            "remediation_steps": finding.remediation or "Follow secure coding practices, enforce strict parameter validation, sanitize all inputs, and use encrypted configuration parameters."
+        }
+
+        if not settings.GEMINI_API_KEY or not settings.GEMINI_MODEL:
+            return details
+
+        prompt = f"""You are a senior security researcher. Explain the following vulnerability so that even a non-technical manager (or junior developer) can understand:
+Title: {finding.title}
+Severity: {finding.severity.value}
+Description: {finding.description}
+CWE: {finding.cwe_id or 'N/A'}
+Evidence: {finding.evidence or 'None'}
+
+Provide your response in JSON format. Do not use markdown code block wrappers (like ```json). Respond with a raw JSON object containing these keys:
+- "non_technical_summary": A clear explanation of what this vulnerability means in plain English, why it is dangerous, and what the real-world business risk is.
+- "impact": The technical impact of this vulnerability on the systems and data.
+- "remediation_steps": Actionable, step-by-step coding instructions to fix the issue.
+"""
+        try:
+            from app.services.safe_llm import safe_llm_call
+            import json
+            res = safe_llm_call(prompt, max_tokens=1000, temperature=0.2)
+            if res:
+                res_clean = res.strip()
+                if res_clean.startswith("```json"):
+                    res_clean = res_clean.removeprefix("```json").removesuffix("```").strip()
+                elif res_clean.startswith("```"):
+                    res_clean = res_clean.removeprefix("```").removesuffix("```").strip()
+                parsed = json.loads(res_clean)
+                if "non_technical_summary" in parsed and "impact" in parsed and "remediation_steps" in parsed:
+                    return {
+                        "non_technical_summary": parsed["non_technical_summary"],
+                        "impact": parsed["impact"],
+                        "remediation_steps": parsed["remediation_steps"]
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to generate smart details for finding {finding.title}: {e}")
+        
+        return details
+
     def generate_compliance_report(self, job_id: str, findings: List[Finding], standard: str = "SOC2") -> str:
         """
         Generates a compliance-focused report (e.g., SOC2, ISO27001).
@@ -208,10 +253,14 @@ class ReportGenerator:
             safe_evidence = html.escape(redact_text(evidence_text)) if evidence_text else ""
             safe_cvss_vector = html.escape(f.cvss_vector) if f.cvss_vector else "N/A"
             safe_cvss_score = html.escape(str(f.cvss_score)) if f.cvss_score is not None else "N/A"
-            remediation_text = (getattr(f, "remediation", None) or "")[:settings.REPORT_MAX_REMEDIATION_CHARS]
-            safe_remediation = html.escape(remediation_text) if remediation_text else ""
             safe_file = html.escape(f.file_path) if f.file_path else ""
             safe_line = str(f.line_number) if f.line_number else ""
+            
+            # Fetch smart details
+            smart_details = self._get_smart_finding_details(f)
+            safe_non_tech = html.escape(smart_details["non_technical_summary"])
+            safe_impact = html.escape(smart_details["impact"])
+            safe_remediation = html.escape(smart_details["remediation_steps"])
             
             cwe_badge = f"<span class='badge-cwe'>{safe_cwe}</span>" if safe_cwe else ""
             location_info = f"<strong>File:</strong> {safe_file}" + (f" (line {safe_line})" if safe_line else "") if safe_file else ""
@@ -253,13 +302,19 @@ class ReportGenerator:
                     {f" &nbsp;|&nbsp; <strong>Location:</strong> {location_info}" if location_info else ""}
                 </div>
  
-                <div class="section-title">Vulnerability Description</div>
+                <div class="section-title">Plain English Summary (For Non-Technical Users)</div>
+                <p class="description-text">{safe_non_tech}</p>
+ 
+                <div class="section-title">Technical Description</div>
                 <p class="description-text">{safe_desc}</p>
+ 
+                <div class="section-title">Security & Business Impact</div>
+                <p class="description-text">{safe_impact}</p>
  
                 {evidence_block}
  
-                <div class="section-title">Remediation Guidance</div>
-                <p class="remediation-text">{safe_remediation or "Follow standard secure coding patterns, validate all entry points, and sanitise parameters."}</p>
+                <div class="section-title">Actionable Remediation Guide</div>
+                <p class="remediation-text" style="white-space: pre-wrap;">{safe_remediation}</p>
             </div>
             """
 

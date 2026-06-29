@@ -1,5 +1,6 @@
 import os
 import logging
+import signal
 
 try:
     from pythonjsonlogger.json import JsonFormatter
@@ -24,12 +25,16 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.services.limiter import limiter
 from app.middleware.telemetry import TelemetryMiddleware
+from app.middleware.mfa_enforcement import MFAEnforcementMiddleware
+from app.middleware.tenant import TenantMiddleware
 from app.services.csrf import CSRFMiddleware
+from app.utils.circuit_breaker import get_circuit_breaker
 
 from app.config import settings, WORKSPACE_DIR
 from app.models.database import Base, engine, ensure_database_compatibility, get_db
-from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router, user_router
+from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router, user_router, mfa_router, sso_router, pam_router, iam_router, tenant_router
 
+_shutting_down = False
 
 logger = logging.getLogger("firecrow.main")
 # Structured JSON logging (production) – includes request_id when available.
@@ -142,7 +147,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 app.add_middleware(SlowAPIMiddleware)  # type: ignore
 app.add_middleware(TelemetryMiddleware)
+app.add_middleware(TenantMiddleware)
 app.add_middleware(CSRFMiddleware)
+app.add_middleware(MFAEnforcementMiddleware)
 
 
 @app.exception_handler(Exception)
@@ -227,13 +234,14 @@ async def add_security_headers(request: Request, call_next):
     if settings.DEBUG:
         img_src_domains += " https://*"
 
-    # Build CSP without unsafe-inline and unsafe-eval for production
     if settings.DEBUG:
         script_src = "'self' 'unsafe-inline' 'unsafe-eval'"
         style_src = "'self' 'unsafe-inline'"
+        connect_src = "'self' ws: wss: http: https:"
     else:
         script_src = "'self'"
         style_src = "'self'"
+        connect_src = "'self'"
 
     csp_header = (
         "default-src 'self'; "
@@ -241,7 +249,7 @@ async def add_security_headers(request: Request, call_next):
         f"style-src {style_src}; "
         f"font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com; "
         f"img-src 'self' data: {img_src_domains}; "
-        "connect-src 'self' ws: wss: http: https:; "
+        f"connect-src {connect_src}; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self';"
@@ -260,34 +268,70 @@ app.include_router(chat_router, prefix="/api/v1")
 app.include_router(leaderboard_router, prefix="/api/v1")
 app.include_router(push_router, prefix="/api/v1")
 app.include_router(user_router, prefix="/api/v1")
+app.include_router(mfa_router, prefix="/api/v1")
+app.include_router(sso_router, prefix="/api/v1")
+app.include_router(pam_router, prefix="/api/v1")
+app.include_router(iam_router, prefix="/api/v1")
+app.include_router(tenant_router, prefix="/api/v1")
 
 
-# Ensure reports directory exists for authenticated downloads
-reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
-os.makedirs(reports_dir, exist_ok=True)
+# Graceful shutdown handler
+@app.middleware("http")
+async def graceful_shutdown(request: Request, call_next):
+    global _shutting_down
+    if _shutting_down:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Server is shutting down. Please retry."},
+        )
+    return await call_next(request)
 
 
-@app.get("/health")
-async def health_check(db: Session = Depends(get_db)):
+# Enhanced deep health check with circuit breaker status
+@app.get("/health/deep")
+async def health_deep(db: Session = Depends(get_db)):
+    db_ok = True
     try:
         from sqlalchemy import text
         db.execute(text("SELECT 1"))
-        db_ok = True
     except Exception:
         db_ok = False
-        logger.warning("Health check database probe failed.", exc_info=True)
 
-    return {
-        "status": "up" if db_ok else "degraded",
-        "database": "connected" if db_ok else "unavailable"
-    }
+    storage_ok = True
+    try:
+        test_file = Path(WORKSPACE_DIR) / "workspace" / f".health_probe_{uuid.uuid4()}"
+        test_file.write_text("health_ok")
+        test_file.unlink()
+    except Exception:
+        storage_ok = False
+
+    s3_ok = True
+    from app.services.storage import storage_service
+    if storage_service.s3_client is not None:
+        try:
+            storage_service.s3_client.list_buckets()
+        except Exception:
+            s3_ok = False
+
+    # Circuit breaker status
+    from app.utils.circuit_breaker import _circuit_breakers
+    cb_status = {name: cb.stats() for name, cb in _circuit_breakers.items()}
+
+    status_code = 200 if (db_ok and storage_ok and s3_ok) else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "healthy" if status_code == 200 else "unhealthy",
+            "database": "ok" if db_ok else "failed",
+            "local_storage": "ok" if storage_ok else "failed",
+            "object_storage": "ok" if s3_ok else ("failed" if storage_service.is_s3_active() else "disabled"),
+            "circuit_breakers": cb_status,
+            "shutting_down": _shutting_down,
+        }
+    )
 
 
-@app.get("/health/live")
-async def health_live():
-    return {"status": "live"}
-
-
+# Additionally, make /health/ready more comprehensive
 @app.get("/health/ready")
 async def health_ready(db: Session = Depends(get_db)):
     db_ok = True
@@ -320,41 +364,30 @@ async def health_ready(db: Session = Depends(get_db)):
     return {"status": "ready"}
 
 
-@app.get("/health/deep")
-async def health_deep(db: Session = Depends(get_db)):
-    db_ok = True
+# Ensure reports directory exists for authenticated downloads
+reports_dir = os.path.join(WORKSPACE_DIR, "workspace", "reports")
+os.makedirs(reports_dir, exist_ok=True)
+
+
+@app.get("/health")
+async def health_check(db: Session = Depends(get_db)):
     try:
         from sqlalchemy import text
         db.execute(text("SELECT 1"))
+        db_ok = True
     except Exception:
         db_ok = False
+        logger.warning("Health check database probe failed.", exc_info=True)
 
-    storage_ok = True
-    try:
-        test_file = Path(WORKSPACE_DIR) / "workspace" / f".health_probe_{uuid.uuid4()}"
-        test_file.write_text("health_ok")
-        test_file.unlink()
-    except Exception:
-        storage_ok = False
+    return {
+        "status": "up" if db_ok else "degraded",
+        "database": "connected" if db_ok else "unavailable"
+    }
 
-    s3_ok = True
-    from app.services.storage import storage_service
-    if storage_service.s3_client is not None:
-        try:
-            storage_service.s3_client.list_buckets()
-        except Exception:
-            s3_ok = False
 
-    status_code = 200 if (db_ok and storage_ok and s3_ok) else 503
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "status": "healthy" if status_code == 200 else "unhealthy",
-            "database": "ok" if db_ok else "failed",
-            "local_storage": "ok" if storage_ok else "failed",
-            "object_storage": "ok" if s3_ok else ("failed" if storage_service.is_s3_active() else "disabled"),
-        }
-    )
+@app.get("/health/live")
+async def health_live():
+    return {"status": "live"}
 
 
 frontend_dist_dir = Path(WORKSPACE_DIR) / "frontend" / "out"

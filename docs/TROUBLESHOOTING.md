@@ -172,4 +172,4 @@ Relevant sources:
 - `backend/app/models/database.py`
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

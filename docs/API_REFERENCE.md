@@ -128,6 +128,301 @@ This reference is derived from `backend/app/main.py`, `backend/app/api/routes_au
 - Source: `backend/app/api/routes_auth.py`
 - Frontend caller: browser redirect target
 
+## Multi-Factor Authentication (MFA) Endpoints
+
+### `POST /api/v1/mfa/enroll`
+- Auth required: yes
+- Rate limit: `5/minute`
+- Response: `{ secret: string, uri: string, recovery_codes: list[str] }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `POST /api/v1/mfa/activate`
+- Auth required: yes
+- Rate limit: `10/minute`
+- Request body: `{ token: string }`
+- Response: `{ status: "activated", activated_at: string }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `POST /api/v1/mfa/verify`
+- Auth required: yes
+- Rate limit: `10/minute`
+- Request body: `{ token: string }`
+- Response: `{ verified: boolean }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `POST /api/v1/mfa/recovery`
+- Auth required: yes
+- Rate limit: `3/minute`
+- Request body: `{ code: string }`
+- Response: `{ verified: boolean }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `POST /api/v1/mfa/regenerate-codes`
+- Auth required: yes
+- Rate limit: `2/minute`
+- Response: `{ recovery_codes: list[str] }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `POST /api/v1/mfa/disable`
+- Auth required: yes
+- Rate limit: `3/minute`
+- Response: `{ status: "mfa_disabled" }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `GET /api/v1/mfa/status`
+- Auth required: yes
+- Response: `{ is_active: boolean, method: string, created_at: string, last_verified_at: string, has_recovery_codes: boolean }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `GET /api/v1/mfa/admin/compliance`
+- Auth required: yes (admin-only)
+- Response: `{ requires_mfa: boolean, users_without_mfa: list[dict] }`
+- Source: `backend/app/api/routes_mfa.py`
+
+### `POST /api/v1/mfa/admin/enforce`
+- Auth required: yes (admin-only)
+- Response: `{ status: "enforced", deactivated_count: integer }`
+- Source: `backend/app/api/routes_mfa.py`
+
+## Single Sign-On (SSO) Endpoints
+
+### `GET /api/v1/sso/providers`
+- Auth required: yes (admin-only)
+- Response: `{ providers: list[dict] }`
+- Source: `backend/app/api/routes_sso.py`
+
+### `POST /api/v1/sso/providers`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ name: string, provider_type: string, issuer_url?: string, client_id?: string, client_secret?: string, authorization_url?: string, token_url?: string, userinfo_url?: string, jwks_url?: string, certificate?: string, attribute_mapping?: dict, domains?: list[str], enforce_mfa?: boolean, auto_provision?: boolean, default_role_id?: string }`
+- Response: SSO provider configuration dictionary
+- Source: `backend/app/api/routes_sso.py`
+
+### `GET /api/v1/sso/providers/{provider_id}`
+- Auth required: yes (admin-only)
+- Response: SSO provider configuration dictionary
+- Source: `backend/app/api/routes_sso.py`
+
+### `PUT /api/v1/sso/providers/{provider_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: SSO provider configuration updates
+- Response: updated SSO provider configuration
+- Source: `backend/app/api/routes_sso.py`
+
+### `DELETE /api/v1/sso/providers/{provider_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Response: `{ status: "deleted" }`
+- Source: `backend/app/api/routes_sso.py`
+
+### `GET /api/v1/sso/oidc/{provider_id}/login`
+- Auth required: no
+- Response: 302 Redirect to identity provider authorize endpoint
+- Source: `backend/app/api/routes_sso.py`
+
+### `GET /api/v1/sso/oidc/callback`
+- Auth required: no
+- Request params: `code`, `state`
+- Response: 302 Redirect to `/signin?code=...` (sets auth cookie)
+- Source: `backend/app/api/routes_sso.py`
+
+### `POST /api/v1/sso/saml/{provider_id}/login`
+- Auth required: no
+- Response: 302 Redirect to SAML Identity Provider login URL
+- Source: `backend/app/api/routes_sso.py`
+
+### `POST /api/v1/sso/saml/{provider_id}/callback`
+- Auth required: no
+- Request body: `SAMLResponse` (form-data)
+- Response: 302 Redirect to `/signin?code=...` (sets auth cookie)
+- Source: `backend/app/api/routes_sso.py`
+
+## Privileged Access Management (PAM) Endpoints
+
+### `POST /api/v1/pam/requests`
+- Auth required: yes
+- Rate limit: `10/minute`
+- Request body: `{ role_name: string, permission: string, reason: string, requested_duration_minutes: integer, ticket_ref?: string }`
+- Response: privilege request status details
+- Source: `backend/app/api/routes_pam.py`
+
+### `GET /api/v1/pam/requests`
+- Auth required: yes
+- Response: list of pending privilege requests (all pending requests if admin, user-scoped pending requests if regular user)
+- Source: `backend/app/api/routes_pam.py`
+
+### `GET /api/v1/pam/requests/pending`
+- Auth required: yes (admin-only)
+- Response: `{ requests: list[dict] }` containing all pending PAM requests
+- Source: `backend/app/api/routes_pam.py`
+
+### `POST /api/v1/pam/requests/{request_id}/approve`
+- Auth required: yes (admin-only, MFA verified if required)
+- Rate limit: `20/minute`
+- Request body: `{ duration_minutes?: integer }`
+- Response: privilege access grant details
+- Source: `backend/app/api/routes_pam.py`
+
+### `POST /api/v1/pam/requests/{request_id}/deny`
+- Auth required: yes (admin-only)
+- Request body: `{ reason?: string }`
+- Response: privilege request status details (denied status)
+- Source: `backend/app/api/routes_pam.py`
+
+### `POST /api/v1/pam/requests/{request_id}/cancel`
+- Auth required: yes
+- Response: privilege request status details (cancelled status)
+- Source: `backend/app/api/routes_pam.py`
+
+### `GET /api/v1/pam/grants`
+- Auth required: yes
+- Response: `{ grants: list[dict] }` (all active grants if admin, user-scoped active grants if regular user)
+- Source: `backend/app/api/routes_pam.py`
+
+### `POST /api/v1/pam/grants/revoke`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ grant_id: string }`
+- Response: `{ status: "revoked" }`
+- Source: `backend/app/api/routes_pam.py`
+
+### `POST /api/v1/pam/cleanup`
+- Auth required: yes (admin-only)
+- Response: `{ expired_grants_cleaned: integer }`
+- Source: `backend/app/api/routes_pam.py`
+
+### `GET /api/v1/pam/check/{permission}`
+- Auth required: yes
+- Response: `{ permission: string, granted: boolean }`
+- Source: `backend/app/api/routes_pam.py`
+
+## Identity & Access Management (IAM) Endpoints
+
+### `GET /api/v1/iam/policies`
+- Auth required: yes (admin-only)
+- Response: `{ policies: list[dict] }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/policies`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ name: string, effect: string, actions: list[str], resources: list[str], description?: string, conditions?: string, priority?: integer }`
+- Response: IAM policy dictionary details
+- Source: `backend/app/api/routes_iam.py`
+
+### `DELETE /api/v1/iam/policies/{policy_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Response: `{ status: "deleted" }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `GET /api/v1/iam/role-permissions/{role_id}`
+- Auth required: yes (admin-only)
+- Response: `{ role_id: string, permissions: list[dict] }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/role-permissions`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ role_id: string, permission: string, resource_pattern?: string }`
+- Response: role permission assignment details
+- Source: `backend/app/api/routes_iam.py`
+
+### `DELETE /api/v1/iam/role-permissions/{permission_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Response: `{ status: "deleted" }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/users/deactivate`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ user_id: string, reason?: string }`
+- Response: `{ status: "deactivated" }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/users/reactivate`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ user_id: string }`
+- Response: `{ status: "reactivated" }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `DELETE /api/v1/iam/users/{target_user_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Response: `{ status: "permanently_deleted" }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `GET /api/v1/iam/audit/dormant`
+- Auth required: yes (admin-only)
+- Query params: `days` (default 90)
+- Response: `{ dormant_users: list[dict], threshold_days: integer }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `GET /api/v1/iam/audit/shared-accounts`
+- Auth required: yes (admin-only)
+- Query params: `threshold_ips` (default 5)
+- Response: `{ suspected_shared_accounts: list[dict], threshold_ips: integer }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/cleanup`
+- Auth required: yes (admin-only, MFA verified if required)
+- Query params: `dormant_days` (default 90)
+- Response: `{ cleanup_stats: dict }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/service-accounts`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ name: string, permissions: list[str], description?: string, expires_in_days?: integer }`
+- Response: Service Account credentials (including generated plain-text token value `fc_svc_...` returned exactly once)
+- Source: `backend/app/api/routes_iam.py`
+
+### `POST /api/v1/iam/service-accounts/{account_id}/revoke`
+- Auth required: yes (admin-only)
+- Response: `{ status: "revoked" }`
+- Source: `backend/app/api/routes_iam.py`
+
+### `GET /api/v1/iam/check/{permission}`
+- Auth required: yes
+- Query params: `resource` (default "*")
+- Response: `{ permission: string, resource: string, granted: boolean }`
+- Source: `backend/app/api/routes_iam.py`
+
+## Multi-Tenancy Endpoints
+
+### `GET /api/v1/tenants/`
+- Auth required: yes (admin-only)
+- Response: `{ tenants: list[dict] }`
+- Source: `backend/app/api/routes_tenant.py`
+
+### `POST /api/v1/tenants/`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: `{ name: string, slug: string, domain?: string, plan?: string, max_users?: integer, max_storage_gb?: integer }`
+- Response: tenant details
+- Source: `backend/app/api/routes_tenant.py`
+
+### `GET /api/v1/tenants/me`
+- Auth required: yes
+- Response: current tenant details resolved from headers (`X-Tenant-Slug` or `X-Tenant-ID`) or current user association
+- Source: `backend/app/api/routes_tenant.py`
+
+### `GET /api/v1/tenants/{tenant_id}`
+- Auth required: yes (admin-only)
+- Response: tenant details
+- Source: `backend/app/api/routes_tenant.py`
+
+### `GET /api/v1/tenants/slug/{slug}`
+- Auth required: yes (admin-only)
+- Response: tenant details
+- Source: `backend/app/api/routes_tenant.py`
+
+### `PUT /api/v1/tenants/{tenant_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Request body: tenant settings updates
+- Response: updated tenant details
+- Source: `backend/app/api/routes_tenant.py`
+
+### `DELETE /api/v1/tenants/{tenant_id}`
+- Auth required: yes (admin-only, MFA verified if required)
+- Response: `{ status: "deactivated" }`
+- Source: `backend/app/api/routes_tenant.py`
+
+### `GET /api/v1/tenants/{tenant_id}/stats`
+- Auth required: yes (admin-only)
+- Response: tenant usage stats (user count, active jobs count, total jobs, plan constraints)
+- Source: `backend/app/api/routes_tenant.py`
+
 ## Audit Endpoints
 
 ### `POST /api/v1/audit/submit`
@@ -341,4 +636,4 @@ Current caution: the route comment says "Admin/scoped," but the access check in 
 - Source: `backend/app/api/routes_audit.py`
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

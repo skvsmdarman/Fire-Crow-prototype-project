@@ -136,6 +136,47 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/services/auth.py`.
 
 - All artifacts (reports, evidence, attack graphs) are stored encrypted at rest in the database (via column-level encryption or application-layer encryption).
 
+## Multi-Factor Authentication (MFA)
+
+Source paths: `backend/app/models/mfa.py`, `backend/app/api/routes_mfa.py`, `backend/app/services/mfa_service.py`, `backend/app/middleware/mfa_enforcement.py`.
+
+- Supports Time-based One-Time Passwords (TOTP) compliant with RFC 6238.
+- Enrollment generates a cryptographically random secret and provides a set of one-time recovery codes (hashed before storage).
+- MFA verification is required for critical/administrative operations when enabled.
+- Session-based admin enforcement: `MFA_ENFORCE_FOR_ADMINS=True` automatically requires any user with an admin/owner role to activate MFA. If they attempt privileged actions (creating providers, approving PAM, deleting users) without MFA active, the request is rejected.
+- Compliance checks allow administrators to list all users lacking active MFA and programmatically deactivate administrative accounts failing to comply.
+
+## Single Sign-On (SSO)
+
+Source paths: `backend/app/models/sso.py`, `backend/app/api/routes_sso.py`, `backend/app/services/sso_service.py`.
+
+- Integrates identity federation via OpenID Connect (OIDC) and SAML 2.0.
+- OIDC client credentials and tokens (access/refresh tokens) are stored encrypted at rest using the global `ENCRYPTION_KEY`.
+- SAML 2.0 implementation leverages XML signature verification using metadata certificates.
+- Configurable settings allow per-provider domain constraints (restricting logins to matching email domains), auto-provisioning options, and default role assignment.
+- Supports enforcement of MFA downstream from the SSO provider or upstream within the application flow.
+
+## Privileged Access Management (PAM)
+
+Source paths: `backend/app/models/pam.py`, `backend/app/api/routes_pam.py`, `backend/app/services/pam_service.py`.
+
+- Just-In-Time (JIT) role escalation framework. Users request temporary elevation to administrative roles or specific permissions for a limited duration (up to 480 minutes).
+- Requests require a detailed business justification and an optional external ticket reference.
+- Elevated grants must be approved by an active administrator who has verified MFA.
+- Grants automatically expire after the requested duration. A background cleanup worker prunes stale or expired grants.
+- Explicit revocation allows administrators to terminate active privileges instantly.
+- Comprehensive PAM audit logging logs all escalation requests, approvals, denials, cleanup actions, and resource access.
+
+## Identity & Access Management (IAM) & RBAC
+
+Source paths: `backend/app/models/iam.py`, `backend/app/models/role.py`, `backend/app/api/routes_iam.py`, `backend/app/services/iam_service.py`.
+
+- Implements Role-Based Access Control (RBAC) and fine-grained Attribute-Based Access Control (ABAC) policies.
+- Custom IAM Policies define `effect` (allow/deny), `actions`, `resources`, and optional evaluation `conditions`.
+- Service Accounts allow programmatic API access via signed, prefix-validated long-lived tokens (`fc_svc_...`). Service account tokens are hashed (SHA-256) prior to database persistence.
+- Dormancy auditing detects inactive accounts (no logins for 90 days), triggering automatic deactivation to prevent credential reuse.
+- Shared account detection analyzes access logs to identify credentials concurrently utilized across multiple geographic or IP footprints (default threshold of 5 distinct IPs).
+
 ## Known Security Gaps And TODOs
 
 - [x] `TelemetryMiddleware` registered in `backend/app/main.py` (fixed).
@@ -144,4 +185,4 @@ Source paths: `backend/app/api/routes_auth.py`, `backend/app/services/auth.py`.
 - The current scoring phase uses simple severity mapping, not scanner-native CVSS.
 
 ---
-*Documentation last updated: June 08, 2026*
+*Documentation last updated: June 29, 2026*

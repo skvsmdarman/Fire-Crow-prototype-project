@@ -16,6 +16,7 @@ import {
   Job,
   JobDetailResponse,
   LeaderboardEntry,
+  SubmitAuditRequest,
   SystemStatus,
 } from "../../lib/types";
 import { Badge } from "../ui/Badge";
@@ -306,14 +307,16 @@ export function DashboardConsole() {
     setFormError(null);
 
     try {
+      const payload: SubmitAuditRequest = {
+        repo_url: auditForm.repo_url.trim(),
+        repo_branch: auditForm.repo_branch.trim() || "main",
+        attestation_accepted: true,
+        authorization_scope: auditForm.authorization_scope.trim() || "authorized_representative",
+      };
+
       const response = await request<Job>("/audit/submit", {
         method: "POST",
-        body: {
-          repo_url: auditForm.repo_url.trim(),
-          repo_branch: auditForm.repo_branch.trim() || "main",
-          attestation_accepted: true,
-          authorization_scope: auditForm.authorization_scope.trim() || "authorized_representative",
-        },
+        body: payload,
       });
 
       setJobs((current) => [response, ...current]);

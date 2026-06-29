@@ -40,7 +40,7 @@ class User(Base):
     timezone: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
-    role: Mapped[Optional["Role"]] = relationship("Role", foreign_keys=[role_id], lazy="joined")
+    role: Mapped[Optional["Role"]] = relationship("Role", foreign_keys=[role_id], lazy="select")
 
     @property
     def is_admin(self) -> bool:

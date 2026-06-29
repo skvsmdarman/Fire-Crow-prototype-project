@@ -61,6 +61,13 @@ export interface Job {
   github_pr_created?: boolean;
 }
 
+export interface SubmitAuditRequest {
+  repo_url: string;
+  repo_branch: string;
+  attestation_accepted: boolean;
+  authorization_scope: string;
+}
+
 export interface Finding {
   id: string;
   agent_source: string;

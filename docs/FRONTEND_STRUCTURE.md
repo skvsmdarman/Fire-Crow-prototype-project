@@ -177,4 +177,4 @@ Current behavior:
 - Hardened audit submission to prevent accidental or unverified job execution.
 
 ---
-*Documentation last updated: June 25, 2026*
+*Documentation last updated: June 29, 2026*

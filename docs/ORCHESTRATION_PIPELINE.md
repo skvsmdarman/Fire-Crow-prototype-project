@@ -251,4 +251,4 @@ Source: `check_cancel_requested()` in `backend/app/orchestrator/maestro.py`, `ro
 - [x] API surface scanner: replaced `errors='ignore'` with `errors='replace'`.
 
 ---
-*Documentation last updated: June 19, 2026*
+*Documentation last updated: June 29, 2026*

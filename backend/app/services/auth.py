@@ -77,7 +77,7 @@ def _get_redis_client():
         client.ping()
         _redis_client = client
     except Exception:
-        logger.critical("Redis token denylist unavailable; token validation will fail closed.")
+        logger.critical("Redis unavailable. Token revocation checks will deny all tokens for safety (fail-closed). Set REDIS_URL or expect degraded auth.")
         _redis_client = None
 
     return _redis_client
@@ -634,4 +634,94 @@ def revoke_session_family(db: Session, token_family: str, reason: str = "family_
                 client.setex(_denylist_key(sess.id), ttl, "1")
             except Exception:
                 pass
+    db.commit()
+
+
+def verify_refresh_token_with_rotation(
+    old_token: str,
+    *,
+    db: Session,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> Optional[dict]:
+    """Verify a refresh token, revoke it (rotation), and return its payload.
+
+    If the token was ALREADY revoked (reuse detected), revokes the entire
+    token family as a theft response and returns ``None``.
+
+    On success, returns a dict with ``old_payload``, ``new_access_token``,
+    and ``new_refresh_token`` so the caller can issue new credentials.
+    """
+    old_payload = verify_refresh_token(old_token, db=db)
+    if not old_payload:
+        return None
+
+    token_family = old_payload.get("token_family")
+    user_id = old_payload.get("sub")
+    username = old_payload.get("username") or user_id
+
+    if not user_id or not token_family:
+        return None
+
+    now = _utc_now()
+
+    from app.models.user import UserSession
+    old_jti = old_payload.get("jti")
+    old_session = db.query(UserSession).filter(UserSession.id == old_jti).first()
+
+    if old_session and old_session.is_revoked:
+        # Token reuse detected — revoke entire family
+        logger.warning("Refresh token reuse detected for user=%s family=%s. Revoking all sessions.", user_id, token_family)
+        revoke_token_family(token_family, db=db)
+        record_security_event_raw(
+            db, user_id=user_id,
+            action="auth.refresh_token_reuse_detected",
+            details={"token_family": token_family, "revoked_jti": old_jti},
+        )
+        return None
+
+    # Revoke old refresh token (rotation)
+    if old_session:
+        old_session.is_revoked = True
+        old_session.revocation_reason = "rotated"
+        client = _get_redis_client()
+        if client is not None:
+            try:
+                ttl = max(int((old_session.expires_at - now).total_seconds()), 1)
+                client.setex(_denylist_key(str(old_jti)), ttl, "1")
+            except Exception:
+                pass
+        db.commit()
+
+    new_access_token = create_access_token(
+        user_id=user_id, username=username,
+        db=db, ip=ip, user_agent=user_agent,
+        token_family=token_family,
+    )
+    new_refresh_token = create_refresh_token(
+        user_id=user_id, username=username,
+        db=db, token_family=token_family,
+    )
+
+    return {
+        "old_payload": old_payload,
+        "new_access_token": new_access_token,
+        "new_refresh_token": new_refresh_token,
+    }
+
+
+def record_security_event_raw(
+    db: Session,
+    user_id: str,
+    action: str,
+    details: Optional[dict] = None,
+) -> None:
+    import json
+    from app.models.security_log import SecurityLog
+    db.add(SecurityLog(
+        user_id=user_id,
+        action=action,
+        ip_address=None,
+        details=json.dumps(details) if details else None,
+    ))
     db.commit()

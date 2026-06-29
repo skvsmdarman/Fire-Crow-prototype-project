@@ -20,6 +20,8 @@ os.environ["ENCRYPTION_KEY"] = "test_encryption_key_32_bytes_minimum"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
 os.environ["CSRF_ENABLED"] = "False"
+os.environ["AUTH_COOKIE_SECURE"] = "True"
+os.environ["AUTH_COOKIE_SAMESITE"] = "strict"
 
 from app.services.limiter import limiter
 limiter.enabled = False

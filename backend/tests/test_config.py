@@ -11,11 +11,8 @@ _PROD_DEFAULTS = dict(
     ENCRYPTION_KEY="y" * 40,
     DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
     REDIS_URL="redis://localhost:6379/0",
-    GITHUB_CLIENT_ID="gh_dummy",
-    GITHUB_CLIENT_SECRET="gh_secret_dummy_value_32chars",
-    GOOGLE_CLIENT_ID="g_dummy",
-    GOOGLE_CLIENT_SECRET="g_secret_dummy_value_32chars_min",
     FRONTEND_URL="https://app.firecrow.test",
+    CORS_ORIGINS="https://app.firecrow.test",
 )
 
 
@@ -121,9 +118,9 @@ def test_safe_llm_flags_default_disabled():
     assert configured.LLM_PR_DESCRIPTION is False
 
 
-def test_settings_rejects_missing_encryption_key_in_production():
-    with pytest.raises(ValidationError):
-        _prod_settings(ENCRYPTION_KEY="")
+def test_settings_allows_encryption_key_to_fall_back_to_secret_key_in_production():
+    configured = _prod_settings(ENCRYPTION_KEY="")
+    assert configured.ENCRYPTION_KEY == configured.SECRET_KEY
 
 
 def test_settings_rejects_short_encryption_key_in_production():
@@ -134,3 +131,19 @@ def test_settings_rejects_short_encryption_key_in_production():
 def test_settings_rejects_default_encryption_key_in_production():
     with pytest.raises(ValidationError):
         _prod_settings(ENCRYPTION_KEY="local_dev_encryption_key_change_me_1234567890")
+
+
+def test_settings_rejects_missing_cors_origins_in_production():
+    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+        _prod_settings(CORS_ORIGINS="")
+
+
+def test_settings_allow_optional_oauth_integrations_in_production():
+    configured = _prod_settings(
+        GITHUB_CLIENT_ID="",
+        GITHUB_CLIENT_SECRET="",
+        GOOGLE_CLIENT_ID="",
+        GOOGLE_CLIENT_SECRET="",
+    )
+    assert configured.GITHUB_CLIENT_ID == ""
+    assert configured.GOOGLE_CLIENT_ID == ""
