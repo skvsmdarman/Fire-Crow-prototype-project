@@ -6,6 +6,7 @@ RUN npm install
 
 COPY frontend/ ./
 ENV NEXT_PUBLIC_API_URL=/api/v1
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN npm run build
 
 FROM python:3.12-slim AS backend-build
@@ -24,6 +25,12 @@ RUN apt-get update \
        libffi-dev \
        shared-mime-info \
        git \
+       libxml2-dev \
+       libxslt1-dev \
+       libxmlsec1-dev \
+       libxmlsec1-openssl \
+       xmlsec1 \
+       pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt backend/requirements.txt

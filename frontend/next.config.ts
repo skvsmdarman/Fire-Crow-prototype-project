@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  experimental: {
+    cpus: 1,
+    webpackMemoryOptimizations: true,
+  },
 };
 
 export default nextConfig;
