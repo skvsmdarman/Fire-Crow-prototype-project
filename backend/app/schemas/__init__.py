@@ -9,3 +9,9 @@ from app.schemas.audit_api import (
     build_job_detail_response,
     build_job_response,
 )
+from app.schemas.domain_verify import (
+    DomainVerifyRequest,
+    DomainVerifyResponse,
+    DomainCheckRequest,
+    DomainCheckResponse,
+)

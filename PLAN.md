@@ -1,7 +1,7 @@
 # Plan for Enhancing Fire Crow Security Scanning Architecture
 
 ## Goal
-Improve the current architecture to make it more resilient to failures and strengthen its security checking capabilities at repo-level, file-level, and code-level.
+Improve the current architecture to make it more resilient to failures, strengthen its security checking capabilities, and upgrade Fire Crow to a high-performance, distributed scanner capable of conducting authorized live web security audits.
 
 ## Current State Analysis
 The system uses a modular orchestrator (maestro.py) with sequential phases:
@@ -32,7 +32,7 @@ The system uses a modular orchestrator (maestro.py) with sequential phases:
 25. Google Agent notification
 26. Cleanup
 
-## Completed Enhancements
+## Completed Repository Audit Enhancements ✅
 
 ### 1. Enhanced File-Level Scanning (SAST Agent) ✅
 - Integrated Bandit for Python AST-based security scanning
@@ -41,58 +41,39 @@ The system uses a modular orchestrator (maestro.py) with sequential phases:
 
 ### 2. Added Repo-Level Security Checks ✅
 - GitHub API integration for repository security checks:
-  - Repository visibility (public/private)
-  - Branch protection rules
-  - Security policy (SECURITY.md) presence
-  - Secret scanning alert settings
-  - Force push configuration
+  - Repository visibility (public/private), branch protection rules, security policy (SECURITY.md) presence, secret scanning alert settings, force push configuration.
 
 ### 3. Enhanced Code-Level Aggressive Checking ✅
-- **Dynamic Attack Agent**:
-  - SSRF testing with internal URL detection
-  - XXE (XML External Entity) injection testing
-  - SSTI (Server-Side Template Injection) testing
-  - JWT algorithm confusion testing
-  - Rate limiting bypass detection
+- SSRF testing with internal URL detection, XXE (XML External Entity) injection testing, SSTI (Server-Side Template Injection) testing, JWT algorithm confusion testing, and rate limiting bypass detection.
 
 ### 4. Made Orchestrator Adaptive ✅
-- Added threat modeling phase after Recon
-- Added adaptive scanning analysis after SAST/Semgrep
-- Dynamic routing based on initial findings
+- Added threat modeling phase after Recon and adaptive scanning analysis after SAST/Semgrep.
 
-### 5. Improved Failure Resilience ✅
-- Implemented retry mechanisms with exponential backoff (2 retries for non-critical phases)
-- Added fallback scanners for tool unavailability
-- Circuit breaker pattern for external API calls
-
-### 6. Added Cross-Validation Phase ✅
-- Correlates findings from static and dynamic agents
-- Flags potential false positives (test files, commented code, vendor code)
-- Increases confidence when findings are corroborated
-
-### 7. Added Configuration File Scanning ✅
-- Dockerfile scanning with hadolint
-- Kubernetes/YAML scanning with kube-linter
-- Terraform scanning with tfsec
-
-### 8. Added Enterprise Identity & Hardening (MFA/SSO/PAM/IAM) ✅
-- Implemented Multi-Factor Authentication (MFA) via TOTP (RFC 6238) with secure recovery codes.
-- Added Single Sign-On (SSO) with OpenID Connect (OIDC) and SAML 2.0 federation.
-- Designed Just-In-Time Privilege Access Management (PAM) for temporary administrative escalation.
-- Created fine-grained IAM resource/action authorization policies and service accounts.
-- Integrated security auditing, shared account detection, and account dormancy sweeps.
-
-### 9. Added Multi-Tenant Isolation & Partitioning ✅
-- Enforced complete database partitioning using `tenant_id` scopes.
-- Designed middleware to dynamically resolve tenants using header values or user details.
-- Integrated tier constraints (max user limits, max storage volume limits) for free/premium/enterprise plans.
-
-## Implementation Complete
-
-All tasks have been successfully implemented and tested:
-- 97/97 backend tests passing
-- Frontend TypeScript compilation successful
-- Documentation updated
+### 5. Multi-Tenant Isolation & Hardening (MFA/SSO/PAM/IAM) ✅
+- Implemented MFA via TOTP, SSO via OIDC & SAML 2.0, Just-In-Time PAM, fine-grained IAM resource/action authorization, service accounts, database multi-tenant isolation partitioning.
 
 ---
-*Documentation last updated: June 29, 2026*
+
+## Live Website Scanning & Security Upgrades Roadmap 🚀
+
+### Phase 1: Security & Compliance (Safe Live Scanning) 
+- [ ] Implement DNS TXT Lookup Challenge (`_firecrow-challenge.domain.com`) ── **In Progress**
+- [ ] Implement HTML Meta Tag Verification (`firecrow-verification`) ── **In Progress**
+- [ ] Implement Well-Known File Upload verification (`/.well-known/firecrow.txt`) ── **In Progress**
+- [ ] Create `/api/v1/verify-domain` FastAPI endpoints and models ── **In Progress**
+- [ ] Build Frontend Verification UI inside Settings/Dashboard ── **In Progress**
+- [ ] Implement static outbound IP pool documentation and rate limiting rules ── **Planned**
+
+### Phase 2: System Efficiency (Asynchronous Distributed Architecture) ── **Planned**
+- [ ] Integrate Redis & Celery into the docker compose environment
+- [ ] Port `maestro.py` sequence phases into asynchronous Celery subtasks
+- [ ] Implement live scan progress streaming via WebSocket/SSE updates
+
+### Phase 3: Vigorous Security Detection Upgrades ── **Planned**
+- [ ] Integrate OWASP ZAP API client for passive/active crawling
+- [ ] Implement dynamic CMS & technology stack fingerprinting (Wappalyzer clone)
+- [ ] Add advanced parameter fuzzing and tech-aware nuclei payload selectors
+- [ ] Refine `attack.py` and `exploit.py` for live WAN scans (SSL handshake, redirect loops)
+
+---
+*Documentation last updated: July 5, 2026*

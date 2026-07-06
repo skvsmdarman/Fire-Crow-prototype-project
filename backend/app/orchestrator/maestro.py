@@ -699,6 +699,7 @@ def attack_body(db: Session, state: AuditState) -> Dict[str, Any]:
         target_host=state.sandbox_target_ip,
         open_ports=state.open_ports,
         repo_url=state.repo_url,
+        api_surface=state.api_surface,
     )
     persist_findings(db, state.job_id, findings)
 

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes_auth import PRIVACY_POLICY_VERSION
 from app.main import app
-from app.models import AuthExchangeCode, SecurityLog, SessionLocal, User
+from app.models import AuthExchangeCode, SecurityLog, SessionLocal, User, UserActivityEvent
 from app.services.auth import (
     AUTH_COOKIE_NAME,
     create_access_token,
@@ -570,6 +570,15 @@ def test_policy_context_reports_password_auth_available():
 
 def test_user_activity_logging():
     username = f"logtester_{uuid.uuid4().hex[:6]}"
+
+    def fetch_activity_rows(db_session, target_user_id: str) -> list[UserActivityEvent]:
+        return (
+            db_session.query(UserActivityEvent)
+            .filter(UserActivityEvent.user_id == target_user_id)
+            .order_by(UserActivityEvent.created_at.desc())
+            .all()
+        )
+
     # 1. Register a new user
     reg_payload = _register_payload(username)
     reg_payload["email"] = f"{username}@example.com"
@@ -590,13 +599,10 @@ def test_user_activity_logging():
         assert user.terms_accepted_at is not None
         assert user.first_login_at is not None
         assert user.last_login_at is not None
-        assert user.activity_log is not None
-        
-        # Verify JSON activity log
-        activity_history = json.loads(user.activity_log)
-        assert len(activity_history) >= 2
-        assert activity_history[0]["action"] == "login"
-        assert activity_history[1]["action"] == "register"
+        activity_history = fetch_activity_rows(db, user_id)
+        activity_actions = [entry.action for entry in activity_history]
+        assert "login" in activity_actions
+        assert "register" in activity_actions
     finally:
         db.close()
 
@@ -612,13 +618,11 @@ def test_user_activity_logging():
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-        assert user is not None
-        assert user.activity_log is not None
-        activity_history = json.loads(user.activity_log)
+        activity_history = fetch_activity_rows(db, user_id)
         assert len(activity_history) >= 3
-        assert activity_history[0]["action"] == "login"
-        assert activity_history[0]["details"]["provider"] == "password"
+        assert activity_history[0].action == "login"
+        assert activity_history[0].details_json is not None
+        assert json.loads(activity_history[0].details_json)["provider"] == "password"
     finally:
         db.close()
 
@@ -640,12 +644,9 @@ def test_user_activity_logging():
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-        assert user is not None
-        assert user.activity_log is not None
-        activity_history = json.loads(user.activity_log)
+        activity_history = fetch_activity_rows(db, user_id)
         assert len(activity_history) >= 4
-        assert activity_history[0]["action"] == "policy_privacy_policy_link_click"
+        assert activity_history[0].action == "policy_privacy_policy_link_click"
     finally:
         db.close()
 
@@ -661,10 +662,9 @@ def test_user_activity_logging():
         user = db.query(User).filter(User.id == user_id).first()
         assert user is not None
         assert user.last_logout_at is not None
-        assert user.activity_log is not None
-        activity_history = json.loads(user.activity_log)
+        activity_history = fetch_activity_rows(db, user_id)
         assert len(activity_history) >= 5
-        assert activity_history[0]["action"] == "logout"
+        assert activity_history[0].action == "logout"
     finally:
         db.close()
 

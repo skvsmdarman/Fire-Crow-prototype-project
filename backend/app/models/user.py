@@ -35,12 +35,17 @@ class User(Base):
     first_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_logout_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    activity_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     region: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     timezone: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     role: Mapped[Optional["Role"]] = relationship("Role", foreign_keys=[role_id], lazy="select")
+    activity_events: Mapped[list["UserActivityEvent"]] = relationship(
+        "UserActivityEvent",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="UserActivityEvent.created_at.desc()",
+    )
 
     @property
     def is_admin(self) -> bool:
@@ -95,4 +100,26 @@ class PushSubscription(Base):
     p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
     auth: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class UserActivityEvent(Base):
+    __tablename__ = "user_activity_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        String(255),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    details_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="activity_events")
 

@@ -21,6 +21,7 @@ from app.models import (
     FindingModel,
     Membership,
     User,
+    DomainVerification,
     get_db,
 )
 from sqlalchemy import or_
@@ -217,6 +218,28 @@ def _extract_repo_owner_name(url: str) -> tuple[str, str]:
     return "unknown", "unknown"
 
 
+def _extract_domain(url: str) -> str | None:
+    try:
+        if "github.com" in url:
+            parsed = urlparse(url)
+            path_parts = [p for p in parsed.path.split("/") if p]
+            if len(path_parts) >= 2:
+                repo_name = path_parts[1]
+                if repo_name.endswith(".git"):
+                    repo_name = repo_name[:-4]
+                if re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", repo_name.lower()):
+                    return repo_name.lower()
+        else:
+            parsed = urlparse(url)
+            netloc = parsed.netloc or parsed.path
+            domain = netloc.split(":")[0].lower()
+            if re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", domain):
+                return domain
+    except Exception:
+        pass
+    return None
+
+
 @router.post("/submit", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def submit_audit(
@@ -237,6 +260,26 @@ async def submit_audit(
     lock = _get_user_lock(user_id)
     with lock:
         db.rollback()  # Reset transaction snapshot to read latest committed data
+
+        # Check domain verification if a domain-like target/repo is specified
+        target_domain = _extract_domain(payload.repo_url)
+        if target_domain:
+            verified_record = (
+                db.query(DomainVerification)
+                .filter(
+                    DomainVerification.domain == target_domain,
+                    DomainVerification.user_id == user_id,
+                    DomainVerification.verified == True,
+                )
+                .first()
+            )
+            if not verified_record:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"The domain '{target_domain}' must be verified before initiating a scan. "
+                           f"Please register and verify domain '{target_domain}' in Settings.",
+                )
+
         if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -317,7 +360,9 @@ async def submit_audit(
 
 
 @router.get("/jobs", response_model=List[JobResponse])
+@limiter.limit("30/minute")
 async def list_jobs(
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
@@ -347,8 +392,10 @@ async def list_jobs(
 
 
 @router.get("/job/{job_id}", response_model=JobDetailResponse)
+@limiter.limit("30/minute")
 async def get_job_detail(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
@@ -360,6 +407,7 @@ async def get_job_detail(
 
 
 @router.delete("/job/{job_id}", status_code=status.HTTP_200_OK)
+@limiter.limit("10/minute")
 async def cancel_job(
     job_id: str,
     request: Request,
@@ -408,6 +456,7 @@ async def cancel_job(
 
 
 @router.get("/job/{job_id}/report")
+@limiter.limit("15/minute")
 async def download_report(
     job_id: str,
     request: Request,
@@ -541,6 +590,7 @@ _SEVERITY_RANK = {
 
 
 @router.post("/job/{job_id}/email")
+@limiter.limit("5/minute")
 async def email_report(
     job_id: str,
     payload: EmailReportRequest,
@@ -693,8 +743,10 @@ async def email_report(
 
 
 @router.get("/job/{job_id}/insight")
+@limiter.limit("20/minute")
 async def get_job_insight(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
@@ -729,8 +781,10 @@ async def get_job_insight(
 
 
 @router.get("/job/{job_id}/graph")
+@limiter.limit("20/minute")
 async def get_attack_graph(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):

@@ -9,10 +9,8 @@ from starlette.testclient import TestClient
 
 # 1. Set environment variables at the very top to force a dedicated SQLite database for tests
 # This must happen before any backend imports are triggered.
-TEST_DB_PATH = Path(tempfile.gettempdir()) / "firecrow_pytest.db"
-
-if TEST_DB_PATH.exists():
-    TEST_DB_PATH.unlink()
+import uuid
+TEST_DB_PATH = Path(tempfile.gettempdir()) / f"firecrow_pytest_{uuid.uuid4().hex}.db"
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"

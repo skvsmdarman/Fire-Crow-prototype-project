@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { ReactNode, useEffect, useState } from "react";
 import { Badge } from "./ui/Badge";
 import { Card } from "./ui/Card";
 
@@ -10,59 +13,121 @@ export function SiteHeader({
   ctaHref?: string;
   ctaLabel?: string;
 }) {
+  const pathname = usePathname();
+  const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const links = [
+    { href: "/#features", label: "Features" },
+    { href: "/#how-it-works", label: "How it works" },
+    { href: "/#trust", label: "Privacy" },
+  ];
+
   return (
-    <header className="fc-topbar">
-      <div className="fc-shell fc-topbar-inner">
-        <Link href="/" className="fc-brand" aria-label="Fire Crow home">
-          <span className="fc-brand-mark">FC</span>
-          <span>
-            <span className="fc-brand-kicker">AI security review</span>
-            <span className="fc-brand-title">Fire Crow</span>
+    <div className={`di-wrapper ${scrolled ? "di-wrapper--scrolled" : ""}`}>
+      <nav className={`di-island ${scrolled ? "di-island--compact" : ""}`} aria-label="Primary">
+        {/* Brand */}
+        <Link href="/" className="di-brand" aria-label="Fire Crow home">
+          <span className="di-brand-mark">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="url(#fire-grad-site)" />
+              <defs>
+                <linearGradient id="fire-grad-site" x1="0" y1="0" x2="24" y2="24">
+                  <stop offset="0%" stopColor="#ff9b54" />
+                  <stop offset="100%" stopColor="#6ce7ff" />
+                </linearGradient>
+              </defs>
+            </svg>
           </span>
+          <span className="di-brand-name">Fire Crow</span>
         </Link>
-        <nav className="fc-nav" aria-label="Primary">
-          <Link className="fc-nav-link" href="/#features">
-            Features
-          </Link>
-          <Link className="fc-nav-link" href="/#how-it-works">
-            How it works
-          </Link>
-          <Link className="fc-nav-link" href="/#trust">
-            Trust
-          </Link>
-          <Link className="fc-nav-link" href="/terms">
-            Terms
-          </Link>
-          <Link className="fc-nav-link" href="/privacy">
-            Privacy
-          </Link>
-          <Link className="fc-button fc-button-primary" href={ctaHref}>
+
+        {/* Center links */}
+        <div className="di-links" role="list">
+          {links.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`di-link ${pathname === l.href ? "di-link--active" : ""}`}
+            >
+              {l.label}
+            </Link>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div className="di-actions">
+          {ctaHref === "/signin" && (
+            <Link href="/signin" className="di-cta-ghost">Sign in</Link>
+          )}
+          <Link href={ctaHref} className="di-cta-pill">
             {ctaLabel}
           </Link>
-        </nav>
-      </div>
-    </header>
+        </div>
+
+        {/* Mobile burger */}
+        <button
+          className="di-burger"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+        >
+          <span className={`di-burger-bar ${menuOpen ? "di-burger-bar--top-open" : ""}`} />
+          <span className={`di-burger-bar ${menuOpen ? "di-burger-bar--mid-open" : ""}`} />
+          <span className={`di-burger-bar ${menuOpen ? "di-burger-bar--bot-open" : ""}`} />
+        </button>
+      </nav>
+
+      {/* Mobile drawer */}
+      {menuOpen && (
+        <div className="di-drawer" onClick={() => setMenuOpen(false)}>
+          {links.map((l) => (
+            <Link key={l.href} href={l.href} className="di-drawer-link">{l.label}</Link>
+          ))}
+          <hr className="di-drawer-divider" />
+          <Link href="/signin" className="di-drawer-link">Sign in</Link>
+          <Link href={ctaHref} className="di-drawer-cta">{ctaLabel} →</Link>
+        </div>
+      )}
+    </div>
   );
 }
 
 export function SiteFooter() {
   return (
-    <footer className="fc-shell fc-footer">
+    <footer className="fc-shell fc-footer" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 40, marginTop: 60, paddingBottom: 40 }}>
       <div>
-        <div className="fc-brand" style={{ marginBottom: 8 }}>
-          <span className="fc-brand-mark">FC</span>
-          <span>
-            <span className="fc-brand-kicker">Security that ships with clarity</span>
-            <span className="fc-brand-title">Fire Crow</span>
+        <div className="di-brand" style={{ marginBottom: 8 }}>
+          <span className="di-brand-mark">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#footer-fire-site)" />
+              <defs>
+                <linearGradient id="footer-fire-site" x1="0" y1="0" x2="24" y2="24">
+                  <stop offset="0%" stopColor="#ff9b54" />
+                  <stop offset="100%" stopColor="#6ce7ff" />
+                </linearGradient>
+              </defs>
+            </svg>
           </span>
+          <span className="di-brand-name" style={{ fontSize: "0.95rem" }}>Fire Crow</span>
         </div>
-        <div className="fc-muted">Share clear findings, prioritized fixes, and client-ready reports without turning every review into a manual fire drill.</div>
+        <div className="fc-muted" style={{ maxWidth: 450, fontSize: "0.9rem", lineHeight: "1.6" }}>
+          Automated code security scanning, clear explanations, and client-ready reports built for modern teams by <strong>Nova Devs</strong>.
+        </div>
+        <div className="fc-muted" style={{ marginTop: 12, fontSize: "0.8rem" }}>
+          © {new Date().getFullYear()} Nova Devs. All rights reserved.
+        </div>
       </div>
       <div className="fc-footer-links">
         <Link href="/signin">Sign in</Link>
         <Link href="/signup">Create account</Link>
         <Link href="/#features">Features</Link>
-        <Link href="/#how-it-works">How it works</Link>
         <Link href="/terms">Terms</Link>
         <Link href="/privacy">Privacy</Link>
       </div>

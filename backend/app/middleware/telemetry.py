@@ -58,6 +58,29 @@ except ImportError:
     REDIS_CONNECTED = None
 
 
+def observe_db_pool_metrics(db_engine) -> None:
+    if not PROMETHEUS_AVAILABLE or DB_CONNECTION_POOL_SIZE is None or db_engine is None:
+        return
+
+    pool = getattr(db_engine, "pool", None)
+    if pool is None:
+        return
+
+    try:
+        pool_size = float(pool.size()) if hasattr(pool, "size") else 0.0
+        checked_in = float(pool.checkedin()) if hasattr(pool, "checkedin") else 0.0
+        checked_out = float(pool.checkedout()) if hasattr(pool, "checkedout") else 0.0
+        overflow = float(pool.overflow()) if hasattr(pool, "overflow") else 0.0
+    except Exception:
+        logger.debug("Failed to observe DB pool metrics", exc_info=True)
+        return
+
+    DB_CONNECTION_POOL_SIZE.labels(state="size").set(pool_size)
+    DB_CONNECTION_POOL_SIZE.labels(state="checked_in").set(checked_in)
+    DB_CONNECTION_POOL_SIZE.labels(state="checked_out").set(checked_out)
+    DB_CONNECTION_POOL_SIZE.labels(state="overflow").set(overflow)
+
+
 class TelemetryMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()

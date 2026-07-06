@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Rajdhani } from "next/font/google";
 import { ReactNode } from "react";
+import { AuthProvider } from "../lib/auth-context";
 import "./globals.css";
 
 const sans = DM_Sans({
@@ -20,8 +21,8 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fire Crow",
-  description: "Authorization-first security orchestration console for Fire Crow.",
+  title: "Fire Crow — AI Security Review",
+  description: "Automated code security scanning with clear findings and client-ready reports. Built by Nova Devs.",
   icons: {
     icon: "/fire_crow_logo.png",
     apple: "/fire_crow_logo.png",
@@ -31,7 +32,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${sans.variable} ${display.variable} ${mono.variable}`}>{children}</body>
+      <body className={`${sans.variable} ${display.variable} ${mono.variable}`}>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

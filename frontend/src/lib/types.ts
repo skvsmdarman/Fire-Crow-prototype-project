@@ -124,3 +124,21 @@ export interface ChatResponse {
   response?: string;
   answer?: string;
 }
+
+export interface DomainVerificationRecord {
+  id: string;
+  domain: string;
+  verification_token: string;
+  verified: boolean;
+  verified_at: string | null;
+  created_at: string;
+  dns_txt_name: string;
+  dns_txt_value: string;
+  html_meta_name: string;
+  html_meta_content: string;
+  well_known_path: string;
+  well_known_content: string;
+}
+
+export type VerificationMethod = "dns" | "html" | "file";
+

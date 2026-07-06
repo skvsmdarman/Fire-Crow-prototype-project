@@ -53,8 +53,10 @@ def enroll_mfa(
         raise HTTPException(status_code=409, detail="MFA is already enabled for this account.")
 
     secret = generate_totp_secret()
+    # Encrypt the TOTP secret before storing in the database (FC-ENC-001)
+    encrypted_secret = crypto_manager.encrypt_secret(secret)
     if existing:
-        existing.secret = secret
+        existing.secret = encrypted_secret
         existing.is_active = False
         existing.method = method
         existing.failed_attempts = 0
@@ -62,7 +64,7 @@ def enroll_mfa(
     else:
         mfa_config = MFAConfiguration(
             user_id=user_id,
-            secret=secret,
+            secret=encrypted_secret,
             is_active=False,
             method=method,
         )
@@ -90,12 +92,21 @@ def _generate_recovery_codes(user_id: str, db: Session, count: int = 8) -> list[
     return codes
 
 
+def _decrypt_mfa_secret(encrypted_secret: str) -> str:
+    """Decrypt a stored MFA TOTP secret. Handles both encrypted and legacy plaintext secrets."""
+    if encrypted_secret and encrypted_secret.startswith("ENC["):
+        return crypto_manager.decrypt_secret(encrypted_secret)
+    # Legacy plaintext secret (pre-encryption migration)
+    return encrypted_secret
+
+
 def activate_mfa(user_id: str, token: str, db: Session) -> MFAConfiguration:
     mfa_config = db.query(MFAConfiguration).filter(MFAConfiguration.user_id == user_id).first()
     if not mfa_config:
         raise HTTPException(status_code=404, detail="MFA not enrolled. Enroll first.")
 
-    if not verify_totp(mfa_config.secret, token):
+    plaintext_secret = _decrypt_mfa_secret(mfa_config.secret)
+    if not verify_totp(plaintext_secret, token):
         raise HTTPException(status_code=401, detail="Invalid TOTP token.")
 
     mfa_config.is_active = True
@@ -116,7 +127,8 @@ def verify_mfa(user_id: str, token: str, db: Session) -> bool:
     if mfa_config.failed_attempts >= 5:
         raise HTTPException(status_code=429, detail="MFA temporarily locked due to too many failed attempts.")
 
-    if verify_totp(mfa_config.secret, token):
+    plaintext_secret = _decrypt_mfa_secret(mfa_config.secret)
+    if verify_totp(plaintext_secret, token):
         mfa_config.failed_attempts = 0
         mfa_config.last_verified_at = _utc_now()
         db.commit()

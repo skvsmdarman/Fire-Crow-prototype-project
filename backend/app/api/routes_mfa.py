@@ -14,7 +14,7 @@ from app.services.mfa_service import (
     enroll_mfa, activate_mfa, verify_mfa, verify_recovery_code,
     disable_mfa, regenerate_recovery_codes, get_mfa_status,
     enforce_mfa_for_admin, get_users_without_mfa, record_mfa_event,
-    get_totp_uri,
+    get_totp_uri, _decrypt_mfa_secret,
 )
 from app.services.security_log import record_security_event
 
@@ -64,7 +64,9 @@ async def enroll(
         raise HTTPException(status_code=404, detail="User not found.")
 
     config, recovery_codes = enroll_mfa(user_id, db)
-    uri = get_totp_uri(config.secret, user.username)
+    # Decrypt the stored secret to return plaintext for QR code / authenticator app
+    plaintext_secret = _decrypt_mfa_secret(config.secret)
+    uri = get_totp_uri(plaintext_secret, user.username)
 
     record_mfa_event(db, user_id, "mfa.enrolled", request)
     record_security_event(
@@ -73,7 +75,7 @@ async def enroll(
     )
 
     return MFARegisterResponse(
-        secret=config.secret,
+        secret=plaintext_secret,
         uri=uri,
         recovery_codes=recovery_codes,
     )
@@ -163,7 +165,9 @@ async def disable(
 
 
 @router.get("/status")
+@limiter.limit("20/minute")
 async def status(
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -171,6 +175,7 @@ async def status(
 
 
 @router.get("/admin/compliance")
+@limiter.limit("10/minute")
 async def compliance_check(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -188,6 +193,7 @@ async def compliance_check(
 
 
 @router.post("/admin/enforce")
+@limiter.limit("5/minute")
 async def enforce(
     request: Request,
     user_id: str = Depends(get_current_user),

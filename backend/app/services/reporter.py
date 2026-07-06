@@ -1,6 +1,7 @@
 import logging
 import os
 import html
+import json
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings, WORKSPACE_DIR, _global_state
@@ -115,7 +116,6 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
 """
         try:
             from app.services.safe_llm import safe_llm_call
-            import json
             res = safe_llm_call(prompt, max_tokens=1000, temperature=0.2)
             if res:
                 res_clean = res.strip()
@@ -135,17 +135,271 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
         
         return details
 
+    def _get_fallback_report_insights(self, findings: List[Finding], repo_url: str) -> Dict[str, Any]:
+        """Provides high-quality deterministic fallback values for compliance and strategic insights when LLM is unavailable."""
+        repo_name = get_clean_repo_name(repo_url)
+        counts = {Severity.CRITICAL: 0, Severity.HIGH: 0, Severity.MEDIUM: 0, Severity.LOW: 0, Severity.INFO: 0}
+        for f in findings:
+            counts[f.severity] = counts.get(f.severity, 0) + 1
+            
+        total_issues = len(findings)
+        if total_issues == 0:
+            strategic_assessment = (
+                f"The security audit for repository '{repo_name}' concluded with no security vulnerabilities detected. "
+                f"The codebase demonstrates a strong security posture and adheres to baseline security requirements. "
+                f"Continuous monitoring and regular dependency audits are recommended to maintain this robust posture."
+            )
+        else:
+            critical_count = counts.get(Severity.CRITICAL, 0)
+            high_count = counts.get(Severity.HIGH, 0)
+            medium_count = counts.get(Severity.MEDIUM, 0)
+            
+            strategic_assessment = (
+                f"The security audit for repository '{repo_name}' identified {total_issues} security findings, including "
+                f"{critical_count} critical and {high_count} high severity issues. The overall security posture of the codebase "
+                f"requires immediate remediation. We suggest addressing the critical vulnerabilities immediately to prevent potential "
+                f"unauthorized access or system compromise, followed by remediation of the high and medium-severity findings "
+                f"in the upcoming development cycles. Systemic patterns suggest focusing on input validation and configuration hygiene."
+            )
+
+        owasp_mapping = {}
+        for f in findings:
+            title_lower = (f.title or "").lower()
+            desc_lower = (f.description or "").lower()
+            cwe = (f.cwe_id or "").lower()
+            
+            if "idor" in title_lower or "auth" in title_lower or "permission" in title_lower or "cwe-639" in cwe or "cwe-287" in cwe:
+                cat = "A01:2021-Broken Access Control"
+            elif "secret" in title_lower or "crypt" in title_lower or "cipher" in title_lower or "key" in title_lower or "cwe-798" in cwe or "cwe-327" in cwe:
+                cat = "A02:2021-Cryptographic Failures"
+            elif "inject" in title_lower or "sql" in title_lower or "xss" in title_lower or "cwe-89" in cwe or "cwe-79" in cwe or "cwe-78" in cwe:
+                cat = "A03:2021-Injection"
+            elif "insecure design" in title_lower or "design" in title_lower:
+                cat = "A04:2021-Insecure Design"
+            elif "misconfig" in title_lower or "config" in title_lower or "dockerfile" in title_lower or "cwe-16" in cwe:
+                cat = "A05:2021-Security Misconfiguration"
+            elif "vulnerable component" in title_lower or "outdated" in title_lower or "dependency" in title_lower or "cwe-1104" in cwe:
+                cat = "A06:2021-Vulnerable and Outdated Components"
+            elif "session" in title_lower or "csrf" in title_lower or "cwe-384" in cwe:
+                cat = "A07:2021-Identification and Authentication Failures"
+            elif "deserial" in title_lower or "integrity" in title_lower or "cwe-502" in cwe:
+                cat = "A08:2021-Software and Data Integrity Failures"
+            elif "log" in title_lower or "monitor" in title_lower or "cwe-778" in cwe:
+                cat = "A09:2021-Security Logging and Monitoring Failures"
+            elif "ssrf" in title_lower or "forgery" in title_lower or "cwe-918" in cwe:
+                cat = "A10:2021-Server-Side Request Forgery"
+            else:
+                cat = "A03:2021-Injection"
+            owasp_mapping[f.id] = cat
+
+        has_gaps = total_issues > 0
+        compliance_mapping = [
+            {
+                "standard": "SOC 2",
+                "control": "CC6.1 (Logical Access Security)",
+                "status": "Gap Identified" if has_gaps else "Compliant",
+                "details": "Vulnerabilities found in the repository codebase impact the logical access security controls." if has_gaps else "No access control vulnerabilities were detected in the repository codebase."
+            },
+            {
+                "standard": "ISO 27001",
+                "control": "A.8.20 (Network Security)",
+                "status": "Gap Identified" if any("network" in (f.agent_source or "").lower() or "port" in (f.title or "").lower() for f in findings) else "Compliant",
+                "details": "Vulnerabilities matching network configuration risks were detected." if any("network" in (f.agent_source or "").lower() or "port" in (f.title or "").lower() for f in findings) else "No network security configuration flaws were detected."
+            },
+            {
+                "standard": "PCI-DSS",
+                "control": "Requirement 6 (Secure Systems)",
+                "status": "Gap Identified" if has_gaps else "Compliant",
+                "details": "Security vulnerabilities must be addressed to comply with secure system components requirements." if has_gaps else "No vulnerabilities in system components were identified."
+            }
+        ]
+
+        enriched_findings = {}
+        for f in findings:
+            non_technical_summary = f"This issue represents a {f.severity.value} vulnerability which may expose sensitive application assets or logic. It was identified by {f.agent_source}."
+            impact = "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the application, leading to unauthorized access, system degradation, or data disclosure."
+            remediation_steps = f.remediation or "Follow secure coding practices, enforce strict parameter validation, sanitize all inputs, and use encrypted configuration parameters."
+            enriched_findings[f.id] = {
+                "non_technical_summary": non_technical_summary,
+                "impact": impact,
+                "remediation_steps": remediation_steps
+            }
+
+        return {
+            "strategic_assessment": strategic_assessment,
+            "owasp_mapping": owasp_mapping,
+            "compliance_mapping": compliance_mapping,
+            "enriched_findings": enriched_findings
+        }
+
+    def _get_smart_report_insights(self, findings: List[Finding], repo_url: str) -> Dict[str, Any]:
+        """Uses LLM to perform a single batch analysis and return a structured report insight object."""
+        if not settings.GEMINI_API_KEY or not settings.GEMINI_MODEL:
+            return self._get_fallback_report_insights(findings, repo_url)
+
+        findings_data = []
+        for idx, f in enumerate(findings, 1):
+            findings_data.append({
+                "id": f.id,
+                "index_id": f"FC-{idx:03d}",
+                "title": f.title,
+                "severity": f.severity.value,
+                "agent_source": f.agent_source,
+                "description": f.description[:500],
+                "cwe_id": f.cwe_id or "N/A",
+                "file_path": f.file_path or "N/A"
+            })
+            
+        if len(findings_data) > 25:
+            severity_order = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3, Severity.INFO: 4}
+            sorted_findings = sorted(findings, key=lambda x: severity_order.get(x.severity, 5))
+            findings_data = []
+            for idx, f in enumerate(sorted_findings[:25], 1):
+                findings_data.append({
+                    "id": f.id,
+                    "index_id": f"FC-{idx:03d}",
+                    "title": f.title,
+                    "severity": f.severity.value,
+                    "agent_source": f.agent_source,
+                    "description": f.description[:500],
+                    "cwe_id": f.cwe_id or "N/A",
+                    "file_path": f.file_path or "N/A"
+                })
+
+        findings_json_str = json.dumps(findings_data, indent=2) if findings_data else "[]"
+
+        if len(findings) > 0:
+            prompt = f"""You are a senior security architect and compliance officer.
+Analyze the following security findings for the repository '{repo_url}':
+{findings_json_str}
+
+Provide a comprehensive, high-quality assessment.
+Your response MUST be a valid JSON object. Do not include any markdown formatting or code block backticks (like ```json). Return only the raw JSON.
+The JSON object must have exactly the following structure:
+{{
+  "strategic_assessment": "Provide a detailed 2-3 paragraph overview of the repository's security posture. Connect the findings together and explain if they indicate systemic issues (e.g. poor input validation, outdated dependency hygiene, unsafe configuration management) or are isolated mistakes, and how this impacts business and operational risks (data breaches, compliance failures).",
+  "owasp_mapping": {{
+     "finding_id_1": "OWASP Top 10 category (e.g. A01:2021-Broken Access Control)",
+     "finding_id_2": "..."
+  }},
+  "compliance_mapping": [
+    {{
+      "standard": "SOC 2",
+      "control": "CC6.1 (Logical Access Security)",
+      "status": "Gap Identified" or "Compliant",
+      "details": "Explanation of how findings violate or support this control."
+    }},
+    {{
+      "standard": "ISO 27001",
+      "control": "A.8.20 (Network Security)",
+      "status": "Gap Identified" or "Compliant",
+      "details": "..."
+    }},
+    {{
+      "standard": "PCI-DSS",
+      "control": "Requirement 6 (Secure Systems)",
+      "status": "Gap Identified" or "Compliant",
+      "details": "..."
+    }}
+  ],
+  "enriched_findings": {{
+     "finding_id_1": {{
+       "non_technical_summary": "A clear explanation of what this vulnerability means in plain English, why it is dangerous, and what the real-world business risk is.",
+       "impact": "The technical impact of this vulnerability on the systems and data.",
+       "remediation_steps": "Actionable, step-by-step coding instructions or system configuration steps to fix the issue."
+     }}
+  }}
+}}
+"""
+        else:
+            prompt = f"""You are a senior security architect and compliance officer.
+The security scan for the repository '{repo_url}' completed with 0 findings.
+Provide a comprehensive, high-quality security posture assessment.
+Your response MUST be a valid JSON object. Do not include any markdown formatting or code block backticks (like ```json). Return only the raw JSON.
+The JSON object must have exactly the following structure:
+{{
+  "strategic_assessment": "Provide a 1-2 paragraph overview of the repository's security posture. Explain that the audit found no vulnerabilities and that the repository shows a strong security baseline, noting best practices for continuous security monitoring.",
+  "owasp_mapping": {{}},
+  "compliance_mapping": [
+    {{
+      "standard": "SOC 2",
+      "control": "CC6.1 (Logical Access Security)",
+      "status": "Compliant",
+      "details": "No access control vulnerabilities were detected in the repository codebase."
+    }},
+    {{
+      "standard": "ISO 27001",
+      "control": "A.8.20 (Network Security)",
+      "status": "Compliant",
+      "details": "No network security configuration flaws were detected."
+    }},
+    {{
+      "standard": "PCI-DSS",
+      "control": "Requirement 6 (Secure Systems)",
+      "status": "Compliant",
+      "details": "No vulnerabilities in system components were identified."
+    }}
+  ],
+  "enriched_findings": {{}}
+}}
+"""
+
+        try:
+            from app.services.safe_llm import safe_llm_call
+            res = safe_llm_call(prompt, max_tokens=3000, temperature=0.2)
+            if res:
+                res_clean = res.strip()
+                if res_clean.startswith("```json"):
+                    res_clean = res_clean.removeprefix("```json").removesuffix("```").strip()
+                elif res_clean.startswith("```"):
+                    res_clean = res_clean.removeprefix("```").removesuffix("```").strip()
+                
+                parsed = json.loads(res_clean)
+                if "strategic_assessment" in parsed and "owasp_mapping" in parsed and "compliance_mapping" in parsed:
+                    # Fill missing enriched findings
+                    for f in findings:
+                        if f.id not in parsed.get("enriched_findings", {}):
+                            if "enriched_findings" not in parsed:
+                                parsed["enriched_findings"] = {}
+                            parsed["enriched_findings"][f.id] = {
+                                "non_technical_summary": f"This issue is a {f.severity.value} vulnerability identified by {f.agent_source}.",
+                                "impact": "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the systems.",
+                                "remediation_steps": f.remediation or "Follow secure coding practices."
+                            }
+                        if f.id not in parsed.get("owasp_mapping", {}):
+                            parsed["owasp_mapping"][f.id] = "A03:2021-Injection"
+                    return parsed
+        except Exception as e:
+            logger.warning(f"Failed to generate smart report insights: {e}")
+        
+        return self._get_fallback_report_insights(findings, repo_url)
+
     def generate_compliance_report(self, job_id: str, findings: List[Finding], standard: str = "SOC2") -> str:
         """
         Generates a compliance-focused report (e.g., SOC2, ISO27001).
         Maps findings to specific compliance controls.
         """
         logger.info(f"Generating {standard} compliance report for job {job_id}")
-
-        for finding in findings:
-            pass
-
-        return f"Compliance Report ({standard}) for Job {job_id} generated successfully."
+        insights = self._get_smart_report_insights(findings, "")
+        
+        md = []
+        md.append(f"# {standard} Compliance Assessment Report")
+        md.append(f"- **Job ID:** {job_id}")
+        md.append(f"- **Assessment Date:** {datetime.now(timezone.utc).strftime('%B %d, %Y')}")
+        md.append(f"- **Compliance Target Framework:** {standard}\n")
+        
+        md.append("## Executive Strategic Assessment")
+        md.append(insights.get("strategic_assessment", "No assessment available."))
+        md.append("")
+        
+        md.append("## Control Mappings & Gap Analysis")
+        md.append("| Standard | Control | Status | Details & Guidance |")
+        md.append("| --- | --- | --- | --- |")
+        for item in insights.get("compliance_mapping", []):
+            if item.get("standard", "").upper() == standard.upper() or standard == "ALL":
+                md.append(f"| {item.get('standard')} | {item.get('control')} | {item.get('status')} | {item.get('details')} |")
+                
+        return "\n".join(md)
 
     def generate_html_report(
         self,
@@ -176,6 +430,29 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
 
         total_issues = len(findings)
         
+        # Call batch insights
+        insights = self._get_smart_report_insights(findings, repo_url)
+        strategic_assessment = insights.get("strategic_assessment", "")
+        owasp_mapping = insights.get("owasp_mapping", {})
+        compliance_mapping = insights.get("compliance_mapping", [])
+        enriched_findings = insights.get("enriched_findings", {})
+
+        compliance_rows = ""
+        for item in compliance_mapping:
+            std = html.escape(item.get("standard", ""))
+            ctrl = html.escape(item.get("control", ""))
+            status = html.escape(item.get("status", ""))
+            details = html.escape(item.get("details", ""))
+            status_cls = "status-gap" if "gap" in status.lower() else "status-compliant"
+            compliance_rows += f"""
+            <tr>
+                <td><strong>{std}</strong></td>
+                <td>{ctrl}</td>
+                <td><span class="status-badge {status_cls}">{status}</span></td>
+                <td>{details}</td>
+            </tr>
+            """
+
         # Determine overall risk level
         if counts[Severity.CRITICAL] > 0:
             risk_label = "CRITICAL RISK"
@@ -257,10 +534,15 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
             safe_line = str(f.line_number) if f.line_number else ""
             
             # Fetch smart details
-            smart_details = self._get_smart_finding_details(f)
-            safe_non_tech = html.escape(smart_details["non_technical_summary"])
-            safe_impact = html.escape(smart_details["impact"])
-            safe_remediation = html.escape(smart_details["remediation_steps"])
+            finding_enriched = enriched_findings.get(f.id, {})
+            if not finding_enriched:
+                finding_enriched = self._get_smart_finding_details(f)
+            safe_non_tech = html.escape(finding_enriched.get("non_technical_summary") or "")
+            safe_impact = html.escape(finding_enriched.get("impact") or "")
+            safe_remediation = html.escape(finding_enriched.get("remediation_steps") or "")
+            
+            owasp_cat = owasp_mapping.get(f.id, f.owasp_category or "N/A")
+            owasp_badge = f"<span class='badge-cwe' style='background-color: #faf5ff; color: #a855f7; border: 1px solid #d8b4fe;'>{html.escape(owasp_cat)}</span>"
             
             cwe_badge = f"<span class='badge-cwe'>{safe_cwe}</span>" if safe_cwe else ""
             location_info = f"<strong>File:</strong> {safe_file}" + (f" (line {safe_line})" if safe_line else "") if safe_file else ""
@@ -298,21 +580,22 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
                 <div class="finding-meta">
                     <strong>Source:</strong> {safe_agent} &nbsp;|&nbsp; 
                     <strong>CWE:</strong> {cwe_badge or "N/A"} &nbsp;|&nbsp;
+                    <strong>OWASP Category:</strong> {owasp_badge} &nbsp;|&nbsp;
                     <strong>CVSS:</strong> {safe_cvss_score} ({safe_cvss_vector})
                     {f" &nbsp;|&nbsp; <strong>Location:</strong> {location_info}" if location_info else ""}
                 </div>
- 
+
                 <div class="section-title">Plain English Summary (For Non-Technical Users)</div>
                 <p class="description-text">{safe_non_tech}</p>
- 
+
                 <div class="section-title">Technical Description</div>
                 <p class="description-text">{safe_desc}</p>
- 
+
                 <div class="section-title">Security & Business Impact</div>
                 <p class="description-text">{safe_impact}</p>
- 
+
                 {evidence_block}
- 
+
                 <div class="section-title">Actionable Remediation Guide</div>
                 <p class="remediation-text" style="white-space: pre-wrap;">{safe_remediation}</p>
             </div>
@@ -757,6 +1040,54 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
                 .info-card .recommendation-text {{
                     color: #1d4ed8;
                 }}
+
+                /* Compliance & Strategic Assessment Styles */
+                .compliance-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 24px;
+                }}
+                .compliance-table th {{
+                    background-color: #f8fafc;
+                    color: #475569;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    font-size: 8pt;
+                    padding: 8px 10px;
+                    border-bottom: 2px solid #cbd5e1;
+                }}
+                .compliance-table td {{
+                    padding: 8px 10px;
+                    border-bottom: 1px solid #e2e8f0;
+                    font-size: 9pt;
+                }}
+                .status-badge {{
+                    display: inline-block;
+                    padding: 2px 8px;
+                    font-size: 7.5pt;
+                    font-weight: 600;
+                    border-radius: 4px;
+                    text-transform: uppercase;
+                }}
+                .status-compliant {{
+                    background-color: #dcfce7;
+                    color: #15803d;
+                    border: 1px solid #bbf7d0;
+                }}
+                .status-gap {{
+                    background-color: #fee2e2;
+                    color: #991b1b;
+                    border: 1px solid #fca5a5;
+                }}
+                .strategic-assessment-box {{
+                    margin-top: 18px;
+                    margin-bottom: 24px;
+                    padding: 16px;
+                    background: #faf5ff;
+                    border: 1px solid #e9d5ff;
+                    border-left: 5px solid #a855f7;
+                    border-radius: 6px;
+                }}
             </style>
         </head>
         <body>
@@ -803,6 +1134,14 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
             <div class="risk-banner">
                 <div class="risk-title">OVERALL POSTURE: {risk_label}</div>
                 <p class="risk-desc">{risk_narrative}</p>
+            </div>
+
+            <!-- Strategic Posture Assessment -->
+            <div class="section-header">Executive Strategic Posture Assessment</div>
+            <div class="strategic-assessment-box">
+                <p style="margin: 0; font-size: 9.5pt; color: #581c87; line-height: 1.6; font-style: italic;">
+                    {html.escape(strategic_assessment) if strategic_assessment else "No strategic assessment details available."}
+                </p>
             </div>
 
             <div class="card-grid">
@@ -879,6 +1218,22 @@ Provide your response in JSON format. Do not use markdown code block wrappers (l
                 </thead>
                 <tbody>
                     {findings_rows or "<tr><td colspan='6' style='text-align: center; color: #64748b;'>No security issues detected. Clean audit report.</td></tr>"}
+                </tbody>
+            </table>
+
+            <!-- Compliance Control Mapping -->
+            <div class="section-header">Compliance Framework Control Mapping</div>
+            <table class="compliance-table">
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Standard</th>
+                        <th style="width: 200px;">Control</th>
+                        <th style="width: 120px;">Status</th>
+                        <th>Details & Remediation Impact</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {compliance_rows or "<tr><td colspan='4' style='text-align: center; color: #64748b;'>No compliance mapping data available.</td></tr>"}
                 </tbody>
             </table>
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { clearSession, getSessionIdentity } from "../../lib/auth-session";
+import { clearSession } from "../../lib/auth-session";
 import { buildApiUrl } from "../../lib/base-url";
 import { enablePushNotifications } from "../../lib/push";
 import { ApiError, request } from "../../lib/request";
@@ -24,6 +24,7 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
 import { SiteHeader } from "../SiteChrome";
+import { useAuthState, AuthGuard } from "../../lib/auth-context";
 
 type DashboardTab = "operations" | "findings" | "reports" | "signals" | "settings";
 type StreamEntry = { event: string; text: string; at: string };
@@ -89,11 +90,13 @@ async function consumeAuditStream(
         continue;
       }
       let text = parsed.data;
-      try {
-        const json = JSON.parse(parsed.data);
-        text = typeof json === "string" ? json : JSON.stringify(json);
-      } catch {
-        // Keep plain text payloads.
+      if (parsed.data && parsed.data.trim()) {
+        try {
+          const json = JSON.parse(parsed.data);
+          text = typeof json === "string" ? json : JSON.stringify(json);
+        } catch {
+          // Keep plain text payloads.
+        }
       }
 
       onEvent({
@@ -106,13 +109,12 @@ async function consumeAuditStream(
 }
 
 export function DashboardConsole() {
+  const { user: authUser } = useAuthState();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialWorkspace = searchParams.get("workspace") ?? getSessionIdentity().workspace ?? "workspace";
   const requestedJobId = searchParams.get("jobId") ?? searchParams.get("job_id");
 
   const [tab, setTab] = useState<DashboardTab>("operations");
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(requestedJobId);
@@ -162,15 +164,13 @@ export function DashboardConsole() {
 
   const fetchDashboard = useCallback(async (preserveSelection = true) => {
     try {
-      const [user, status, nextJobs, nextLeaderboard] = await Promise.all([
-        request<AuthUser>("/auth/me"),
+      const [statusResponse, nextJobs, nextLeaderboard] = await Promise.all([
         request<SystemStatus>("/system/status"),
         request<Job[]>("/audit/jobs"),
         request<LeaderboardEntry[]>("/leaderboard").catch(() => []),
       ]);
 
-      setAuthUser(user);
-      setSystemStatus(status);
+      setSystemStatus(statusResponse);
       setJobs(nextJobs);
       setLeaderboard(nextLeaderboard);
       setReconnecting(false);
@@ -182,8 +182,9 @@ export function DashboardConsole() {
         });
       }
     } catch (error) {
-      if (error instanceof ApiError && error.status && error.status < 500) {
-        throw error;
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        // Handled by AuthGuard and request interceptor event emitter
+        return;
       }
       setReconnecting(true);
     }
@@ -245,7 +246,9 @@ export function DashboardConsole() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setRefreshing(true);
-      void fetchDashboard(true).finally(() => setRefreshing(false));
+      void fetchDashboard(true)
+        .catch(() => undefined)
+        .finally(() => setRefreshing(false));
     }, 15000);
 
     return () => window.clearInterval(timer);
@@ -281,7 +284,7 @@ export function DashboardConsole() {
       (entry) => {
         setStream((current) => [...current.slice(-59), entry]);
         if (entry.event === "complete") {
-          void fetchDashboard(true);
+          void fetchDashboard(true).catch(() => undefined);
           void fetchDetail(selectedJobId);
         }
       },
@@ -395,11 +398,12 @@ export function DashboardConsole() {
   }
 
   const completedJobs = jobs.filter((job) => ["completed", "partial"].includes(job.status));
-  const workspaceName = authUser?.username ?? initialWorkspace;
+  const workspaceName = authUser?.username ?? "workspace";
 
   return (
-    <div className="fc-page">
-      <SiteHeader ctaHref="/" ctaLabel="Landing Page" />
+    <AuthGuard>
+      <div className="fc-page">
+        <SiteHeader ctaHref="/" ctaLabel="Landing Page" />
       <main className="fc-shell fc-dashboard-shell">
         <div className="fc-dashboard-grid">
           <Card className="fc-sidebar">
@@ -450,93 +454,98 @@ export function DashboardConsole() {
 
           <div className="fc-dashboard-main">
             {loading ? (
-              <Card className="fc-panel">
-                <div className="fc-panel-title">Loading dashboard...</div>
+              <Card className="fc-panel" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 40px", minHeight: 300 }}>
+                <div style={{ border: "3px solid rgba(255,255,255,0.1)", borderTop: "3px solid var(--fire)", borderRadius: "50%", width: "32px", height: "32px", animation: "spin 1s linear infinite", marginBottom: 20 }} />
+                <div className="fc-panel-title">Synchronizing Console...</div>
+                <div className="fc-copy" style={{ color: "var(--text-dim)" }}>Fetching workspace findings and system status</div>
               </Card>
-            ) : null}
-
-            {pushMessage ? <div className="fc-form-success">{pushMessage}</div> : null}
-            {formError ? <div className="fc-form-error">{formError}</div> : null}
-            {reconnecting ? (
-              <div className="fc-form-error">The dashboard is in read-only reconnect mode. Local session state is preserved until connectivity returns.</div>
-            ) : null}
-
-            <OverviewPanel authUser={authUser} selectedJob={selectedJob} systemStatus={systemStatus} />
-
-            {tab === "operations" ? (
+            ) : (
               <>
-                <LaunchPanel
-                  auditForm={auditForm}
-                  onChange={setAuditForm}
-                  onSubmit={handleSubmit}
-                  submitting={submitting}
-                />
-                <JobsPanel
-                  jobs={jobs}
-                  selectedJobId={selectedJobId}
-                  onSelect={(jobId) => startTransition(() => setSelectedJobId(jobId))}
-                  onCancel={handleCancel}
-                  onOpenReport={openReport}
-                />
-                <StreamPanel selectedJob={selectedJob} stream={stream} />
+                {pushMessage ? <div className="fc-form-success">{pushMessage}</div> : null}
+                {formError ? <div className="fc-form-error">{formError}</div> : null}
+                {reconnecting ? (
+                  <div className="fc-form-error">The dashboard is in read-only reconnect mode. Local session state is preserved until connectivity returns.</div>
+                ) : null}
+
+                <OverviewPanel authUser={authUser} selectedJob={selectedJob} systemStatus={systemStatus} />
+
+                {tab === "operations" ? (
+                  <>
+                    <LaunchPanel
+                      auditForm={auditForm}
+                      onChange={setAuditForm}
+                      onSubmit={handleSubmit}
+                      submitting={submitting}
+                    />
+                    <JobsPanel
+                      jobs={jobs}
+                      selectedJobId={selectedJobId}
+                      onSelect={(jobId) => startTransition(() => setSelectedJobId(jobId))}
+                      onCancel={handleCancel}
+                      onOpenReport={openReport}
+                    />
+                    <StreamPanel selectedJob={selectedJob} stream={stream} />
+                  </>
+                ) : null}
+
+                {tab === "findings" ? (
+                  <FindingsPanel
+                    findings={findings}
+                    selectedJob={selectedJob}
+                    search={findingSearch}
+                    onSearch={setFindingSearch}
+                  />
+                ) : null}
+
+                {tab === "reports" ? (
+                  <ReportsPanel jobs={completedJobs} onOpenReport={openReport} />
+                ) : null}
+
+                {tab === "signals" ? (
+                  <>
+                    <SignalsPanel
+                      graph={graph}
+                      graphError={graphError}
+                      insight={insight}
+                      selectedJob={selectedJob}
+                    />
+                    <LeaderboardPanel entries={leaderboard} />
+                    <ChatPanel
+                      enabled={Boolean(systemStatus?.llm_features?.chat_assistant)}
+                      messages={chatMessages}
+                      input={chatInput}
+                      onInput={setChatInput}
+                      onSubmit={handleChatSubmit}
+                      busy={chatBusy}
+                      selectedJobId={selectedJobId}
+                    />
+                  </>
+                ) : null}
+
+                {tab === "settings" ? (
+                  <SettingsPanel authUser={authUser} systemStatus={systemStatus} onPushEnable={handlePushEnable} />
+                ) : null}
+
+                {selectedJobId ? (
+                  <Card className="fc-panel">
+                    <div className="fc-panel-head">
+                      <div>
+                        <div className="fc-kicker">Deep dive</div>
+                        <h2 className="fc-panel-title">Audit detail view</h2>
+                      </div>
+                      <Link className="fc-button fc-button-secondary" href={`/dashboard/audits/default?jobId=${encodeURIComponent(selectedJobId)}`}>
+                        Open dedicated audit page
+                      </Link>
+                    </div>
+                  </Card>
+                ) : null}
               </>
-            ) : null}
-
-            {tab === "findings" ? (
-              <FindingsPanel
-                findings={findings}
-                selectedJob={selectedJob}
-                search={findingSearch}
-                onSearch={setFindingSearch}
-              />
-            ) : null}
-
-            {tab === "reports" ? (
-              <ReportsPanel jobs={completedJobs} onOpenReport={openReport} />
-            ) : null}
-
-            {tab === "signals" ? (
-              <>
-                <SignalsPanel
-                  graph={graph}
-                  graphError={graphError}
-                  insight={insight}
-                  selectedJob={selectedJob}
-                />
-                <LeaderboardPanel entries={leaderboard} />
-                <ChatPanel
-                  enabled={Boolean(systemStatus?.llm_features?.chat_assistant)}
-                  messages={chatMessages}
-                  input={chatInput}
-                  onInput={setChatInput}
-                  onSubmit={handleChatSubmit}
-                  busy={chatBusy}
-                  selectedJobId={selectedJobId}
-                />
-              </>
-            ) : null}
-
-            {tab === "settings" ? (
-              <SettingsPanel authUser={authUser} systemStatus={systemStatus} onPushEnable={handlePushEnable} />
-            ) : null}
-
-            {selectedJobId ? (
-              <Card className="fc-panel">
-                <div className="fc-panel-head">
-                  <div>
-                    <div className="fc-kicker">Deep dive</div>
-                    <h2 className="fc-panel-title">Audit detail view</h2>
-                  </div>
-                  <Link className="fc-button fc-button-secondary" href={`/dashboard/audits/default?jobId=${encodeURIComponent(selectedJobId)}`}>
-                    Open dedicated audit page
-                  </Link>
-                </div>
-              </Card>
-            ) : null}
+            )}
           </div>
         </div>
       </main>
     </div>
+    </AuthGuard>
   );
 }
 

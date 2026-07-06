@@ -1,19 +1,20 @@
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.models import get_db
 from app.services.auth import get_current_user
+from app.services.limiter import limiter
 from app.services.storage import storage_service
 
 router = APIRouter(prefix="/storage", tags=["Storage"])
 
 
 @router.get("/artifacts/{artifact_id}/download")
+@limiter.limit("20/minute")
 async def download_artifact(
     artifact_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
@@ -28,8 +29,10 @@ async def download_artifact(
 
 
 @router.post("/artifacts/{artifact_id}/legal-hold")
+@limiter.limit("10/minute")
 async def set_legal_hold(
     artifact_id: str,
+    request: Request,
     hold: bool,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),

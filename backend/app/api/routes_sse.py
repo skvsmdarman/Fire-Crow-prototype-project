@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import AsyncGenerator
@@ -10,6 +10,7 @@ from app.api.audit_queries import get_owned_job_or_404
 from app.models import get_db, AuditJob, AgentLog
 from app.schemas import JobStatus
 from app.services.auth import get_current_user
+from app.services.limiter import limiter
 from app.services.redaction import redact_text
 from collections import defaultdict
 import uuid
@@ -22,8 +23,10 @@ logger = logging.getLogger("firecrow.sse")
 
 
 @router.get("/{job_id}/stream")
+@limiter.limit("30/minute")
 async def stream_audit_logs(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):

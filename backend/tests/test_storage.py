@@ -51,7 +51,7 @@ def test_storage_service_r2_disable_on_auth_failure():
             )
             
             assert artifact.storage_provider == "local"
-            assert _global_state["r2_disabled"] is True
+            assert _global_state["r2_disabled"]
             assert service.is_s3_active() is False
             
             # Verify subsequent calls immediately bypass S3

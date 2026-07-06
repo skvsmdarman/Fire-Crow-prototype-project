@@ -1,6 +1,8 @@
 import os
 import logging
 import signal
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 try:
     from pythonjsonlogger.json import JsonFormatter
@@ -17,7 +19,6 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 
 from slowapi import _rate_limit_exceeded_handler
@@ -32,7 +33,7 @@ from app.utils.circuit_breaker import get_circuit_breaker
 
 from app.config import settings, WORKSPACE_DIR
 from app.models.database import Base, engine, ensure_database_compatibility, get_db
-from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router, user_router, mfa_router, sso_router, pam_router, iam_router, tenant_router
+from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router, user_router, mfa_router, sso_router, pam_router, iam_router, tenant_router, verify_router
 
 _shutting_down = False
 
@@ -51,6 +52,10 @@ else:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 logger.setLevel(logging.INFO if not settings.DEBUG else logging.DEBUG)
+
+
+class RequestBodyTooLargeError(Exception):
+    pass
 
 
 
@@ -74,6 +79,8 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    housekeeping_task: asyncio.Task | None = None
+
     if settings.DEBUG:
         logger.info("Running in DEBUG mode. Checking for pending migrations before auto-DDL.")
         try:
@@ -133,7 +140,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Error running database housekeeping on startup: %s", str(e))
 
-    yield
+    if settings.HOUSEKEEPING_INTERVAL_SECONDS > 0:
+        async def _periodic_housekeeping() -> None:
+            from app.models.database import SessionLocal
+            from app.services.housekeeping import run_housekeeping
+
+            while True:
+                await asyncio.sleep(settings.HOUSEKEEPING_INTERVAL_SECONDS)
+                db = SessionLocal()
+                try:
+                    counts = run_housekeeping(db)
+                    logger.info("Periodic housekeeping completed: %s", counts)
+                except Exception as exc:
+                    logger.error("Periodic housekeeping failed: %s", str(exc))
+                finally:
+                    db.close()
+
+        housekeeping_task = asyncio.create_task(_periodic_housekeeping(), name="firecrow-housekeeping")
+
+    try:
+        yield
+    finally:
+        if housekeeping_task is not None:
+            housekeeping_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await housekeeping_task
 
 
 app = FastAPI(
@@ -189,11 +220,13 @@ app.add_middleware(
 
 @app.middleware("http")
 async def limit_request_body_size(request: Request, call_next):
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    body_limit = settings.MAX_JSON_BODY_BYTES if content_type in {"application/json", "application/ld+json"} or content_type.endswith("+json") else settings.MAX_REQUEST_BODY_BYTES
     content_length_header = request.headers.get("content-length")
     if content_length_header:
         try:
             content_length = int(content_length_header)
-            if content_length > settings.MAX_REQUEST_BODY_BYTES:
+            if content_length > body_limit:
                 return JSONResponse(
                     status_code=413,
                     content={"detail": "Payload Too Large"},
@@ -203,7 +236,28 @@ async def limit_request_body_size(request: Request, call_next):
                 status_code=400,
                 content={"detail": "Invalid Content-Length header"},
             )
-    return await call_next(request)
+
+    original_receive = request._receive
+    received_bytes = 0
+
+    async def limited_receive():
+        nonlocal received_bytes
+        message = await original_receive()
+        if message["type"] == "http.request":
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > body_limit:
+                raise RequestBodyTooLargeError
+        return message
+
+    request._receive = limited_receive
+
+    try:
+        return await call_next(request)
+    except RequestBodyTooLargeError:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Payload Too Large"},
+        )
 
 
 @app.middleware("http")
@@ -273,6 +327,7 @@ app.include_router(sso_router, prefix="/api/v1")
 app.include_router(pam_router, prefix="/api/v1")
 app.include_router(iam_router, prefix="/api/v1")
 app.include_router(tenant_router, prefix="/api/v1")
+app.include_router(verify_router, prefix="/api/v1")
 
 
 # Graceful shutdown handler
@@ -289,7 +344,8 @@ async def graceful_shutdown(request: Request, call_next):
 
 # Enhanced deep health check with circuit breaker status
 @app.get("/health/deep")
-async def health_deep(db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def health_deep(request: Request, db: Session = Depends(get_db)):
     db_ok = True
     try:
         from sqlalchemy import text
@@ -333,7 +389,8 @@ async def health_deep(db: Session = Depends(get_db)):
 
 # Additionally, make /health/ready more comprehensive
 @app.get("/health/ready")
-async def health_ready(db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def health_ready(request: Request, db: Session = Depends(get_db)):
     db_ok = True
     try:
         from sqlalchemy import text
@@ -370,7 +427,8 @@ os.makedirs(reports_dir, exist_ok=True)
 
 
 @app.get("/health")
-async def health_check(db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def health_check(request: Request, db: Session = Depends(get_db)):
     try:
         from sqlalchemy import text
         db.execute(text("SELECT 1"))
@@ -386,7 +444,8 @@ async def health_check(db: Session = Depends(get_db)):
 
 
 @app.get("/health/live")
-async def health_live():
+@limiter.limit("30/minute")
+async def health_live(request: Request):
     return {"status": "live"}
 
 

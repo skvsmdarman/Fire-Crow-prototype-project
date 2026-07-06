@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import logging
 
 from app.models import get_db, PushSubscription
 from app.services.auth import get_current_user
+from app.services.limiter import limiter
 from app.services.push_notify import load_or_generate_vapid_keys
 
 logger = logging.getLogger("firecrow.api.push")
@@ -16,15 +17,18 @@ class SubscribeRequest(BaseModel):
     auth: str
 
 @router.get("/vapid-public-key")
-async def get_vapid_public_key():
+@limiter.limit("30/minute")
+async def get_vapid_public_key(request: Request):
     _, pub_key = load_or_generate_vapid_keys()
     if not pub_key:
         raise HTTPException(status_code=500, detail="VAPID keys not generated.")
     return {"public_key": pub_key}
 
 @router.post("/subscribe")
+@limiter.limit("20/minute")
 async def subscribe_user(
     payload: SubscribeRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):

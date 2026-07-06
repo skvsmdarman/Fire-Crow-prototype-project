@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 import os
 import shutil
 import socket
+from typing import Any
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -13,6 +12,7 @@ from app.models import (
     AuditJob,
     FindingModel,
     User,
+    UserActivityEvent,
     get_db,
     AgentLog,
     AuditArtifact,
@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.auth import get_current_user
 from app.services.housekeeping import run_housekeeping
+from app.services.limiter import limiter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,9 @@ async def require_admin(
 
 
 @router.get("/status")
+@limiter.limit("30/minute")
 async def system_status(
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
@@ -128,7 +131,7 @@ async def system_status(
         "user:email": "Access user email addresses",
     }
 
-    payload = {
+    payload: dict[str, Any] = {
         "api": "online",
         "database": database,
         "readiness": "degraded" if database != "connected" else "ready",
@@ -193,7 +196,9 @@ async def system_status(
 
 
 @router.get("/database/stats")
+@limiter.limit("10/minute")
 async def get_database_stats(
+    request: Request,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_admin),
 ):
@@ -228,6 +233,7 @@ async def get_database_stats(
 
     row_counts = {
         "users": get_count(User),
+        "user_activity_events": get_count(UserActivityEvent),
         "audit_jobs": get_count(AuditJob),
         "findings": get_count(FindingModel),
         "agent_logs": get_count(AgentLog),
@@ -246,7 +252,9 @@ async def get_database_stats(
 
 
 @router.post("/database/housekeeping")
+@limiter.limit("5/minute")
 async def trigger_database_housekeeping(
+    request: Request,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_admin),
 ):
@@ -263,7 +271,9 @@ async def trigger_database_housekeeping(
 
 
 @router.get("/metrics")
+@limiter.limit("20/minute")
 async def prometheus_metrics(
+    request: Request,
     admin_user: User = Depends(require_admin),
 ):
     """Prometheus metrics endpoint for monitoring and alerting."""

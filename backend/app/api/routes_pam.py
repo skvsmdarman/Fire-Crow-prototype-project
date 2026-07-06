@@ -72,6 +72,7 @@ async def create_request(
 
 
 @router.get("/requests")
+@limiter.limit("20/minute")
 async def list_requests(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -86,7 +87,9 @@ async def list_requests(
 
 
 @router.get("/requests/pending")
+@limiter.limit("20/minute")
 async def pending_requests(
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -125,6 +128,7 @@ async def approve_request(
 
 
 @router.post("/requests/{request_id}/deny")
+@limiter.limit("10/minute")
 async def deny_request(
     request_id: str,
     payload: PrivilegeDenyRequest,
@@ -145,22 +149,25 @@ async def deny_request(
 
 
 @router.post("/requests/{request_id}/cancel")
+@limiter.limit("10/minute")
 async def cancel_request(
     request_id: str,
-    req: Request,
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     result = cancel_privilege_request(request_id, user_id, db)
     record_security_event(
-        db, action="pam.request.cancelled", request=req, user_id=user_id,
+        db, action="pam.request.cancelled", request=request, user_id=user_id,
         details={"request_id": request_id},
     )
     return request_to_dict(result)
 
 
 @router.get("/grants")
+@limiter.limit("20/minute")
 async def list_grants(
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -179,9 +186,10 @@ async def list_grants(
 
 
 @router.post("/grants/revoke")
+@limiter.limit("10/minute")
 async def revoke_grant_endpoint(
     payload: RevokeRequest,
-    req: Request,
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -192,15 +200,16 @@ async def revoke_grant_endpoint(
 
     revoke_grant(payload.grant_id, user_id, db)
     record_security_event(
-        db, action="pam.grant.revoked", request=req, user_id=user_id,
+        db, action="pam.grant.revoked", request=request, user_id=user_id,
         details={"grant_id": payload.grant_id},
     )
     return {"status": "revoked"}
 
 
 @router.post("/cleanup")
+@limiter.limit("5/minute")
 async def cleanup_expired(
-    req: Request,
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -211,15 +220,17 @@ async def cleanup_expired(
     count = expire_stale_grants(db)
     if count:
         record_security_event(
-            db, action="pam.cleanup.expired_grants", request=req, user_id=user_id,
+            db, action="pam.cleanup.expired_grants", request=request, user_id=user_id,
             details={"expired_count": count},
         )
     return {"expired_grants_cleaned": count}
 
 
 @router.get("/check/{permission}")
+@limiter.limit("20/minute")
 async def check_access(
     permission: str,
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

@@ -1,7 +1,8 @@
 import logging
 import time
+from collections import OrderedDict
 from threading import Lock
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, inspect, select, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.config import WORKSPACE_DIR, settings
 from app.services.redaction import redact_text
@@ -15,26 +16,39 @@ LOCAL_SQLITE_URL = f"sqlite:///{(WORKSPACE_DIR / 'firecrow.db').resolve().as_pos
 class _QueryCache:
     """Simple in-memory TTL cache for frequently accessed database queries."""
     
-    def __init__(self, default_ttl: int = 30):
-        self._cache: dict[str, tuple[Any, float]] = {}
+    def __init__(self, default_ttl: int = 30, max_size: int = 10000):
+        self._cache: OrderedDict[str, tuple[Any, float]] = OrderedDict()
         self._lock = Lock()
         self._default_ttl = default_ttl
+        self._max_size = max(1, max_size)
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
+
+    def _prune_expired_locked(self) -> None:
+        now = time.time()
+        expired_keys = [key for key, (_, expires_at) in self._cache.items() if now >= expires_at]
+        for key in expired_keys:
+            del self._cache[key]
 
     def get(self, key: str) -> Optional[Any]:
         with self._lock:
             if key in self._cache:
-                value, expires_at = self._cache[key]
+                value, expires_at = self._cache.pop(key)
                 if time.time() < expires_at:
+                    self._cache[key] = (value, expires_at)
                     self._hits += 1
                     return value
-                del self._cache[key]
             self._misses += 1
             return None
 
     def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         with self._lock:
+            self._prune_expired_locked()
+            self._cache.pop(key, None)
+            while len(self._cache) >= self._max_size:
+                self._cache.popitem(last=False)
+                self._evictions += 1
             self._cache[key] = (value, time.time() + (ttl or self._default_ttl))
 
     def invalidate(self, key: str) -> None:
@@ -60,11 +74,35 @@ class _QueryCache:
                 "misses": self._misses,
                 "hit_rate": f"{(self._hits / total * 100):.1f}%" if total > 0 else "N/A",
                 "entries": len(self._cache),
+                "max_size": self._max_size,
+                "evictions": self._evictions,
             }
 
 
 # Global query cache instance
-query_cache = _QueryCache(default_ttl=30)
+query_cache = _QueryCache(default_ttl=30, max_size=settings.QUERY_CACHE_MAX_SIZE)
+
+
+def _refresh_pool_metrics() -> None:
+    try:
+        from app.middleware.telemetry import observe_db_pool_metrics
+
+        observe_db_pool_metrics(engine)
+    except Exception:
+        logger.debug("Failed to refresh DB pool metrics", exc_info=True)
+
+
+def _register_pool_metric_hooks(db_engine: Any) -> None:
+    def _pool_metric_hook(*args: Any, **kwargs: Any) -> None:
+        _refresh_pool_metrics()
+
+    for event_name in ("connect", "checkout", "checkin", "close", "invalidate"):
+        try:
+            event.listen(db_engine, event_name, _pool_metric_hook)
+        except Exception:
+            logger.debug("Failed to attach DB pool hook for %s", event_name, exc_info=True)
+
+    _refresh_pool_metrics()
 
 db_url = settings.DATABASE_URL
 engine: Any = None
@@ -117,6 +155,8 @@ if engine is None:
         pool_recycle=settings.DATABASE_POOL_RECYCLE,
     ) if not db_url.startswith("sqlite") else create_engine(db_url)
     logger.info("Initialized database engine using URL: %s", redact_text(db_url))
+
+_register_pool_metric_hooks(engine)
 
 
 # Legacy auto-DDL is DEPRECATED. Use Alembic migrations instead.
@@ -213,9 +253,6 @@ def _ensure_user_compatibility() -> None:
         if "last_logout_at" not in columns:
             logger.warning("DEPRECATED: Missing 'last_logout_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_logout_at TIMESTAMP")
-        if "activity_log" not in columns:
-            logger.warning("DEPRECATED: Missing 'activity_log' column. Use Alembic migration instead.")
-            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN activity_log TEXT")
         if "region" not in columns:
             logger.warning("DEPRECATED: Missing 'region' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN region VARCHAR(100)")

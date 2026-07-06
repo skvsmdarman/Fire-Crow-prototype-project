@@ -65,7 +65,9 @@ class SSOProviderUpdate(BaseModel):
 
 
 @router.get("/providers")
+@limiter.limit("20/minute")
 async def list_providers(
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -77,6 +79,7 @@ async def list_providers(
 
 
 @router.post("/providers")
+@limiter.limit("10/minute")
 async def create_provider(
     payload: SSOProviderCreate,
     request: Request,
@@ -106,8 +109,10 @@ async def create_provider(
 
 
 @router.get("/providers/{provider_id}")
+@limiter.limit("20/minute")
 async def get_provider(
     provider_id: str,
+    request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -119,6 +124,7 @@ async def get_provider(
 
 
 @router.put("/providers/{provider_id}")
+@limiter.limit("10/minute")
 async def update_provider(
     provider_id: str,
     payload: SSOProviderUpdate,
@@ -140,6 +146,7 @@ async def update_provider(
 
 
 @router.delete("/providers/{provider_id}")
+@limiter.limit("10/minute")
 async def delete_provider(
     provider_id: str,
     request: Request,
@@ -161,6 +168,7 @@ async def delete_provider(
 
 
 @router.get("/oidc/{provider_id}/login")
+@limiter.limit("10/minute")
 async def oidc_login(
     provider_id: str,
     request: Request,
@@ -182,6 +190,7 @@ async def oidc_login(
 
 
 @router.get("/oidc/callback")
+@limiter.limit("20/minute")
 async def oidc_callback(
     request: Request,
     code: str,
@@ -228,6 +237,7 @@ async def oidc_callback(
 
 
 @router.post("/saml/{provider_id}/login")
+@limiter.limit("10/minute")
 async def saml_login(
     provider_id: str,
     request: Request,
@@ -276,6 +286,7 @@ def _build_saml_settings(provider):
 
 
 @router.post("/saml/{provider_id}/callback")
+@limiter.limit("20/minute")
 async def saml_callback(
     provider_id: str,
     request: Request,

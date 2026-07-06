@@ -10,7 +10,6 @@ from app.models.tenant import Tenant
 
 logger = logging.getLogger("firecrow.middleware.tenant")
 
-TENANT_HEADER = "X-Tenant-ID"
 TENANT_SLUG_HEADER = "X-Tenant-Slug"
 
 
@@ -34,8 +33,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
             except Exception as e:
                 logger.error("Tenant resolution failed for slug %s: %s", tenant_slug, e)
 
-        if not tenant_id:
-            tenant_id = request.headers.get(TENANT_HEADER)
+        # FC-ISO-001: Tenant ID is derived ONLY from validated slug lookup or
+        # from the authenticated user's context (set downstream by auth).
+        # Raw X-Tenant-ID header is no longer trusted to prevent impersonation.
 
         request.state.tenant_id = tenant_id
         return await call_next(request)
+

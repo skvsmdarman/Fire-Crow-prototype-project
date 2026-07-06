@@ -91,6 +91,7 @@ def test_settings_do_not_hardcode_local_frontend_url():
         SECRET_KEY="x" * 40,
         ENCRYPTION_KEY="y" * 40,
         DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow",
+        FRONTEND_URL="",
     )
     # In debug mode FRONTEND_URL can be empty
     assert configured.FRONTEND_URL == ""

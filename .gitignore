@@ -83,3 +83,4 @@ yarn-error.log*
 .eggs/
 *.egg/
 *.bak
+.aider*

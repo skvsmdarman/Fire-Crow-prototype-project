@@ -14,5 +14,6 @@ from app.api.routes_sso import router as sso_router
 from app.api.routes_pam import router as pam_router
 from app.api.routes_iam import router as iam_router
 from app.api.routes_tenant import router as tenant_router
+from app.api.routes_verify import router as verify_router
 
 

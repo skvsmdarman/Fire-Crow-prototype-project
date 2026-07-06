@@ -55,14 +55,24 @@ export async function request<T>(
 
   if ((response.status === 401 || response.status === 403) && typeof window !== "undefined") {
     clearSession();
-    if (!window.location.pathname.startsWith("/signin")) {
-      window.location.replace("/signin");
-    }
     throw new ApiError("Session expired. Please sign in again.", response.status);
   }
 
   const contentType = response.headers.get("content-type") ?? "";
-  const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : await response.text().catch(() => null);
+  const text = await response.text().catch(() => "");
+  let payload: unknown = null;
+  if (text && text.trim()) {
+    if (contentType.includes("application/json")) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = null;
+      }
+    } else {
+      payload = text;
+    }
+  }
+
   if (!response.ok) {
     const message =
       (payload as { detail?: string; message?: string } | null)?.detail ??

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import json
@@ -7,6 +7,7 @@ import logging
 from app.models import get_db, FindingModel
 from app.services.auth import get_current_user
 from app.api.audit_queries import get_owned_job_or_404
+from app.services.limiter import limiter
 from app.services.safe_llm import is_llm_enabled, safe_llm_call
 
 logger = logging.getLogger("firecrow.api.chat")
@@ -17,8 +18,10 @@ class ChatRequest(BaseModel):
     message: str
 
 @router.post("/ask")
+@limiter.limit("20/minute")
 async def ask_chat(
     payload: ChatRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):

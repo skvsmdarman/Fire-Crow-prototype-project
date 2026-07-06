@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.security_log import SecurityLog
 from app.models.user import User
 from app.services.redaction import safe_json_dumps
+from app.services.user_activity import append_user_activity
 
 
 def get_client_ip(request: Request) -> Optional[str]:
@@ -102,22 +102,9 @@ def record_user_activity(
     ip = get_client_ip(request)
     anon_ip = _anonymize_ip(ip, user.region, user.timezone)
     
-    entry: dict[str, Any] = {
-        "action": action,
-        "timestamp": now.isoformat(),
-        "ip_masked": anon_ip != ip,
-    }
-    if details:
-        entry["details"] = details
-        
-    try:
-        history = json.loads(user.activity_log) if user.activity_log else []
-    except Exception:
-        history = []
-        
-    history.insert(0, entry)
-    history = history[:50]
-    user.activity_log = json.dumps(history)
+    activity_details = dict(details or {})
+    activity_details["ip_masked"] = anon_ip != ip
+    append_user_activity(db, user_id=user_id, action=action, details=activity_details)
     
     serialized_details = safe_json_dumps(details, max_length=4096) if details else None
     db.add(

@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -39,12 +39,24 @@ from app.services.auth import (
 )
 from app.services.security_log import record_security_event
 from app.services.limiter import limiter
+from app.services.user_activity import append_user_activity, list_user_activities
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 PRIVACY_POLICY_VERSION = settings.PRIVACY_POLICY_VERSION
 TERMS_VERSION = settings.TERMS_VERSION
 GITHUB_OAUTH_SCOPES = tuple(settings.GITHUB_OAUTH_SCOPES)
+COMMON_PASSWORDS = {
+    "password",
+    "password123",
+    "12345678",
+    "123456789",
+    "1234567890",
+    "qwerty123",
+    "letmein123",
+    "admin123",
+    "welcome123",
+}
 
 
 
@@ -112,28 +124,37 @@ def _validate_privacy_consent(accepted: bool, version: str) -> None:
         )
 
 
-import json
+def _validate_password_strength(password: str, username: str, email: Optional[str] = None) -> None:
+    if len(password) < settings.MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {settings.MIN_PASSWORD_LENGTH} characters.",
+        )
 
-def _add_user_activity(user: User, action: str, details: Optional[dict] = None) -> None:
-    """Stores key user events in a compressed, organized JSON array inside the User model."""
-    now = datetime.now(timezone.utc).isoformat()
-    entry: dict[str, object] = {"action": action, "timestamp": now}
-    if details:
-        entry["details"] = details
-        
-    try:
-        history = json.loads(user.activity_log) if user.activity_log else []
-    except Exception:
-        history = []
-        
-    # Prepend new entry
-    history.insert(0, entry)
-    # Cap at 20 entries to keep it compressed and efficient in the DB
-    history = history[:20]
-    user.activity_log = json.dumps(history)
+    normalized_password = password.strip().lower()
+    if normalized_password in COMMON_PASSWORDS:
+        raise HTTPException(status_code=400, detail="Password is too common. Choose a less guessable password.")
+
+    identifiers = {username.strip().lower()}
+    if email and "@" in email:
+        identifiers.add(email.split("@", 1)[0].strip().lower())
+    if any(identifier and len(identifier) >= 4 and identifier in normalized_password for identifier in identifiers):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must not contain your username or email name.",
+        )
+
+def _add_user_activity(
+    db: Session,
+    *,
+    user_id: str,
+    action: str,
+    details: Optional[dict] = None,
+) -> None:
+    append_user_activity(db, user_id=user_id, action=action, details=details)
 
 
-def _apply_consents(user: User, privacy_version: str) -> None:
+def _apply_consents(db: Session, user: User, privacy_version: str) -> None:
     now = datetime.now(timezone.utc)
     user.privacy_policy_version = privacy_version
     user.privacy_policy_accepted_at = now
@@ -142,7 +163,12 @@ def _apply_consents(user: User, privacy_version: str) -> None:
     if not user.terms_accepted_at:
         user.terms_accepted_at = now
         user.terms_version = TERMS_VERSION
-        _add_user_activity(user, "terms_accepted", {"version": TERMS_VERSION, "info": "first_time_accept"})
+        _add_user_activity(
+            db,
+            user_id=user.id,
+            action="terms_accepted",
+            details={"version": TERMS_VERSION, "info": "first_time_accept"},
+        )
 
 
 def _current_policy_version(policy: Literal["terms", "privacy_policy"]) -> str:
@@ -400,7 +426,8 @@ async def refresh_token(
 
 
 @router.get("/policy-context")
-async def policy_context():
+@limiter.limit("30/minute")
+async def policy_context(request: Request):
     return {
         "privacy_policy_version": PRIVACY_POLICY_VERSION,
         "terms_version": TERMS_VERSION,
@@ -413,7 +440,7 @@ async def policy_context():
 
 
 @router.post("/policy-events", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit("60/minute")
+@limiter.limit("30/minute")
 async def create_policy_event(
     payload: PolicyEventRequest,
     request: Request,
@@ -425,7 +452,12 @@ async def create_policy_event(
     if user_id:
         user = db.query(User).filter(User.id == user_id).first()
         if user:
-            _add_user_activity(user, f"policy_{payload.policy}_{payload.event_type}", {"version": payload.policy_version})
+            _add_user_activity(
+                db,
+                user_id=user.id,
+                action=f"policy_{payload.policy}_{payload.event_type}",
+                details={"version": payload.policy_version},
+            )
             db.commit()
 
     record_security_event(
@@ -460,8 +492,7 @@ async def register(
     email = _normalize_email(payload.email)
     if not username:
         raise HTTPException(status_code=400, detail="Username is required.")
-    if len(payload.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    _validate_password_strength(payload.password, username, email)
     _validate_privacy_consent(payload.privacy_policy_accepted, payload.privacy_policy_version)
 
     existing_user = db.query(User).filter(User.username == username).first()
@@ -478,25 +509,28 @@ async def register(
         region=payload.region,
         timezone=payload.timezone,
     )
-    _apply_consents(new_user, payload.privacy_policy_version)
+    db.add(new_user)
+    db.flush()
+    _apply_consents(db, new_user, payload.privacy_policy_version)
     now = datetime.now(timezone.utc)
     new_user.first_login_at = now
     new_user.last_login_at = now
     _add_user_activity(
-        new_user,
-        "register",
-        {"email": email, "timezone": payload.timezone, "region": payload.region},
+        db,
+        user_id=new_user.id,
+        action="register",
+        details={"email": email, "timezone": payload.timezone, "region": payload.region},
     )
     _add_user_activity(
-        new_user,
-        "login",
-        {
+        db,
+        user_id=new_user.id,
+        action="login",
+        details={
             "provider": "password",
             "timezone": payload.timezone,
             "region": payload.region,
         },
     )
-    db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
@@ -574,7 +608,7 @@ async def login(
     if hasattr(user, "is_active") and not user.is_active:
         raise HTTPException(status_code=403, detail="Workspace has been deactivated.")
 
-    _apply_consents(user, payload.privacy_policy_version)
+    _apply_consents(db, user, payload.privacy_policy_version)
     now = datetime.now(timezone.utc)
     if not user.first_login_at:
         user.first_login_at = now
@@ -582,9 +616,10 @@ async def login(
     user.region = payload.region
     user.timezone = payload.timezone
     _add_user_activity(
-        user,
-        "login",
-        {
+        db,
+        user_id=user.id,
+        action="login",
+        details={
             "provider": "password",
             "timezone": payload.timezone,
             "region": payload.region,
@@ -639,6 +674,7 @@ async def login(
 
 
 @router.post("/logout")
+@limiter.limit("20/minute")
 async def logout(
     request: Request,
     response: Response,
@@ -657,7 +693,7 @@ async def logout(
     user = db.query(User).filter(User.id == user_id).first()
     if user:
         user.last_logout_at = datetime.now(timezone.utc)
-        _add_user_activity(user, "logout")
+        _add_user_activity(db, user_id=user.id, action="logout")
         db.commit()
 
     record_security_event(
@@ -673,7 +709,8 @@ async def logout(
 
 
 @router.get("/me")
-async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+async def get_me(request: Request, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User session could not be resolved.")
@@ -682,7 +719,8 @@ async def get_me(user_id: str = Depends(get_current_user), db: Session = Depends
 
 
 @router.get("/session")
-async def get_session(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+async def get_session(request: Request, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User session could not be resolved.")
@@ -690,19 +728,16 @@ async def get_session(user_id: str = Depends(get_current_user), db: Session = De
 
 
 @router.get("/activities")
-async def get_user_activities(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def get_user_activities(request: Request, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    try:
-        activities = json.loads(user.activity_log) if user.activity_log else []
-    except Exception:
-        activities = []
-    return activities
+    return list_user_activities(db, user_id=user_id)
 
 
 @router.get("/github")
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def github_login(
     request: Request,
     privacy_policy_accepted: bool,
@@ -756,6 +791,7 @@ async def github_login(
 
 
 @router.get("/github/callback")
+@limiter.limit("20/minute")
 async def github_callback(
     request: Request,
     code: str,
@@ -840,7 +876,12 @@ async def github_callback(
         )
         db.add(user)
 
-    _apply_consents(user, oauth_state["privacy_policy_version"])
+    user_state = sa_inspect(user)
+    if user_state.transient:
+        db.add(user)
+    if not user_state.persistent:
+        db.flush()
+    _apply_consents(db, user, oauth_state["privacy_policy_version"])
     now = datetime.now(timezone.utc)
     if not user.first_login_at:
         user.first_login_at = now
@@ -855,9 +896,10 @@ async def github_callback(
     user.timezone = tz_name
     
     _add_user_activity(
-        user,
-        "login",
-        {
+        db,
+        user_id=user.id,
+        action="login",
+        details={
             "provider": "github",
             "timezone": tz_name,
             "region": reg_name,
@@ -908,7 +950,7 @@ async def github_callback(
 
 
 @router.get("/google")
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def google_login(
     request: Request,
     privacy_policy_accepted: bool,
@@ -963,6 +1005,7 @@ async def google_login(
 
 
 @router.get("/google/callback")
+@limiter.limit("20/minute")
 async def google_callback(
     request: Request,
     code: str,
@@ -1029,7 +1072,12 @@ async def google_callback(
         )
         db.add(user)
 
-    _apply_consents(user, oauth_state["privacy_policy_version"])
+    user_state = sa_inspect(user)
+    if user_state.transient:
+        db.add(user)
+    if not user_state.persistent:
+        db.flush()
+    _apply_consents(db, user, oauth_state["privacy_policy_version"])
     now = datetime.now(timezone.utc)
     if not user.first_login_at:
         user.first_login_at = now
@@ -1041,9 +1089,10 @@ async def google_callback(
     user.timezone = tz_name
     
     _add_user_activity(
-        user,
-        "login",
-        {
+        db,
+        user_id=user.id,
+        action="login",
+        details={
             "provider": "google",
             "timezone": tz_name,
             "region": reg_name,

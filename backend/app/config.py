@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
@@ -7,6 +8,25 @@ from pydantic import Field, field_validator, model_validator
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 WORKSPACE_DIR = Path(__file__).resolve().parents[2]
+
+# Load env files into the OS environment BEFORE instantiating Settings.
+# This sidesteps a pydantic-settings bug (v2.14.x) where its env_file
+# tuple may not load the second file (.env.local) correctly, causing
+# placeholders from .env to shadow real keys from .env.local.
+#
+# Order matters: .env.local is loaded FIRST so its real keys take hold.
+# Then .env is loaded SECOND (no override), so its empty placeholders
+# cannot overwrite the real keys from .env.local.  Pre-existing OS
+# environment variables (e.g. set by test conftest) are never touched
+# because load_dotenv defaults to override=False.
+_env_local = WORKSPACE_DIR / ".env.local"
+_env_file = WORKSPACE_DIR / ".env"
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_env_local)
+    load_dotenv(_env_file)
+except ImportError:
+    pass
 
 
 class Settings(BaseSettings):
@@ -131,6 +151,7 @@ class Settings(BaseSettings):
     # - user:email: Access user email addresses
     LOGIN_FAILURE_WINDOW_MINUTES: int = Field(default=10, validation_alias="LOGIN_FAILURE_WINDOW_MINUTES")
     LOGIN_FAILURE_LIMIT: int = Field(default=5, validation_alias="LOGIN_FAILURE_LIMIT")
+    MIN_PASSWORD_LENGTH: int = Field(default=12, validation_alias="MIN_PASSWORD_LENGTH")
     MAX_REQUEST_BODY_BYTES: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB
     MAX_JSON_BODY_BYTES: int = Field(default=2 * 1024 * 1024, validation_alias="MAX_JSON_BODY_BYTES")  # 2MB
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
@@ -167,10 +188,12 @@ class Settings(BaseSettings):
         default="",
         validation_alias="DATABASE_URL"
     )
-    DATABASE_POOL_SIZE: int = Field(default=20)
-    DATABASE_MAX_OVERFLOW: int = Field(default=10)
+    DATABASE_POOL_SIZE: int = Field(default=50)
+    DATABASE_MAX_OVERFLOW: int = Field(default=50)
     DATABASE_POOL_TIMEOUT: int = Field(default=30)
     DATABASE_POOL_RECYCLE: int = Field(default=1800)
+    QUERY_CACHE_MAX_SIZE: int = Field(default=10000, validation_alias="QUERY_CACHE_MAX_SIZE")
+    HOUSEKEEPING_INTERVAL_SECONDS: int = Field(default=3600, validation_alias="HOUSEKEEPING_INTERVAL_SECONDS")
     REDIS_URL: str = Field(
         default="",
         validation_alias="REDIS_URL"
@@ -190,12 +213,6 @@ class Settings(BaseSettings):
     # --- Google Integrations ---
     GOOGLE_CLIENT_ID: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
-
-    # --- Neo4j Graph Database ---
-    NEO4J_URI: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
-    NEO4J_USER: str = Field(default="neo4j", validation_alias="NEO4J_USER")
-    NEO4J_PASSWORD: str = Field(default="", validation_alias="NEO4J_PASSWORD")
-    NEO4J_DATABASE: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")
 
     # --- Communication ---
     RESEND_API_KEY: str = Field(default="", validation_alias="RESEND_API_KEY")
@@ -320,7 +337,7 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
-_global_state = {
+_global_state: dict[str, bool] = {
     "r2_disabled": False
 }
 

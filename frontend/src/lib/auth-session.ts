@@ -33,6 +33,12 @@ export function persistSession(payload: { user_id: string; username: string }): 
     return;
   }
 
+  const currentUserId = window.localStorage.getItem(STORAGE_KEYS.userId);
+  const currentUsername = window.localStorage.getItem(STORAGE_KEYS.username);
+  if (currentUserId === payload.user_id && currentUsername === payload.username) {
+    return;
+  }
+
   window.localStorage.setItem(STORAGE_KEYS.userId, payload.user_id);
   window.localStorage.setItem(STORAGE_KEYS.username, payload.username);
   window.localStorage.setItem(STORAGE_KEYS.workspace, payload.username);
@@ -44,8 +50,17 @@ export function clearSession(): void {
     return;
   }
 
-  Object.values(STORAGE_KEYS).forEach((key) => window.localStorage.removeItem(key));
-  window.dispatchEvent(new Event(AUTH_EVENT));
+  let changed = false;
+  Object.values(STORAGE_KEYS).forEach((key) => {
+    if (window.localStorage.getItem(key) !== null) {
+      window.localStorage.removeItem(key);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    window.dispatchEvent(new Event(AUTH_EVENT));
+  }
 }
 
 export function subscribeToSession(callback: () => void): () => void {

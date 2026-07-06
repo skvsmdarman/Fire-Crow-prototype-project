@@ -1,16 +1,19 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models import get_db, AuditJob, FindingModel
 from app.schemas.audit_state import Severity
 from app.services.auth import get_current_user
+from app.services.limiter import limiter
 
 router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 
 @router.get("")
 @router.get("/")
+@limiter.limit("20/minute")
 async def get_leaderboard(
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
