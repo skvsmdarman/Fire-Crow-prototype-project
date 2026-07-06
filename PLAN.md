@@ -56,13 +56,13 @@ The system uses a modular orchestrator (maestro.py) with sequential phases:
 
 ## Live Website Scanning & Security Upgrades Roadmap 🚀
 
-### Phase 1: Security & Compliance (Safe Live Scanning) 
-- [ ] Implement DNS TXT Lookup Challenge (`_firecrow-challenge.domain.com`) ── **In Progress**
-- [ ] Implement HTML Meta Tag Verification (`firecrow-verification`) ── **In Progress**
-- [ ] Implement Well-Known File Upload verification (`/.well-known/firecrow.txt`) ── **In Progress**
-- [ ] Create `/api/v1/verify-domain` FastAPI endpoints and models ── **In Progress**
-- [ ] Build Frontend Verification UI inside Settings/Dashboard ── **In Progress**
-- [ ] Implement static outbound IP pool documentation and rate limiting rules ── **Planned**
+### Phase 1: Security & Compliance (Safe Live Scanning) ✅
+- [x] Implement DNS TXT Lookup Challenge (`_firecrow-challenge.domain.com`) ── **Completed**
+- [x] Implement HTML Meta Tag Verification (`firecrow-verification`) ── **Completed**
+- [x] Implement Well-Known File Upload verification (`/.well-known/firecrow.txt`) ── **Completed**
+- [x] Create `/api/v1/verify-domain` FastAPI endpoints and models ── **Completed**
+- [x] Build Frontend Verification UI inside Settings/Dashboard ── **Completed**
+- [x] Implement static outbound IP pool documentation and rate limiting rules ── **Completed**
 
 ### Phase 2: System Efficiency (Asynchronous Distributed Architecture) ── **Planned**
 - [ ] Integrate Redis & Celery into the docker compose environment
@@ -76,4 +76,4 @@ The system uses a modular orchestrator (maestro.py) with sequential phases:
 - [ ] Refine `attack.py` and `exploit.py` for live WAN scans (SSL handshake, redirect loops)
 
 ---
-*Documentation last updated: July 5, 2026*
+*Documentation last updated: July 7, 2026*

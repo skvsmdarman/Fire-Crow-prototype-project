@@ -13,6 +13,7 @@ This documentation set describes the repository as it exists in the current code
 - [Local Development](LOCAL_DEVELOPMENT.md)
 - [Deployment Notes](DEPLOYMENT_NOTES.md)
 - [Security Model](SECURITY_MODEL.md)
+- [Static Outbound IP Pool & Rate Limiting](STATIC_IP_POOL.md)
 - [Frontend Structure](FRONTEND_STRUCTURE.md)
 - [Testing And Validation](TESTING_AND_VALIDATION.md)
 - [Troubleshooting](TROUBLESHOOTING.md)

@@ -14,9 +14,39 @@ def is_allowed_sandbox_target(target_host: str) -> bool:
         return True
     try:
         address = ipaddress.ip_address(host)
+        if address.is_private and not address.is_loopback and not address.is_multicast:
+            return True
     except ValueError:
+        # Check if it is a verified domain in the database
+        try:
+            from app.models.database import SessionLocal
+            from app.models.domain_verification import DomainVerification
+            db = SessionLocal()
+            try:
+                verified = db.query(DomainVerification).filter(
+                    DomainVerification.domain == host,
+                    DomainVerification.verified == True
+                ).first()
+                if verified:
+                    return True
+            finally:
+                db.close()
+        except Exception:
+            pass
+    return False
+
+
+def is_external_target(target_host: str) -> bool:
+    host = target_host.strip().lower()
+    if host.startswith(("fc-target-", "fc-kali-", "fc-net-", "target")):
         return False
-    return address.is_private and not address.is_loopback and not address.is_multicast
+    try:
+        address = ipaddress.ip_address(host)
+        if address.is_private:
+            return False
+    except ValueError:
+        pass
+    return True
 
 
 def run_network_scan(kali_container_id: str, target_host: str) -> List[Dict[str, Any]]:
@@ -30,7 +60,11 @@ def run_network_scan(kali_container_id: str, target_host: str) -> List[Dict[str,
         return []
     
     # We scan all ports from 1 to 10000 plus common web ports
-    command = ["nmap", "-sV", "-p", "80,443,3000,5000,8000,8080", target_host]
+    if is_external_target(target_host):
+        # Polite Timing (T2) and max rate of 10 packets per second to respect external target
+        command = ["nmap", "-sV", "-T2", "--max-rate", "10", "-p", "80,443,3000,5000,8000,8080", target_host]
+    else:
+        command = ["nmap", "-sV", "-p", "80,443,3000,5000,8000,8080", target_host]
     
     manager = SandboxManager()
     exit_code, output = manager.execute_kali_command(kali_container_id, command)

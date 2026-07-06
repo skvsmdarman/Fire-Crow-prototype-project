@@ -5,7 +5,9 @@ from typing import List, Dict, Any, Optional
 from app.schemas import Finding, Severity
 from app.services.sandbox import SandboxManager
 from app.services.redaction import redact_text, truncate_text
-from app.agents.network import is_allowed_sandbox_target
+from app.agents.network import is_allowed_sandbox_target, is_external_target
+from urllib.parse import urlparse
+import time
 
 logger = logging.getLogger("firecrow.agents.attack")
 
@@ -48,6 +50,8 @@ def _run_ssrf_tests(kali_container_id: str, target_url: str, manager: SandboxMan
                     test_path = f"{test_path}?url={payload}"
                     
             full_url = f"{target_url}/{test_path.lstrip('/')}"
+            if is_external_target(urlparse(target_url).hostname or target_url):
+                time.sleep(0.5)
             cmd = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", full_url]
             exit_code, output = manager.execute_kali_command(kali_container_id, cmd)
             
@@ -90,6 +94,8 @@ def _run_xxe_tests(kali_container_id: str, target_url: str, manager: SandboxMana
         
     for path in candidate_paths:
         full_url = f"{target_url}/{path.lstrip('/')}"
+        if is_external_target(urlparse(target_url).hostname or target_url):
+            time.sleep(0.5)
         cmd = ["curl", "-s", "-X", "POST", full_url, 
                "-H", "Content-Type: application/xml", 
                "-d", xxe_payload]
@@ -150,6 +156,8 @@ def _run_ssti_tests(kali_container_id: str, target_url: str, manager: SandboxMan
                     test_path = f"{test_path}?name={payload}"
                     
             full_url = f"{target_url}/{test_path.lstrip('/')}"
+            if is_external_target(urlparse(target_url).hostname or target_url):
+                time.sleep(0.5)
             cmd = ["curl", "-s", full_url]
             exit_code, output = manager.execute_kali_command(kali_container_id, cmd)
             
@@ -194,6 +202,8 @@ def _run_jwt_tests(kali_container_id: str, target_url: str, manager: SandboxMana
             test_path = re.sub(r':\w+', '1', test_path)
             
         full_url = f"{target_url}/{test_path.lstrip('/')}"
+        if is_external_target(urlparse(target_url).hostname or target_url):
+            time.sleep(0.5)
         cmd = ["curl", "-s", "-H", "Authorization: Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.",
                full_url]
         exit_code, output = manager.execute_kali_command(kali_container_id, cmd)
@@ -238,6 +248,8 @@ def _run_rate_limit_tests(kali_container_id: str, target_url: str, manager: Sand
             
         full_url = f"{target_url}/{test_path.lstrip('/')}"
         
+        if is_external_target(urlparse(target_url).hostname or target_url):
+            time.sleep(0.5)
         # Send multiple rapid requests
         cmd = ["for", "i", "in", "$(seq 1 20)", ";", "do", 
                "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}\\n",
@@ -325,6 +337,9 @@ def run_dynamic_attack(
             "--crawl=1",
             "--forms"
         ]
+        if is_external_target(target_host):
+            sqlmap_cmd.append("--delay=1")
+            
         logger.info("Running sqlmap in scanner container against sandbox target endpoint: %s", path)
         exit_code, output = manager.execute_kali_command(kali_container_id, sqlmap_cmd)
         output = truncate_text(redact_text(output), max_length=3000)
@@ -348,6 +363,9 @@ def run_dynamic_attack(
 
     # 2. Run Nuclei CVE / Misconfiguration scanner
     nuclei_cmd = ["nuclei", "-target", target_url, "-severity", "medium,high,critical"]
+    if is_external_target(target_host):
+        nuclei_cmd.extend(["-rate-limit", "10", "-concurrency", "1"])
+        
     logger.info("Running nuclei in scanner container against sandbox target.")
     exit_code, output = manager.execute_kali_command(kali_container_id, nuclei_cmd)
     output = truncate_text(redact_text(output), max_length=3000)
