@@ -1,8 +1,8 @@
-FROM node:20-alpine AS frontend-build
+FROM node:20-slim AS frontend-build
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci --prefer-offline --no-audit
 
 COPY frontend/ ./
 ENV NEXT_PUBLIC_API_URL=/api/v1
