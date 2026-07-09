@@ -188,9 +188,6 @@ export function SettingsConsole() {
                           <Badge tone={authUser?.providers?.github?.connected ? "success" : "neutral"}>
                             GitHub {authUser?.providers?.github?.connected ? "Connected" : "Not connected"}
                           </Badge>
-                          <Badge tone={authUser?.providers?.google?.connected ? "success" : "neutral"}>
-                            Google {authUser?.providers?.google?.connected ? "Connected" : "Not connected"}
-                          </Badge>
                         </div>
                       </div>
                     </div>
@@ -445,4 +442,3 @@ export function SettingsConsole() {
     </div>
   );
 }
-

@@ -173,7 +173,6 @@ async def system_status(
         payload["sandbox_mode"] = "simulation" if settings.FIRE_CROW_MOCK_SANDBOX else "docker"
         payload["integrations"] = {
             "github_oauth": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
-            "google_oauth": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
             "redis": redis_ready,
             "report_storage": bool(
                 settings.REPORT_STORE_HTML_IN_DB

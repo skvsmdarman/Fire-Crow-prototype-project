@@ -55,6 +55,9 @@ function getErrorDetails(error: unknown): ErrorDetails {
     message === "[object Event]"
   ) {
     isChunkLoadError = true;
+    if (name === "[object Event]") {
+      name = "AssetLoadError";
+    }
     if (message === "[object Event]" || message.includes("ChunkLoadError")) {
       message = "A script chunk or style asset failed to load. This typically happens when the dashboard has been updated and the browser tries to fetch outdated, cached files.";
     }

@@ -39,8 +39,8 @@ export function SiteHeader({
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="url(#fire-grad-site)" />
               <defs>
                 <linearGradient id="fire-grad-site" x1="0" y1="0" x2="24" y2="24">
-                  <stop offset="0%" stopColor="#ff9b54" />
-                  <stop offset="100%" stopColor="#6ce7ff" />
+                  <stop offset="0%" stopColor="#f6b18f" />
+                  <stop offset="100%" stopColor="#ffe1d2" />
                 </linearGradient>
               </defs>
             </svg>
@@ -109,8 +109,8 @@ export function SiteFooter() {
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#footer-fire-site)" />
               <defs>
                 <linearGradient id="footer-fire-site" x1="0" y1="0" x2="24" y2="24">
-                  <stop offset="0%" stopColor="#ff9b54" />
-                  <stop offset="100%" stopColor="#6ce7ff" />
+                  <stop offset="0%" stopColor="#f6b18f" />
+                  <stop offset="100%" stopColor="#ffe1d2" />
                 </linearGradient>
               </defs>
             </svg>
@@ -150,7 +150,7 @@ export function HeroTerminal() {
         <div className="fc-terminal-line">Evidence-backed findings: every issue tied to concrete proof</div>
         <div className="fc-terminal-line">Shareable reports: ready for engineering, leadership, and clients</div>
         <div className="fc-terminal-line">Team visibility: watch progress as audits move from launch to report</div>
-        <div className="fc-terminal-line">OAuth access: sign in with GitHub or Google in a few clicks</div>
+        <div className="fc-terminal-line">GitHub access: one sign-in path for repo permissions and workspace entry</div>
       </div>
     </Card>
   );

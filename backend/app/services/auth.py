@@ -238,12 +238,28 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
     if not jti:
         return True
 
-    # Fast path: check database session table directly
-    if db is not None:
+    # Fast path: check database session table/graph directly
+    if settings.DATABASE_BACKEND == "neo4j":
+        sess = graph_store.get_user_session(str(jti))
+        if sess:
+            # Check database session expiration
+            now = _utc_now()
+            if sess.expires_at and _coerce_utc(sess.expires_at) < now:
+                return True
+            return bool(sess.is_revoked)
+        else:
+            return True  # Fail-closed: missing session is revoked
+    elif db is not None:
         from app.models.user import UserSession
         sess = db.query(UserSession).filter(UserSession.id == jti).first()
         if sess:
+            # Check database session expiration
+            now = _utc_now()
+            if sess.expires_at and _coerce_utc(sess.expires_at) < now:
+                return True
             return bool(sess.is_revoked)
+        else:
+            return True  # Fail-closed: missing session is revoked
 
     # Fallback to Redis if DB session is missing or DB is not provided
     client = _get_redis_client()
@@ -255,10 +271,11 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
             # Fail closed on Redis errors - deny the token
             return True
 
+    if settings.DATABASE_BACKEND == "neo4j":
+        return True
+
     if db is not None:
-        # If DB was queried but session row doesn't exist and Redis is not available,
-        # we assume it is valid for older/untracked tokens compatibility.
-        return False
+        return True
 
     # Fail closed when no revocation store is available
     # This prevents token reuse if the revocation system is down
@@ -665,11 +682,18 @@ def verify_refresh_token_with_rotation(
 
     now = _utc_now()
 
-    from app.models.user import UserSession
     old_jti = old_payload.get("jti")
-    old_session = db.query(UserSession).filter(UserSession.id == old_jti).first()
+    if settings.DATABASE_BACKEND == "neo4j":
+        old_session = graph_store.get_user_session(str(old_jti))
+    else:
+        from app.models.user import UserSession
+        old_session = db.query(UserSession).filter(UserSession.id == old_jti).first()
 
-    if old_session and old_session.is_revoked:
+    if not old_session:
+        logger.warning("Refresh token session not found for jti=%s. Denying rotation.", old_jti)
+        return None
+
+    if old_session.is_revoked:
         # Token reuse detected — revoke entire family
         logger.warning("Refresh token reuse detected for user=%s family=%s. Revoking all sessions.", user_id, token_family)
         revoke_token_family(token_family, db=db)
@@ -681,16 +705,21 @@ def verify_refresh_token_with_rotation(
         return None
 
     # Revoke old refresh token (rotation)
-    if old_session:
+    if settings.DATABASE_BACKEND == "neo4j":
+        graph_store.set_session_revoked(str(old_jti), "rotated")
+    else:
         old_session.is_revoked = True
         old_session.revocation_reason = "rotated"
-        client = _get_redis_client()
-        if client is not None:
-            try:
-                ttl = max(int((old_session.expires_at - now).total_seconds()), 1)
-                client.setex(_denylist_key(str(old_jti)), ttl, "1")
-            except Exception:
-                pass
+    
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            ttl = max(int((old_session.expires_at - now).total_seconds()), 1)
+            client.setex(_denylist_key(str(old_jti)), ttl, "1")
+        except Exception:
+            pass
+            
+    if settings.DATABASE_BACKEND != "neo4j":
         db.commit()
 
     new_access_token = create_access_token(

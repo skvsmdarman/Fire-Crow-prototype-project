@@ -4,7 +4,8 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* ── Ambient blobs ── */
@@ -13,7 +14,7 @@
   width: 560px;
   height: 560px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 107, 26, 0.2) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(241, 163, 127, 0.18) 0%, transparent 70%);
   top: -180px;
   left: -140px;
   pointer-events: none;
@@ -26,7 +27,7 @@
   width: 460px;
   height: 460px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108, 231, 255, 0.14) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255, 210, 188, 0.1) 0%, transparent 70%);
   bottom: -120px;
   right: -100px;
   pointer-events: none;
@@ -46,8 +47,8 @@
   pointer-events: none;
   z-index: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    linear-gradient(rgba(255,248,244,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,248,244,0.018) 1px, transparent 1px);
   background-size: 80px 80px;
   mask-image: linear-gradient(180deg, rgba(0,0,0,0.6), transparent 80%);
 }
@@ -69,11 +70,11 @@
   max-width: 860px;
   padding: 10px 14px 10px 12px;
   border-radius: 9999px;
-  background: rgba(10, 12, 20, 0.72);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(18, 13, 11, 0.74);
+  border: 1px solid rgba(255,244,237,0.1);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
 .brand {
@@ -89,9 +90,9 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(255,107,26,0.3), rgba(108,231,255,0.15));
-  border: 1px solid rgba(255,107,26,0.3);
-  box-shadow: 0 0 12px rgba(255,107,26,0.2);
+  background: linear-gradient(135deg, rgba(241,163,127,0.3), rgba(255,210,188,0.14));
+  border: 1px solid rgba(241,163,127,0.28);
+  box-shadow: 0 0 12px rgba(241,163,127,0.16);
   font-size: 0.72rem;
   font-weight: 700;
   color: #fff;
@@ -124,7 +125,7 @@
 }
 
 .navLink:hover {
-  background: rgba(255,255,255,0.07);
+  background: rgba(255,247,242,0.07);
   color: var(--text);
 }
 
@@ -134,23 +135,23 @@
   font-size: 0.86rem;
   font-weight: 600;
   color: #0c0702;
-  background: linear-gradient(135deg, #ff9b54, #ffc164);
-  box-shadow: 0 4px 14px rgba(255,107,26,0.3);
+  background: linear-gradient(135deg, #f7b18e, #ffe3d4);
+  box-shadow: 0 4px 14px rgba(152,89,58,0.28);
   text-decoration: none;
   transition: transform 140ms ease, box-shadow 140ms ease;
 }
 
 .navCta:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(255,107,26,0.4);
+  box-shadow: 0 8px 20px rgba(152,89,58,0.38);
 }
 
 /* ── Main layout ── */
 .main {
   flex: 1;
   display: flex;
-  align-items: center;
-  padding: 32px 24px 48px;
+  align-items: flex-start;
+  padding: 40px 24px 56px;
   position: relative;
   z-index: 1;
 }
@@ -162,7 +163,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
   gap: 32px;
-  align-items: center;
+  align-items: start;
 }
 
 /* ── Left aside (copy) ── */
@@ -219,9 +220,9 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: rgba(82, 242, 164, 0.12);
-  border: 1px solid rgba(82, 242, 164, 0.28);
-  color: var(--green);
+  background: rgba(255, 210, 188, 0.12);
+  border: 1px solid rgba(255, 210, 188, 0.2);
+  color: var(--fire-soft);
   flex-shrink: 0;
 }
 
@@ -244,14 +245,14 @@
 .card {
   position: relative;
   border-radius: 28px;
-  background: rgba(12, 15, 26, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 13, 11, 0.64);
+  border: 1px solid rgba(255, 244, 237, 0.1);
   backdrop-filter: blur(28px) saturate(180%);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
   box-shadow:
     0 32px 100px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 0.5px rgba(255, 107, 26, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 0.5px rgba(241, 163, 127, 0.12);
   overflow: hidden;
 }
 
@@ -262,7 +263,7 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: radial-gradient(ellipse at 30% -10%, rgba(255,107,26,0.08) 0%, transparent 60%);
+  background: radial-gradient(ellipse at 30% -10%, rgba(241,163,127,0.08) 0%, transparent 60%);
 }
 
 .cardInner {
@@ -314,9 +315,9 @@
   gap: 10px;
   padding: 13px 16px;
   border-radius: 14px;
-  border: 1px solid rgba(82, 242, 164, 0.28);
-  background: rgba(82, 242, 164, 0.08);
-  color: #d9fff0;
+  border: 1px solid rgba(255, 210, 188, 0.24);
+  background: rgba(255, 210, 188, 0.08);
+  color: #fff1e8;
   font-size: 0.91rem;
 }
 
@@ -347,15 +348,15 @@
   width: 20px;
   height: 20px;
   border-radius: 7px;
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--green);
+  border: 1.5px solid rgba(255, 244, 237, 0.18);
+  background: rgba(255, 247, 242, 0.04);
+  color: var(--fire-soft);
   transition: border-color 140ms, background 140ms;
 }
 
 .checkbox:checked + .checkboxBox {
-  border-color: var(--green);
-  background: rgba(82, 242, 164, 0.14);
+  border-color: rgba(255, 210, 188, 0.44);
+  background: rgba(255, 210, 188, 0.12);
 }
 
 .consentText {
@@ -372,6 +373,27 @@
 
 .consentLink:hover { opacity: 0.8; text-decoration: underline; }
 
+/* ── Form helper rows ── */
+.helperRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.inlineLink {
+  color: var(--fire-soft);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
 /* ── Provider buttons ── */
 .providers {
   display: grid;
@@ -384,8 +406,8 @@
   gap: 12px;
   padding: 20px;
   border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.06);
-  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,244,237,0.06);
+  background: rgba(255,247,242,0.02);
   color: var(--text-muted);
   font-size: 0.9rem;
 }
@@ -406,8 +428,8 @@
   gap: 14px;
   padding: 16px 18px;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 244, 237, 0.1);
+  background: rgba(255, 247, 242, 0.04);
   cursor: pointer;
   text-decoration: none;
   color: var(--text);
@@ -420,7 +442,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.04), transparent);
+  background: linear-gradient(135deg, rgba(255,247,242,0.05), transparent);
   opacity: 0;
   transition: opacity 200ms;
 }
@@ -428,8 +450,8 @@
 .providerBtn:hover:not(.providerBtnDisabled)::before { opacity: 1; }
 
 .providerBtnHover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
+  background: rgba(255, 247, 242, 0.08) !important;
+  border-color: rgba(255, 210, 188, 0.18) !important;
   transform: translateY(-2px);
   box-shadow: 0 8px 28px rgba(0,0,0,0.3);
 }
@@ -446,8 +468,8 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,247,242,0.05);
+  border: 1px solid rgba(255,244,237,0.08);
   flex-shrink: 0;
 }
 
@@ -513,8 +535,8 @@
   align-items: center;
   gap: 10px;
   padding: 14px 28px;
-  border-top: 1px solid rgba(255,255,255,0.07);
-  background: rgba(0,0,0,0.18);
+  border-top: 1px solid rgba(255,244,237,0.07);
+  background: rgba(8,6,6,0.28);
   font-size: 0.8rem;
   color: var(--text-muted);
   position: relative;
@@ -527,7 +549,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.15);
+  border: 2px solid rgba(255,244,237,0.15);
   border-top-color: var(--fire-soft);
   animation: spin 700ms linear infinite;
   flex-shrink: 0;

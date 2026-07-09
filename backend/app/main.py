@@ -33,6 +33,7 @@ from app.utils.circuit_breaker import get_circuit_breaker
 
 from app.config import settings, WORKSPACE_DIR
 from app.models.database import Base, engine, ensure_database_compatibility, get_db
+from app.graph.database import close_neo4j_driver, verify_neo4j_connectivity
 from app.api import auth_router, audit_router, sse_router, system_router, storage_router, chat_router, leaderboard_router, push_router, user_router, mfa_router, sso_router, pam_router, iam_router, tenant_router, verify_router
 
 _shutting_down = False
@@ -81,7 +82,10 @@ def _cors_origins() -> list[str]:
 async def lifespan(app: FastAPI):
     housekeeping_task: asyncio.Task | None = None
 
-    if settings.DEBUG:
+    if settings.DATABASE_BACKEND == "neo4j":
+        logger.info("Running with Neo4j backend mode.")
+        verify_neo4j_connectivity()
+    elif settings.DEBUG:
         logger.info("Running in DEBUG mode. Checking for pending migrations before auto-DDL.")
         try:
             from app.models.database import check_pending_migrations
@@ -116,31 +120,32 @@ async def lifespan(app: FastAPI):
         (WORKSPACE_DIR / dir_name).mkdir(parents=True, exist_ok=True)
 
     # Run database storage housekeeping
-    try:
-        from app.models.database import SessionLocal
-        from app.services.housekeeping import run_housekeeping
-        from app.models.audit_job import AuditJob
-        from app.schemas.audit_state import JobStatus
-        db = SessionLocal()
+    if settings.DATABASE_BACKEND != "neo4j":
         try:
-            # Mark any running/queued jobs from previous session as failed
-            stuck_jobs = db.query(AuditJob).filter(
-                AuditJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING])
-            ).all()
-            for job in stuck_jobs:
-                job.status = JobStatus.FAILED
-                job.error_message = "Job interrupted by system restart"
-            if stuck_jobs:
-                db.commit()
-                logger.info(f"Cleaned up {len(stuck_jobs)} stuck jobs from previous session.")
+            from app.models.database import SessionLocal
+            from app.services.housekeeping import run_housekeeping
+            from app.models.audit_job import AuditJob
+            from app.schemas.audit_state import JobStatus
+            db = SessionLocal()
+            try:
+                # Mark any running/queued jobs from previous session as failed
+                stuck_jobs = db.query(AuditJob).filter(
+                    AuditJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING])
+                ).all()
+                for job in stuck_jobs:
+                    job.status = JobStatus.FAILED
+                    job.error_message = "Job interrupted by system restart"
+                if stuck_jobs:
+                    db.commit()
+                    logger.info(f"Cleaned up {len(stuck_jobs)} stuck jobs from previous session.")
 
-            run_housekeeping(db)
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error("Error running database housekeeping on startup: %s", str(e))
+                run_housekeeping(db)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error("Error running database housekeeping on startup: %s", str(e))
 
-    if settings.HOUSEKEEPING_INTERVAL_SECONDS > 0:
+    if settings.DATABASE_BACKEND != "neo4j" and settings.HOUSEKEEPING_INTERVAL_SECONDS > 0:
         async def _periodic_housekeeping() -> None:
             from app.models.database import SessionLocal
             from app.services.housekeeping import run_housekeeping
@@ -165,6 +170,8 @@ async def lifespan(app: FastAPI):
             housekeeping_task.cancel()
             with suppress(asyncio.CancelledError):
                 await housekeeping_task
+        if settings.DATABASE_BACKEND == "neo4j":
+            close_neo4j_driver()
 
 
 app = FastAPI(
@@ -342,16 +349,37 @@ async def graceful_shutdown(request: Request, call_next):
     return await call_next(request)
 
 
+def _database_probe() -> bool:
+    if settings.DATABASE_BACKEND == "neo4j":
+        try:
+            verify_neo4j_connectivity()
+            return True
+        except Exception:
+            return False
+
+    if engine is None:
+        return False
+
+    try:
+        from sqlalchemy import text
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
 # Enhanced deep health check with circuit breaker status
 @app.get("/health/deep")
 @limiter.limit("10/minute")
-async def health_deep(request: Request, db: Session = Depends(get_db)):
-    db_ok = True
-    try:
-        from sqlalchemy import text
-        db.execute(text("SELECT 1"))
-    except Exception:
-        db_ok = False
+async def health_deep(request: Request, db: Session | None = Depends(get_db)):
+    db_ok = _database_probe() if db is None else True
+    if db is not None:
+        try:
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+        except Exception:
+            db_ok = False
 
     storage_ok = True
     try:
@@ -390,13 +418,15 @@ async def health_deep(request: Request, db: Session = Depends(get_db)):
 # Additionally, make /health/ready more comprehensive
 @app.get("/health/ready")
 @limiter.limit("10/minute")
-async def health_ready(request: Request, db: Session = Depends(get_db)):
-    db_ok = True
-    try:
-        from sqlalchemy import text
-        db.execute(text("SELECT 1"))
-    except Exception:
-        db_ok = False
+async def health_ready(request: Request, db: Session | None = Depends(get_db)):
+    db_ok = _database_probe() if db is None else True
+    if db is not None:
+        try:
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+        except Exception:
+            db_ok = False
+    if not db_ok:
         logger.error("Readiness check database probe failed", exc_info=True)
 
     redis_ok = True
@@ -428,13 +458,15 @@ os.makedirs(reports_dir, exist_ok=True)
 
 @app.get("/health")
 @limiter.limit("30/minute")
-async def health_check(request: Request, db: Session = Depends(get_db)):
-    try:
-        from sqlalchemy import text
-        db.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception:
-        db_ok = False
+async def health_check(request: Request, db: Session | None = Depends(get_db)):
+    db_ok = _database_probe() if db is None else True
+    if db is not None:
+        try:
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+        except Exception:
+            db_ok = False
+    if not db_ok:
         logger.warning("Health check database probe failed.", exc_info=True)
 
     return {

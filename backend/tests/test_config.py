@@ -145,8 +145,44 @@ def test_settings_allow_optional_oauth_integrations_in_production():
     configured = _prod_settings(
         GITHUB_CLIENT_ID="",
         GITHUB_CLIENT_SECRET="",
-        GOOGLE_CLIENT_ID="",
-        GOOGLE_CLIENT_SECRET="",
     )
     assert configured.GITHUB_CLIENT_ID == ""
-    assert configured.GOOGLE_CLIENT_ID == ""
+
+
+def test_settings_default_postgres_migration_source_url_tracks_database_url():
+    configured = _prod_settings()
+    assert configured.POSTGRES_MIGRATION_SOURCE_URL == configured.DATABASE_URL
+
+
+def test_settings_require_neo4j_fields_when_graph_backend_selected():
+    with pytest.raises(ValidationError):
+        _prod_settings(
+            DATABASE_BACKEND="neo4j",
+            DATABASE_URL="",
+            NEO4J_URI="",
+            NEO4J_USER="",
+            NEO4J_PASSWORD="",
+        )
+
+
+def test_settings_accept_local_neo4j_backend_with_secure_password():
+    configured = _prod_settings(
+        DATABASE_BACKEND="neo4j",
+        DATABASE_URL="",
+        NEO4J_URI="bolt://localhost:7687",
+        NEO4J_USER="neo4j",
+        NEO4J_PASSWORD="a_secure_neo4j_password",
+    )
+    assert configured.DATABASE_BACKEND == "neo4j"
+    assert configured.NEO4J_URI == "bolt://localhost:7687"
+
+
+def test_settings_reject_remote_neo4j_without_tls():
+    with pytest.raises(ValidationError):
+        _prod_settings(
+            DATABASE_BACKEND="neo4j",
+            DATABASE_URL="",
+            NEO4J_URI="bolt://graph.firecrow.test:7687",
+            NEO4J_USER="neo4j",
+            NEO4J_PASSWORD="a_secure_neo4j_password",
+        )

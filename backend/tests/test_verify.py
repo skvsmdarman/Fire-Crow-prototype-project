@@ -26,10 +26,10 @@ def _get_auth_header(username: str = "verify_tester") -> dict:
             )
             db.add(user)
             db.commit()
+        token = create_access_token(user_id=user_id, username=username, db=db)
     finally:
         db.close()
     
-    token = create_access_token(user_id=user_id, username=username)
     return {"Authorization": f"Bearer {token}"}
 
 

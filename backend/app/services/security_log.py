@@ -4,6 +4,8 @@ from typing import Any, Optional
 from fastapi import Request
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.graph.store import graph_store
 from app.models.security_log import SecurityLog
 from app.models.user import User
 from app.services.redaction import safe_json_dumps
@@ -54,7 +56,7 @@ def _anonymize_ip(ip: Optional[str], region: Optional[str], timezone_str: Option
 
 
 def record_security_event(
-    db: Session,
+    db: Session | None,
     *,
     action: str,
     request: Request,
@@ -66,14 +68,33 @@ def record_security_event(
     timezone_str = None
     
     if user_id:
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            region = user.region
-            timezone_str = user.timezone
+        if settings.DATABASE_BACKEND == "neo4j":
+            user = graph_store.get_user_by_id(user_id)
+            if user:
+                region = user.region
+                timezone_str = user.timezone
+        elif db is not None:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                region = user.region
+                timezone_str = user.timezone
 
     anon_ip = _anonymize_ip(ip, region, timezone_str)
     serialized_details = safe_json_dumps(details, max_length=4096) if details else None
-    
+
+    if settings.DATABASE_BACKEND == "neo4j":
+        graph_store.create_security_log(
+            user_id=user_id,
+            action=action,
+            ip_address=anon_ip,
+            user_agent=_safe_user_agent(request),
+            details=serialized_details,
+        )
+        return
+
+    if db is None:
+        raise RuntimeError("Relational database session is required for security log writes.")
+
     db.add(
         SecurityLog(
             user_id=user_id,
@@ -87,14 +108,19 @@ def record_security_event(
 
 
 def record_user_activity(
-    db: Session,
+    db: Session | None,
     *,
     user_id: str,
     action: str,
     request: Request,
     details: Optional[dict[str, Any]] = None,
 ) -> None:
-    user = db.query(User).filter(User.id == user_id).first()
+    if settings.DATABASE_BACKEND == "neo4j":
+        user = graph_store.get_user_by_id(user_id)
+    else:
+        if db is None:
+            raise RuntimeError("Relational database session is required for user activity logging.")
+        user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return
         
@@ -107,6 +133,16 @@ def record_user_activity(
     append_user_activity(db, user_id=user_id, action=action, details=activity_details)
     
     serialized_details = safe_json_dumps(details, max_length=4096) if details else None
+    if settings.DATABASE_BACKEND == "neo4j":
+        graph_store.create_security_log(
+            user_id=user_id,
+            action=action,
+            ip_address=anon_ip,
+            user_agent=_safe_user_agent(request),
+            details=serialized_details,
+        )
+        return
+
     db.add(
         SecurityLog(
             user_id=user_id,

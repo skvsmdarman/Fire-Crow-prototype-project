@@ -13,6 +13,7 @@ from urllib.parse import unquote, urlparse
 
 from app.api.audit_queries import get_owned_job_or_404
 from app.config import WORKSPACE_DIR, settings
+from app.graph.store import graph_store
 from app.models import (
     AgentLog,
     AuditArtifact,
@@ -24,6 +25,7 @@ from app.models import (
     DomainVerification,
     get_db,
 )
+from app.models.database import get_optional_db
 from sqlalchemy import or_
 from app.schemas import (
     JobDetailResponse,
@@ -250,6 +252,12 @@ async def submit_audit(
     user_id: str = Depends(get_current_user)
 ):
     """Submit a security audit job for a remote repository. Dispatches Celery task or falls back to BackgroundTasks."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audit submission is not enabled in Neo4j mode until the orchestrator persistence path is migrated.",
+        )
+
     if payload.custom_email:
         from email_validator import validate_email, EmailNotValidError
         try:
@@ -363,10 +371,14 @@ async def submit_audit(
 @limiter.limit("30/minute")
 async def list_jobs(
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user)
 ):
     """Retrieve all jobs submitted by the current authenticated tenant (Tenant Isolation)."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        jobs = graph_store.list_jobs_for_user(user_id)
+        return [build_job_response(job) for job in jobs]
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return []
@@ -396,12 +408,15 @@ async def list_jobs(
 async def get_job_detail(
     job_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user)
 ):
     """Retrieve details and findings of a specific job (scoped to authenticated tenant)."""
     job = get_owned_job_or_404(db, job_id, user_id)
-    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+    if settings.DATABASE_BACKEND == "neo4j":
+        findings = graph_store.list_findings_for_job(job_id)
+    else:
+        findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
 
     return build_job_detail_response(job, findings)
 
@@ -415,6 +430,12 @@ async def cancel_job(
     user_id: str = Depends(get_current_user)
 ):
     """Request cancellation for a running or queued job and let the runtime finalize cleanup."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audit cancellation is not enabled in Neo4j mode until the orchestrator persistence path is migrated.",
+        )
+
     job = get_owned_job_or_404(db, job_id, user_id)
 
     if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.PARTIAL]:
@@ -465,6 +486,12 @@ async def download_report(
     user_id: str = Depends(get_current_user)
 ):
     """Authenticated endpoint to download PDF reports."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Report download is not yet enabled in Neo4j mode.",
+        )
+
     import os
     job = get_owned_job_or_404(db, job_id, user_id)
 
@@ -599,6 +626,12 @@ async def email_report(
     user_id: str = Depends(get_current_user),
 ):
     """On-demand endpoint to send/resend the PDF report to a user via email."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email report delivery is not yet enabled in Neo4j mode.",
+        )
+
     if payload.email:
         from email_validator import validate_email, EmailNotValidError
         try:
@@ -747,14 +780,17 @@ async def email_report(
 async def get_job_insight(
     job_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user),
 ):
     if not is_llm_enabled("dashboard_insight"):
         return {"insight": None, "enabled": False}
 
     get_owned_job_or_404(db, job_id, user_id)
-    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+    if settings.DATABASE_BACKEND == "neo4j":
+        findings = graph_store.list_findings_for_job(job_id)
+    else:
+        findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
     if not findings:
         return {"insight": "No findings to summarize.", "enabled": True}
 
@@ -785,15 +821,18 @@ async def get_job_insight(
 async def get_attack_graph(
     job_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user)
 ):
     job = get_owned_job_or_404(db, job_id, user_id)
-    from app.models import AuditArtifact
-    artifact = db.query(AuditArtifact).filter(
-        AuditArtifact.job_id == job_id,
-        AuditArtifact.artifact_type == "attack_graph"
-    ).first()
+    if settings.DATABASE_BACKEND == "neo4j":
+        artifact = graph_store.get_artifact_for_job(job_id, "attack_graph")
+    else:
+        from app.models import AuditArtifact
+        artifact = db.query(AuditArtifact).filter(
+            AuditArtifact.job_id == job_id,
+            AuditArtifact.artifact_type == "attack_graph"
+        ).first()
     if not artifact or not artifact.data_json:
         raise HTTPException(404, "Attack graph not generated yet")
     import json

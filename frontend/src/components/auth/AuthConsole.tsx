@@ -1,18 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { AuthProvider, useAuthActions, useAuthState } from "../../lib/auth-context";
 import { persistSession } from "../../lib/auth-session";
 import { buildApiUrl } from "../../lib/base-url";
-import { useAuthActions, GuestGuard } from "../../lib/auth-context";
-import { request, ApiError } from "../../lib/request";
-import { PolicyContext, AuthTokenResponse } from "../../lib/types";
+import { ApiError, request } from "../../lib/request";
+import { AuthTokenResponse, PolicyContext } from "../../lib/types";
+import { Card } from "../ui/Card";
 import styles from "./AuthConsole.module.css";
 
 const FALLBACK_VERSION = "2026-06-06";
 
-/* ─── helpers ─────────────────────────────────────────────────────── */
+type AuthMode = "signin" | "signup";
+
+interface AuthConsoleProps {
+  mode: AuthMode;
+}
 
 function detectRegion(tz: string) {
   if (tz.startsWith("Europe/")) return "eu";
@@ -21,35 +26,48 @@ function detectRegion(tz: string) {
   return undefined;
 }
 
-function buildOAuthUrl(provider: "github" | "google", version: string): string {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+function buildGitHubOAuthUrl(version: string) {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const params = new URLSearchParams({
     privacy_policy_accepted: "true",
     privacy_policy_version: version,
   });
-  if (tz) params.set("timezone", tz);
-  const region = detectRegion(tz);
-  if (region) params.set("region", region);
-  return `${buildApiUrl(`/auth/${provider}`)}?${params.toString()}`;
+
+  if (timezone) {
+    params.set("timezone", timezone);
+  }
+
+  const region = detectRegion(timezone);
+  if (region) {
+    params.set("region", region);
+  }
+
+  return `${buildApiUrl("/auth/github")}?${params.toString()}`;
 }
 
-/* ─── icon SVGs ────────────────────────────────────────────────────── */
+function resolveRedirectTarget(target: string | null): string {
+  if (!target) {
+    return "/dashboard";
+  }
+
+  try {
+    const normalized = decodeURIComponent(target);
+    if (!normalized.startsWith("/") || normalized.startsWith("//")) {
+      return "/dashboard";
+    }
+    if (normalized.startsWith("/signin") || normalized.startsWith("/signup")) {
+      return "/dashboard";
+    }
+    return normalized;
+  } catch {
+    return "/dashboard";
+  }
+}
 
 function GitHubIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-    </svg>
-  );
-}
-
-function GoogleIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden>
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
     </svg>
   );
 }
@@ -62,14 +80,6 @@ function ShieldIcon() {
   );
 }
 
-function ArrowIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M5 12h14M12 5l7 7-7 7" />
-    </svg>
-  );
-}
-
 function CheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -78,135 +88,177 @@ function CheckIcon() {
   );
 }
 
+function ArrowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 12h14M12 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 function LoaderRing() {
   return <span className={styles.ring} role="status" aria-label="Loading" />;
 }
 
-/* ─── main component ───────────────────────────────────────────────── */
-
-export function AuthConsole({ mode }: { mode: "signin" | "signup" }) {
+function AuthConsoleContent({ mode }: AuthConsoleProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loadPolicyContext, refresh } = useAuthActions();
+  const { status } = useAuthState();
+  const { loadPolicyContext } = useAuthActions();
 
   const [ctx, setCtx] = useState<PolicyContext | null>(null);
-  const [ctxLoading, setCtxLoading] = useState(true);
+  const [policyLoading, setPolicyLoading] = useState(true);
   const [accepted, setAccepted] = useState(false);
-  const [validating, setValidating] = useState(() => Boolean(searchParams.get("code")));
-  const [error, setError] = useState<string | null>(null);
-  const [hoveredProvider, setHoveredProvider] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(Boolean(searchParams.get("code")));
 
-  const version = ctx?.privacy_policy_version ?? FALLBACK_VERSION;
   const isSignIn = mode === "signin";
+  const redirectTo = useMemo(() => resolveRedirectTarget(searchParams.get("redirect")), [searchParams]);
+  const version = ctx?.privacy_policy_version ?? FALLBACK_VERSION;
+  const githubAvailable = Boolean(ctx?.providers.github);
 
-  /* load policy context */
   useEffect(() => {
     let live = true;
     void (async () => {
-      const c = await loadPolicyContext();
-      if (live) {
-        setCtx(c);
-        setCtxLoading(false);
+      const next = await loadPolicyContext();
+      if (!live) {
+        return;
       }
+      setCtx(next);
+      setPolicyLoading(false);
     })();
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [loadPolicyContext]);
 
-  /* handle OAuth code exchange */
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace(redirectTo);
+    }
+  }, [redirectTo, router, status]);
+
   useEffect(() => {
     const code = searchParams.get("code");
-    if (!code) return;
+    if (!code) {
+      setValidating(false);
+      return;
+    }
+
     let live = true;
     void (async () => {
       try {
-        const res = await request<AuthTokenResponse>("/auth/exchange", { method: "POST", body: { code } });
-        if (!live) return;
-        persistSession(res);
-        await refresh();
-        router.replace("/dashboard");
-      } catch (err: unknown) {
-        if (!live) return;
-        setError(err instanceof ApiError ? err.message : "OAuth validation failed. Please try again.");
+        const response = await request<AuthTokenResponse>("/auth/exchange", {
+          method: "POST",
+          body: { code },
+        });
+        if (!live) {
+          return;
+        }
+        persistSession(response);
+        router.replace(redirectTo);
+      } catch (error) {
+        if (!live) {
+          return;
+        }
+        setFormError(error instanceof ApiError ? error.message : "GitHub sign-in could not be completed.");
         setValidating(false);
       }
     })();
-    return () => { live = false; };
-  }, [router, searchParams, refresh]);
 
-  const providers = [
-    {
-      id: "github" as const,
-      label: "GitHub",
-      Icon: GitHubIcon,
-      tagline: isSignIn ? "Continue with GitHub" : "Sign up with GitHub",
-      description: "For engineering-led teams. Seamlessly connect your repositories.",
-      available: Boolean(ctx?.providers.github),
-      accentColor: "#6e40c9",
-    },
-    {
-      id: "google" as const,
-      label: "Google",
-      Icon: GoogleIcon,
-      tagline: isSignIn ? "Continue with Google" : "Sign up with Google",
-      description: "For organisations using Google Workspace or personal Gmail.",
-      available: Boolean(ctx?.providers.google),
-      accentColor: "#4285F4",
-    },
-  ];
+    return () => {
+      live = false;
+    };
+  }, [redirectTo, router, searchParams]);
+
+  function startGitHubOAuth() {
+    setFormError(null);
+
+    if (!accepted) {
+      setFormError("Accept the privacy policy and terms before continuing.");
+      return;
+    }
+
+    if (!githubAvailable) {
+      setFormError("GitHub sign-in is not configured on this environment.");
+      return;
+    }
+
+    window.location.assign(buildGitHubOAuthUrl(version));
+  }
 
   return (
-    <GuestGuard>
-      <div className={styles.page}>
-      {/* ── background blobs ── */}
+    <div className={styles.page}>
       <div className={styles.blob1} aria-hidden />
       <div className={styles.blob2} aria-hidden />
       <div className={styles.grid} aria-hidden />
 
-      {/* ── top nav ── */}
       <header className={styles.topbar}>
-        <Link href="/" className={styles.brand} aria-label="Fire Crow home">
-          <span className={styles.brandMark}>FC</span>
-          <span className={styles.brandText}>Fire Crow</span>
-        </Link>
-        <nav className={styles.topNav}>
-          <Link href="/privacy" className={styles.navLink}>Privacy</Link>
-          <Link href="/terms" className={styles.navLink}>Terms</Link>
-          {isSignIn ? (
-            <Link href="/signup" className={styles.navCta}>Create account</Link>
-          ) : (
-            <Link href="/signin" className={styles.navCta}>Sign in</Link>
-          )}
-        </nav>
+        <div className={styles.topbarInner}>
+          <Link href="/" className={styles.brand} aria-label="Fire Crow home">
+            <span className={styles.brandMark}>FC</span>
+            <span className={styles.brandText}>Fire Crow</span>
+          </Link>
+          <nav className={styles.topNav} aria-label="Auth links">
+            <Link href="/privacy" className={styles.navLink}>
+              Privacy
+            </Link>
+            <Link href="/terms" className={styles.navLink}>
+              Terms
+            </Link>
+            <Link href={isSignIn ? "/signup" : "/signin"} className={styles.navCta}>
+              {isSignIn ? "Create account" : "Sign in"}
+            </Link>
+          </nav>
+        </div>
       </header>
 
-      {/* ── main ── */}
       <main className={styles.main}>
         <div className={styles.shell}>
-
-          {/* left: copy */}
           <aside className={styles.aside}>
-            <p className={styles.asideKicker}>
-              {isSignIn ? "Welcome back" : "Get started free"}
-            </p>
+            <p className={styles.asideKicker}>Backend first</p>
             <h1 className={styles.asideTitle}>
-              {isSignIn
-                ? "Sign in to your workspace"
-                : "Create your Fire Crow account"}
+              {isSignIn ? "One GitHub sign-in path." : "Create the workspace through GitHub."}
             </h1>
             <p className={styles.asideCopy}>
-              {isSignIn
-                ? "Access your security audits, findings, and client-ready reports in seconds."
-                : "Automated code security scanning that speaks plain English. Built for teams."}
+              Fire Crow now keeps authentication simple. GitHub is the only sign-in route, and the backend keeps the
+              session, consent, and repository access flow in one place.
             </p>
+
+            <div className="fc-grid-3" style={{ marginBottom: 28 }}>
+              <Card className="fc-metric" style={{ padding: 18 }}>
+                <div className="fc-muted">Auth path</div>
+                <span className="fc-metric-value" style={{ fontSize: "1.35rem" }}>
+                  GitHub
+                </span>
+                <div className="fc-copy">One provider, one session model.</div>
+              </Card>
+              <Card className="fc-metric" style={{ padding: 18 }}>
+                <div className="fc-muted">Backend state</div>
+                <span className="fc-metric-value" style={{ fontSize: "1.35rem" }}>
+                  Live
+                </span>
+                <div className="fc-copy">Consent and session cookies are enforced server-side.</div>
+              </Card>
+              <Card className="fc-metric" style={{ padding: 18 }}>
+                <div className="fc-muted">Repo access</div>
+                <span className="fc-metric-value" style={{ fontSize: "1.35rem" }}>
+                  Explicit
+                </span>
+                <div className="fc-copy">Permissions stay tied to GitHub scopes you approve.</div>
+              </Card>
+            </div>
 
             <ul className={styles.trustList} role="list">
               {[
-                "Code is sandboxed — never stored or trained on",
-                "End-to-end encrypted reports",
-                "Cancel any time, no commitment",
+                "No Google sign-in path remains in the auth flow.",
+                "Audit access opens through the same backend session contract.",
+                "Reports and findings stay scoped to the signed-in workspace.",
               ].map((item) => (
                 <li key={item} className={styles.trustItem}>
-                  <span className={styles.trustCheck}><CheckIcon /></span>
+                  <span className={styles.trustCheck}>
+                    <CheckIcon />
+                  </span>
                   <span>{item}</span>
                 </li>
               ))}
@@ -214,135 +266,117 @@ export function AuthConsole({ mode }: { mode: "signin" | "signup" }) {
 
             <div className={styles.asideFootnote}>
               <ShieldIcon />
-              <span>Privacy-first by design. <Link href="/privacy" className={styles.footLink}>See how →</Link></span>
+              <span>
+                Plain auth flow. <Link href="/privacy" className={styles.footLink}>Review the policy</Link>
+              </span>
             </div>
           </aside>
 
-          {/* right: card */}
-          <section className={styles.card} aria-label={isSignIn ? "Sign in" : "Create account"}>
+          <Card className={styles.card} aria-label={isSignIn ? "Sign in" : "Create account"}>
             <div className={styles.cardInner}>
-
-              {/* heading */}
               <div className={styles.cardHead}>
-                <span className={styles.cardKicker}>
-                  {isSignIn ? "Secure access" : "Account setup"}
-                </span>
-                <h2 className={styles.cardTitle}>
-                  {isSignIn ? "Sign In" : "Create Account"}
-                </h2>
+                <span className={styles.cardKicker}>{isSignIn ? "Secure access" : "Workspace setup"}</span>
+                <h2 className={styles.cardTitle}>{isSignIn ? "Sign in with GitHub" : "Create workspace with GitHub"}</h2>
+                <p className="fc-copy" style={{ margin: 0 }}>
+                  {isSignIn
+                    ? "Use GitHub to open the dashboard. The backend will exchange the OAuth code into the normal workspace session."
+                    : "Use GitHub to create the workspace and move directly into the backend audit flow."}
+                </p>
               </div>
 
-              {/* status banners */}
-              {error && (
+              {formError ? (
                 <div className={styles.bannerError} role="alert">
-                  <span>⚠</span> {error}
+                  <span>⚠</span>
+                  <span>{formError}</span>
                 </div>
-              )}
-              {validating && !error && (
+              ) : null}
+
+              {validating ? (
                 <div className={styles.bannerSuccess} role="status">
                   <LoaderRing />
-                  <span>Verifying with your provider and opening your workspace…</span>
+                  <span>Finishing GitHub sign-in and opening your workspace…</span>
                 </div>
-              )}
+              ) : null}
 
-              {/* policy consent */}
-              <label className={styles.consent}>
+              {status === "loading" && !validating ? (
+                <div className={styles.bannerSuccess} role="status">
+                  <LoaderRing />
+                  <span>Checking your current session…</span>
+                </div>
+              ) : null}
+
+              <label className="fc-checkline">
                 <span className={styles.checkboxWrap}>
                   <input
                     type="checkbox"
                     checked={accepted}
-                    onChange={(e) => setAccepted(e.target.checked)}
+                    onChange={(event) => setAccepted(event.target.checked)}
                     className={styles.checkbox}
-                    id="auth-consent"
                   />
                   <span className={styles.checkboxBox} aria-hidden>
-                    {accepted && <CheckIcon />}
+                    {accepted ? <CheckIcon /> : null}
                   </span>
                 </span>
-                <span className={styles.consentText}>
+                <span>
                   I agree to the{" "}
-                  <Link href="/terms" className={styles.consentLink} target="_blank" rel="noopener noreferrer">
+                  <Link href="/terms" className={styles.consentLink} target="_blank" rel="noreferrer noopener">
                     Terms of Service
                   </Link>{" "}
                   and{" "}
-                  <Link href="/privacy" className={styles.consentLink} target="_blank" rel="noopener noreferrer">
+                  <Link href="/privacy" className={styles.consentLink} target="_blank" rel="noreferrer noopener">
                     Privacy Policy
                   </Link>
+                  .
                 </span>
               </label>
 
-              {/* provider buttons */}
-              <div className={styles.providers}>
-                {ctxLoading ? (
-                  <div className={styles.providerSkeleton}>
-                    <LoaderRing /> <span className={styles.loadingText}>Loading providers…</span>
-                  </div>
-                ) : (
-                  providers.map((p) => {
-                    const canClick = p.available && accepted && !validating;
-                    const href = canClick ? buildOAuthUrl(p.id, version) : undefined;
-                    const isHovered = hoveredProvider === p.id;
-
-                    return (
-                      <div key={p.id} className={styles.providerRow}>
-                        {href ? (
-                          <a
-                            href={href}
-                            className={`${styles.providerBtn} ${isHovered ? styles.providerBtnHover : ""}`}
-                            onMouseEnter={() => setHoveredProvider(p.id)}
-                            onMouseLeave={() => setHoveredProvider(null)}
-                            aria-label={p.tagline}
-                          >
-                            <span className={styles.providerIcon}><p.Icon /></span>
-                            <span className={styles.providerLabel}>{p.tagline}</span>
-                            <span className={styles.providerArrow}><ArrowIcon /></span>
-                          </a>
-                        ) : (
-                          <span
-                            className={`${styles.providerBtn} ${styles.providerBtnDisabled}`}
-                            aria-disabled="true"
-                            title={
-                              !p.available
-                                ? `${p.label} sign-in is not configured`
-                                : "Accept the terms to continue"
-                            }
-                          >
-                            <span className={styles.providerIcon}><p.Icon /></span>
-                            <span className={styles.providerLabel}>
-                              {!p.available ? `${p.label} (not configured)` : p.tagline}
-                            </span>
-                          </span>
-                        )}
-                        <p className={styles.providerDesc}>{p.description}</p>
-                      </div>
-                    );
-                  })
-                )}
+              <div className={styles.providerRow}>
+                <button
+                  type="button"
+                  className={`${styles.providerBtn} ${!githubAvailable || policyLoading || validating ? styles.providerBtnDisabled : ""}`.trim()}
+                  onClick={startGitHubOAuth}
+                  disabled={!githubAvailable || policyLoading || validating}
+                  aria-label={isSignIn ? "Continue with GitHub" : "Create workspace with GitHub"}
+                  title={githubAvailable ? "Continue with GitHub" : "GitHub sign-in is not configured"}
+                >
+                  <span className={styles.providerIcon}>
+                    <GitHubIcon />
+                  </span>
+                  <span className={styles.providerLabel}>
+                    {isSignIn ? "Continue with GitHub" : "Create workspace with GitHub"}
+                  </span>
+                  <span className={styles.providerArrow}>
+                    <ArrowIcon />
+                  </span>
+                </button>
+                <p className={styles.providerDesc}>
+                  GitHub is the only sign-in path on this interface now. Google sign-in has been removed.
+                </p>
               </div>
 
-              {/* divider */}
-              <div className={styles.divider}>
-                <span>More sign-in options coming soon</span>
-              </div>
-
-              {/* alt link */}
               <p className={styles.altText}>
-                {isSignIn ? "New to Fire Crow?" : "Already have an account?"}{" "}
+                {isSignIn ? "Need a workspace?" : "Already connected before?"}{" "}
                 <Link href={isSignIn ? "/signup" : "/signin"} className={styles.altLink}>
-                  {isSignIn ? "Create an account →" : "Sign in instead →"}
+                  {isSignIn ? "Open the create page" : "Open the sign-in page"}
                 </Link>
               </p>
             </div>
 
-            {/* bottom strip */}
             <div className={styles.cardFooter}>
               <ShieldIcon />
-              <span>Connection secured · Your code is never stored or shared</span>
+              <span>GitHub OAuth in, cookie-backed workspace session out.</span>
             </div>
-          </section>
+          </Card>
         </div>
       </main>
     </div>
-    </GuestGuard>
+  );
+}
+
+export function AuthConsole({ mode }: AuthConsoleProps) {
+  return (
+    <AuthProvider>
+      <AuthConsoleContent mode={mode} />
+    </AuthProvider>
   );
 }

@@ -525,7 +525,6 @@ def test_policy_event_logging_redacts_sensitive_details():
 
 
 def test_oauth_code_exchange():
-    token = create_access_token(user_id="usr_test_oauth", username="oauth_tester")
     original_frontend_url = settings.FRONTEND_URL
     original_debug = settings.DEBUG
     settings.FRONTEND_URL = "https://app.firecrow.test"
@@ -533,6 +532,7 @@ def test_oauth_code_exchange():
 
     db = SessionLocal()
     try:
+        token = create_access_token(user_id="usr_test_oauth", username="oauth_tester", db=db)
         code = create_exchange_code(user_id="usr_test_oauth", username="oauth_tester", token=token, db=db)
 
         stored_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()

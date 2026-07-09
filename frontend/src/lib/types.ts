@@ -3,7 +3,6 @@ export type Severity = "critical" | "high" | "medium" | "low" | "info";
 
 export interface ProviderAvailability {
   github: boolean;
-  google: boolean;
   password: boolean;
 }
 
@@ -29,9 +28,6 @@ export interface AuthUser {
       scopes?: string[];
       required_scopes?: string[];
       token_persisted?: boolean;
-    };
-    google?: {
-      connected: boolean;
     };
   };
 }
@@ -141,4 +137,3 @@ export interface DomainVerificationRecord {
 }
 
 export type VerificationMethod = "dns" | "html" | "file";
-

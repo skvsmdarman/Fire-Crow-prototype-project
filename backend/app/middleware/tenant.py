@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
+from app.graph.store import graph_store
 from app.models.tenant import Tenant
 
 logger = logging.getLogger("firecrow.middleware.tenant")
@@ -20,16 +21,23 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         if tenant_slug:
             try:
-                from app.models.database import SessionLocal
-                db = SessionLocal()
-                try:
-                    tenant = db.query(Tenant).filter(Tenant.slug == tenant_slug, Tenant.is_active == True).first()
+                if settings.DATABASE_BACKEND == "neo4j":
+                    tenant = graph_store.get_tenant_by_slug(tenant_slug)
                     if tenant:
                         tenant_id = tenant.id
                     else:
                         logger.warning("Tenant slug %s not found or inactive", tenant_slug)
-                finally:
-                    db.close()
+                else:
+                    from app.models.database import SessionLocal
+                    db = SessionLocal()
+                    try:
+                        tenant = db.query(Tenant).filter(Tenant.slug == tenant_slug, Tenant.is_active == True).first()
+                        if tenant:
+                            tenant_id = tenant.id
+                        else:
+                            logger.warning("Tenant slug %s not found or inactive", tenant_slug)
+                    finally:
+                        db.close()
             except Exception as e:
                 logger.error("Tenant resolution failed for slug %s: %s", tenant_slug, e)
 
@@ -39,4 +47,3 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         request.state.tenant_id = tenant_id
         return await call_next(request)
-

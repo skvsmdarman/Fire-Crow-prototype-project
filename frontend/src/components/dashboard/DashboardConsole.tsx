@@ -23,8 +23,6 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
-import { SiteHeader } from "../SiteChrome";
-import { useAuthState, AuthGuard } from "../../lib/auth-context";
 
 type DashboardTab = "operations" | "findings" | "reports" | "signals" | "settings";
 type StreamEntry = { event: string; text: string; at: string };
@@ -108,12 +106,13 @@ async function consumeAuditStream(
   }
 }
 
-export function DashboardConsole() {
-  const { user: authUser } = useAuthState();
+function DashboardConsoleContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedJobId = searchParams.get("jobId") ?? searchParams.get("job_id");
 
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const [tab, setTab] = useState<DashboardTab>("operations");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -162,6 +161,36 @@ export function DashboardConsole() {
       .sort((left, right) => severityRank(right.severity) - severityRank(left.severity));
   }, [deferredSearch, jobDetail?.findings]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const me = await request<AuthUser>("/auth/me");
+        if (!cancelled) {
+          setAuthUser(me);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+            clearSession();
+            router.replace(`/signin?redirect=${encodeURIComponent("/dashboard")}`);
+            return;
+          }
+          setReconnecting(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   const fetchDashboard = useCallback(async (preserveSelection = true) => {
     try {
       const [statusResponse, nextJobs, nextLeaderboard] = await Promise.all([
@@ -183,7 +212,7 @@ export function DashboardConsole() {
       }
     } catch (error) {
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        // Handled by AuthGuard and request interceptor event emitter
+        // Handled by the session gate and request interceptor event emitter
         return;
       }
       setReconnecting(true);
@@ -227,6 +256,10 @@ export function DashboardConsole() {
   }, [requestedJobId]);
 
   useEffect(() => {
+    if (sessionLoading || !authUser) {
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
 
@@ -241,9 +274,13 @@ export function DashboardConsole() {
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard]);
+  }, [authUser, fetchDashboard, sessionLoading]);
 
   useEffect(() => {
+    if (sessionLoading || !authUser) {
+      return;
+    }
+
     const timer = window.setInterval(() => {
       setRefreshing(true);
       void fetchDashboard(true)
@@ -252,9 +289,13 @@ export function DashboardConsole() {
     }, 15000);
 
     return () => window.clearInterval(timer);
-  }, [fetchDashboard]);
+  }, [authUser, fetchDashboard, sessionLoading]);
 
   useEffect(() => {
+    if (sessionLoading || !authUser) {
+      return;
+    }
+
     if (!selectedJobId) {
       setJobDetail(null);
       setInsight(null);
@@ -269,9 +310,13 @@ export function DashboardConsole() {
     setStream([]);
     void fetchDetail(selectedJobId);
     void fetchSignals(selectedJobId);
-  }, [fetchDetail, fetchSignals, selectedJobId]);
+  }, [authUser, fetchDetail, fetchSignals, selectedJobId, sessionLoading]);
 
   useEffect(() => {
+    if (sessionLoading || !authUser) {
+      return;
+    }
+
     if (!selectedJobId || !selectedJob || !["queued", "running"].includes(selectedJob.status)) {
       return;
     }
@@ -303,7 +348,7 @@ export function DashboardConsole() {
     });
 
     return () => controller.abort();
-  }, [fetchDashboard, fetchDetail, selectedJob, selectedJobId]);
+  }, [authUser, fetchDashboard, fetchDetail, selectedJob, selectedJobId, sessionLoading]);
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -400,20 +445,78 @@ export function DashboardConsole() {
   const completedJobs = jobs.filter((job) => ["completed", "partial"].includes(job.status));
   const workspaceName = authUser?.username ?? "workspace";
 
+  if (sessionLoading) {
+    return (
+      <div className="fc-page" style={{ display: "grid", minHeight: "100vh", placeItems: "center", padding: "40px 20px" }}>
+        <Card className="fc-panel" style={{ maxWidth: 560, width: "100%", textAlign: "center", padding: 36 }}>
+          <div className="fc-brand-mark" style={{ margin: "0 auto 22px auto", fontSize: "1.3rem", fontWeight: 700 }}>FC</div>
+          <h1 style={{ fontSize: "1.9rem", marginBottom: 12 }}>Securing Workspace</h1>
+          <p className="fc-copy" style={{ color: "var(--text-dim)", marginBottom: 20 }}>
+            Verifying your session and loading the live dashboard.
+          </p>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <span
+              aria-hidden="true"
+              style={{
+                border: "3px solid rgba(255,244,237,0.1)",
+                borderTop: "3px solid var(--fire)",
+                borderRadius: "50%",
+                width: "24px",
+                height: "24px",
+                display: "inline-block",
+                animation: "fc-spin 1s linear infinite",
+              }}
+            />
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <AuthGuard>
-      <div className="fc-page">
-        <SiteHeader ctaHref="/" ctaLabel="Landing Page" />
+    <div className="fc-page">
       <main className="fc-shell fc-dashboard-shell">
+        <Card className="fc-panel" style={{ marginBottom: 18, padding: 24 }}>
+          <div className="fc-panel-head" style={{ alignItems: "flex-start", marginBottom: 0 }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="fc-kicker">Workspace</div>
+              <h1 className="fc-title-xl" style={{ marginTop: 10 }}>
+                {workspaceName}
+              </h1>
+              <div className="fc-copy" style={{ marginTop: 12, maxWidth: 820 }}>
+                Authenticated operations console backed by live session cookies, policy-aware scan submission, and realtime job streams.
+              </div>
+              <div className="fc-chip-row" style={{ marginTop: 16 }}>
+                <Badge tone={systemStatus?.api === "online" ? "success" : "warning"}>{systemStatus?.api ?? "API loading"}</Badge>
+                <Badge tone={systemStatus?.database === "connected" ? "success" : "critical"}>{systemStatus?.database ?? "Database"}</Badge>
+                {reconnecting ? <Badge tone="warning">Reconnecting</Badge> : null}
+                {refreshing ? <Badge tone="info">Refreshing</Badge> : null}
+              </div>
+            </div>
+
+            <div className="fc-chip-row" style={{ justifyContent: "flex-end" }}>
+              <Button variant="secondary" onClick={handlePushEnable}>
+                Enable push
+              </Button>
+              <Button variant="ghost" onClick={handleLogout}>
+                Sign out
+              </Button>
+              <Link className="fc-button fc-button-ghost" href="/">
+                View landing
+              </Link>
+            </div>
+          </div>
+        </Card>
+
         <div className="fc-dashboard-grid">
           <Card className="fc-sidebar">
             <div>
-              <div className="fc-kicker">Workspace</div>
-              <h1 className="fc-panel-title" style={{ marginTop: 10 }}>
-                {workspaceName}
-              </h1>
+              <div className="fc-kicker">Workspace tools</div>
+              <h2 className="fc-panel-title" style={{ marginTop: 10 }}>
+                Control room
+              </h2>
               <div className="fc-copy" style={{ marginTop: 10 }}>
-                Authenticated operations console backed by live session cookies and policy-aware scan submission.
+                Navigate active scans, findings, reports, signals, and settings without leaving the workspace.
               </div>
             </div>
 
@@ -433,31 +536,19 @@ export function DashboardConsole() {
             </div>
 
             <Card className="fc-panel">
-              <div className="fc-kicker">System</div>
-              <div className="fc-chip-row" style={{ marginTop: 12 }}>
-                <Badge tone={systemStatus?.api === "online" ? "success" : "warning"}>{systemStatus?.api ?? "Loading API"}</Badge>
-                <Badge tone={systemStatus?.database === "connected" ? "success" : "critical"}>{systemStatus?.database ?? "DB"}</Badge>
-                {reconnecting ? <Badge tone="warning">Reconnecting</Badge> : null}
-                {refreshing ? <Badge tone="info">Refreshing</Badge> : null}
+              <div className="fc-kicker">Session</div>
+              <div className="fc-copy" style={{ marginTop: 10 }}>
+                {authUser?.email ?? "No email on file"} · {authUser?.privacy_policy_version ?? "Policy pending"}
               </div>
             </Card>
-
-            <div className="fc-chip-row">
-              <Button variant="secondary" onClick={handlePushEnable}>
-                Enable push
-              </Button>
-              <Button variant="ghost" onClick={handleLogout}>
-                Sign out
-              </Button>
-            </div>
           </Card>
 
           <div className="fc-dashboard-main">
             {loading ? (
               <Card className="fc-panel" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 40px", minHeight: 300 }}>
-                <div style={{ border: "3px solid rgba(255,255,255,0.1)", borderTop: "3px solid var(--fire)", borderRadius: "50%", width: "32px", height: "32px", animation: "spin 1s linear infinite", marginBottom: 20 }} />
-                <div className="fc-panel-title">Synchronizing Console...</div>
-                <div className="fc-copy" style={{ color: "var(--text-dim)" }}>Fetching workspace findings and system status</div>
+                <div style={{ border: "3px solid rgba(255,244,237,0.1)", borderTop: "3px solid var(--fire)", borderRadius: "50%", width: "32px", height: "32px", animation: "fc-spin 1s linear infinite", marginBottom: 20 }} />
+                <div className="fc-panel-title">Synchronizing workspace…</div>
+                <div className="fc-copy" style={{ color: "var(--text-dim)" }}>Fetching findings, status, and audit history.</div>
               </Card>
             ) : (
               <>
@@ -545,8 +636,11 @@ export function DashboardConsole() {
         </div>
       </main>
     </div>
-    </AuthGuard>
   );
+}
+
+export function DashboardConsole() {
+  return <DashboardConsoleContent />;
 }
 
 function OverviewPanel({
@@ -967,7 +1061,6 @@ function SettingsPanel({
           <div className="fc-copy">Policy version: {authUser?.privacy_policy_version ?? "Unknown"}</div>
           <div className="fc-chip-row">
             <Badge tone={authUser?.providers?.github?.connected ? "success" : "neutral"}>GitHub {authUser?.providers?.github?.connected ? "connected" : "not connected"}</Badge>
-            <Badge tone={authUser?.providers?.google?.connected ? "success" : "neutral"}>Google {authUser?.providers?.google?.connected ? "connected" : "not connected"}</Badge>
           </div>
         </div>
       </Card>

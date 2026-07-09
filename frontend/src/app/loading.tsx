@@ -1,53 +1,35 @@
-import { SiteHeader, SiteFooter } from "../components/SiteChrome";
+import { Card } from "../components/ui/Card";
 
 export default function Loading() {
   return (
-    <div className="fc-page" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-      <SiteHeader />
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
-        <div style={{ position: "relative", width: 80, height: 80, marginBottom: 24 }}>
-          {/* Outer fire-orange glowing ring */}
-          <div style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: "50%",
-            border: "3px solid transparent",
-            borderTopColor: "var(--fire)",
-            borderBottomColor: "var(--fire-soft)",
-            animation: "spin 1.5s linear infinite",
-            filter: "drop-shadow(0 0 8px var(--fire))"
-          }} />
-          {/* Inner blue/cyan secondary ring spinning opposite */}
-          <div style={{
-            position: "absolute",
-            inset: 10,
-            borderRadius: "50%",
-            border: "3px solid transparent",
-            borderLeftColor: "var(--cyan)",
-            borderRightColor: "rgba(108, 231, 255, 0.2)",
-            animation: "spin-reverse 1s linear infinite"
-          }} />
+    <div className="fc-page" style={{ display: "grid", minHeight: "100vh", placeItems: "center", padding: "40px 20px" }}>
+      <Card className="fc-panel" style={{ maxWidth: 540, width: "100%", padding: 36, textAlign: "center" }}>
+        <div
+          className="fc-brand-mark"
+          style={{ margin: "0 auto 22px auto", fontSize: "1.3rem", fontWeight: 700, background: "linear-gradient(135deg, var(--red), rgba(255, 95, 109, 0.2))" }}
+        >
+          FC
         </div>
-        <h2 style={{ fontSize: "1.2rem", fontWeight: 600, color: "var(--text)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-          Initializing Platform
-        </h2>
-        <p className="fc-muted" style={{ fontSize: "0.9rem", marginTop: 8 }}>
-          Loading security orchestration components...
+        <h1 style={{ fontSize: "1.9rem", marginBottom: 12, background: "linear-gradient(135deg, var(--red), var(--fire))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          Loading Fire Crow
+        </h1>
+        <p className="fc-copy" style={{ color: "var(--text-dim)", marginBottom: 22 }}>
+          Preparing the landing, authentication, and workspace routes.
         </p>
-
-        {/* Inline CSS animation since we are in a static context or standard layout */}
-        <style dangerouslySetInnerHTML={{ __html: `
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          @keyframes spin-reverse {
-            0% { transform: rotate(360deg); }
-            100% { transform: rotate(0deg); }
-          }
-        `}} />
-      </main>
-      <SiteFooter />
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              border: "3px solid rgba(255,255,255,0.12)",
+              borderTopColor: "var(--fire)",
+              animation: "fc-spin 1s linear infinite",
+            }}
+          />
+        </div>
+      </Card>
     </div>
   );
 }

@@ -32,6 +32,9 @@ class MFAEnforcementMiddleware(BaseHTTPMiddleware):
         if request.method in {"GET", "HEAD", "OPTIONS", "TRACE"}:
             return await call_next(request)
 
+        if settings.DATABASE_BACKEND == "neo4j":
+            return await call_next(request)
+
         if not settings.MFA_ENFORCE_FOR_ADMINS:
             return await call_next(request)
 

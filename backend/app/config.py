@@ -93,23 +93,42 @@ class Settings(BaseSettings):
 
         if not self.DEBUG:
             missing = []
-            for name in [
-                "SECRET_KEY",
-                "DATABASE_URL",
-            ]:
+            required_names = ["SECRET_KEY"]
+            if self.DATABASE_BACKEND == "postgresql":
+                required_names.append("DATABASE_URL")
+            for name in required_names:
                 if not getattr(self, name):
                     missing.append(name)
             if missing:
                 raise RuntimeError(
                     f"Missing critical secrets for production: {', '.join(missing)}"
                 )
-            if self.DATABASE_URL.startswith("sqlite"):
+            if self.DATABASE_BACKEND == "postgresql" and self.DATABASE_URL.startswith("sqlite"):
                 raise ValueError("SQLite DATABASE_URL is only allowed when DEBUG=True.")
             if self.FIRE_CROW_SCANNER_IMAGE.endswith(":latest"):
                 raise ValueError("FIRE_CROW_SCANNER_IMAGE must be pinned in production and cannot use :latest.")
             if not getattr(self, "REPORT_LOCAL_FALLBACK", True):
                 if not self.R2_ACCESS_KEY_ID or not self.R2_SECRET_ACCESS_KEY or not self.R2_BUCKET_NAME or not self.R2_ENDPOINT_URL:
                     raise ValueError("Cloud storage configuration is missing, but REPORT_LOCAL_FALLBACK is False.")
+
+        if self.DATABASE_BACKEND == "neo4j":
+            if not self.NEO4J_URI:
+                raise ValueError("NEO4J_URI is required when DATABASE_BACKEND=neo4j.")
+            if not self.NEO4J_USER:
+                raise ValueError("NEO4J_USER is required when DATABASE_BACKEND=neo4j.")
+            if not self.NEO4J_PASSWORD:
+                raise ValueError("NEO4J_PASSWORD is required when DATABASE_BACKEND=neo4j.")
+            if len(self.NEO4J_PASSWORD) < 16:
+                raise ValueError("NEO4J_PASSWORD must be at least 16 characters.")
+            if self.NEO4J_PASSWORD.strip().lower() in {"password", "neo4j", "changeme", "change_me", "admin"}:
+                raise ValueError("NEO4J_PASSWORD cannot use a default or known weak value.")
+            if self.NEO4J_ENFORCE_TLS and not self.NEO4J_URI.startswith(("neo4j+s://", "bolt+s://")):
+                local_prefixes = ("neo4j://localhost", "bolt://localhost", "neo4j://127.0.0.1", "bolt://127.0.0.1")
+                if not any(self.NEO4J_URI.startswith(prefix) for prefix in local_prefixes):
+                    raise ValueError("NEO4J_URI must use TLS for non-local deployments when NEO4J_ENFORCE_TLS=true.")
+
+        if self.DATABASE_BACKEND == "postgresql" and not self.POSTGRES_MIGRATION_SOURCE_URL:
+            object.__setattr__(self, "POSTGRES_MIGRATION_SOURCE_URL", self.DATABASE_URL)
 
         # Inject REDIS_PASSWORD into REDIS_URL if provided
         if self.REDIS_PASSWORD:
@@ -184,6 +203,7 @@ class Settings(BaseSettings):
     IAM_SERVICE_TOKEN_PREFIX: str = Field(default="fc_svc_", validation_alias="IAM_SERVICE_TOKEN_PREFIX")
 
     # --- Database & Cache ---
+    DATABASE_BACKEND: Literal["postgresql", "neo4j"] = Field(default="postgresql", validation_alias="DATABASE_BACKEND")
     DATABASE_URL: str = Field(
         default="",
         validation_alias="DATABASE_URL"
@@ -192,6 +212,14 @@ class Settings(BaseSettings):
     DATABASE_MAX_OVERFLOW: int = Field(default=50)
     DATABASE_POOL_TIMEOUT: int = Field(default=30)
     DATABASE_POOL_RECYCLE: int = Field(default=1800)
+    POSTGRES_MIGRATION_SOURCE_URL: str = Field(default="", validation_alias="POSTGRES_MIGRATION_SOURCE_URL")
+    NEO4J_URI: str = Field(default="", validation_alias="NEO4J_URI")
+    NEO4J_USER: str = Field(default="", validation_alias="NEO4J_USER")
+    NEO4J_PASSWORD: str = Field(default="", validation_alias="NEO4J_PASSWORD")
+    NEO4J_DATABASE: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")
+    NEO4J_MAX_CONNECTION_POOL_SIZE: int = Field(default=100, validation_alias="NEO4J_MAX_CONNECTION_POOL_SIZE")
+    NEO4J_CONNECTION_TIMEOUT_SECONDS: int = Field(default=15, validation_alias="NEO4J_CONNECTION_TIMEOUT_SECONDS")
+    NEO4J_ENFORCE_TLS: bool = Field(default=True, validation_alias="NEO4J_ENFORCE_TLS")
     QUERY_CACHE_MAX_SIZE: int = Field(default=10000, validation_alias="QUERY_CACHE_MAX_SIZE")
     HOUSEKEEPING_INTERVAL_SECONDS: int = Field(default=3600, validation_alias="HOUSEKEEPING_INTERVAL_SECONDS")
     REDIS_URL: str = Field(

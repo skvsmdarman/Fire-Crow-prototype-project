@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.graph.store import graph_store
 from app.models.user import UserActivityEvent
 from app.services.redaction import safe_json_dumps
 
@@ -15,12 +17,28 @@ def _utc_now() -> datetime:
 
 
 def append_user_activity(
-    db: Session,
+    db: Session | None,
     *,
     user_id: str,
     action: str,
     details: Optional[dict[str, Any]] = None,
 ) -> UserActivityEvent:
+    if settings.DATABASE_BACKEND == "neo4j":
+        graph_store.create_user_activity(
+            user_id=user_id,
+            action=action,
+            details_json=safe_json_dumps(details, max_length=4096) if details else None,
+        )
+        return UserActivityEvent(
+            user_id=user_id,
+            action=action,
+            details_json=safe_json_dumps(details, max_length=4096) if details else None,
+            created_at=_utc_now(),
+        )
+
+    if db is None:
+        raise RuntimeError("Relational database session is required for user activity writes.")
+
     event = UserActivityEvent(
         user_id=user_id,
         action=action,
@@ -32,11 +50,17 @@ def append_user_activity(
 
 
 def list_user_activities(
-    db: Session,
+    db: Session | None,
     *,
     user_id: str,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
+    if settings.DATABASE_BACKEND == "neo4j":
+        return graph_store.list_user_activities(user_id=user_id, limit=limit)
+
+    if db is None:
+        raise RuntimeError("Relational database session is required for user activity reads.")
+
     rows = (
         db.query(UserActivityEvent)
         .filter(UserActivityEvent.user_id == user_id)
@@ -60,6 +84,9 @@ def list_user_activities(
 
 
 def delete_user_activities(db: Session, *, user_id: str) -> int:
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise NotImplementedError("Delete user activities is not yet implemented for Neo4j.")
+
     return (
         db.query(UserActivityEvent)
         .filter(UserActivityEvent.user_id == user_id)

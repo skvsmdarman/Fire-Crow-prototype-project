@@ -2,7 +2,7 @@ services:
   - type: web
     name: firecrow
     runtime: docker
-    dockerfilePath: Dockerfile
+    dockerfilePath: backend/deploy/Dockerfile
     envVars:
       - key: DATABASE_URL
         sync: false

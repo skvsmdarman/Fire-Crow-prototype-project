@@ -13,6 +13,10 @@ logger = logging.getLogger("firecrow.models.database")
 LOCAL_SQLITE_URL = f"sqlite:///{(WORKSPACE_DIR / 'firecrow.db').resolve().as_posix()}"
 
 
+class Base(DeclarativeBase):
+    pass
+
+
 class _QueryCache:
     """Simple in-memory TTL cache for frequently accessed database queries."""
     
@@ -107,56 +111,56 @@ def _register_pool_metric_hooks(db_engine: Any) -> None:
 db_url = settings.DATABASE_URL
 engine: Any = None
 
-if "postgresql" in db_url:
-    try:
-        connect_args: dict[str, Any] = {"connect_timeout": 5}
-        if not settings.DEBUG:
-            connect_args["sslmode"] = "require"
-            
-        # Create a test engine to verify connection
-        test_engine = create_engine(
-            db_url, 
-            connect_args=connect_args,
+if settings.DATABASE_BACKEND == "neo4j":
+    logger.info("Skipping SQLAlchemy engine initialization because DATABASE_BACKEND=neo4j.")
+else:
+    if "postgresql" in db_url:
+        try:
+            connect_args: dict[str, Any] = {"connect_timeout": 5}
+            if not settings.DEBUG:
+                connect_args["sslmode"] = "require"
+
+            test_engine = create_engine(
+                db_url,
+                connect_args=connect_args,
+                pool_pre_ping=True,
+                pool_size=settings.DATABASE_POOL_SIZE,
+                max_overflow=getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
+                pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+                pool_recycle=settings.DATABASE_POOL_RECYCLE,
+            )
+            with test_engine.connect() as conn:
+                conn.execute(select(1))
+            engine = test_engine
+            logger.info("Successfully connected to PostgreSQL database.")
+        except Exception as e:
+            if not settings.DEBUG:
+                logger.critical(
+                    "FATAL: Cannot connect to PostgreSQL in production: %s. "
+                    "Set DATABASE_URL to a valid PostgreSQL connection string.",
+                    redact_text(str(e)),
+                )
+                raise RuntimeError("PostgreSQL connection required in production.") from e
+
+            logger.warning(
+                "Failed to connect to PostgreSQL database: %s. "
+                "Falling back to local SQLite database 'firecrow.db'.",
+                redact_text(str(e)),
+            )
+            db_url = LOCAL_SQLITE_URL
+
+    if engine is None:
+        engine = create_engine(
+            db_url,
             pool_pre_ping=True,
             pool_size=settings.DATABASE_POOL_SIZE,
             max_overflow=getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
             pool_timeout=settings.DATABASE_POOL_TIMEOUT,
             pool_recycle=settings.DATABASE_POOL_RECYCLE,
-        )
-        with test_engine.connect() as conn:
-            conn.execute(select(1))
-        engine = test_engine
-        logger.info("Successfully connected to PostgreSQL database.")
-    except Exception as e:
-        if not settings.DEBUG:
-            # In production, PostgreSQL MUST be available — do not fall back to SQLite
-            logger.critical(
-                "FATAL: Cannot connect to PostgreSQL in production: %s. "
-                "Set DATABASE_URL to a valid PostgreSQL connection string.",
-                redact_text(str(e)),
-            )
-            raise RuntimeError("PostgreSQL connection required in production.") from e
+        ) if not db_url.startswith("sqlite") else create_engine(db_url)
+        logger.info("Initialized database engine using URL: %s", redact_text(db_url))
 
-        logger.warning(
-            "Failed to connect to PostgreSQL database: %s. "
-            "Falling back to local SQLite database 'firecrow.db'.",
-            redact_text(str(e)),
-        )
-        db_url = LOCAL_SQLITE_URL
-
-if engine is None:
-    # Initialize engine for SQLite or other URL
-    engine = create_engine(
-        db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DATABASE_POOL_SIZE,
-        max_overflow=getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
-        pool_timeout=settings.DATABASE_POOL_TIMEOUT,
-        pool_recycle=settings.DATABASE_POOL_RECYCLE,
-    ) if not db_url.startswith("sqlite") else create_engine(db_url)
-    logger.info("Initialized database engine using URL: %s", redact_text(db_url))
-
-_register_pool_metric_hooks(engine)
+    _register_pool_metric_hooks(engine)
 
 
 # Legacy auto-DDL is DEPRECATED. Use Alembic migrations instead.
@@ -229,9 +233,6 @@ def _ensure_user_compatibility() -> None:
         if "github_token_updated_at" not in columns:
             logger.warning("DEPRECATED: Missing 'github_token_updated_at' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN github_token_updated_at TIMESTAMP")
-        if "google_id" not in columns:
-            logger.warning("DEPRECATED: Missing 'google_id' column. Use Alembic migration instead.")
-            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN google_id VARCHAR(255)")
         if "privacy_policy_version" not in columns:
             logger.warning("DEPRECATED: Missing 'privacy_policy_version' column. Use Alembic migration instead.")
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN privacy_policy_version VARCHAR(64)")
@@ -546,16 +547,26 @@ def check_pending_migrations() -> bool:
         return False
 
 # Create sessionmaker
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-# Base class for modern SQLAlchemy 2.0 models
-class Base(DeclarativeBase):
-    pass
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine is not None else None
 
 
 # Dependency for FastAPI endpoints to yield a DB session
 def get_db():
+    if SessionLocal is None:
+        yield None
+        return
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_optional_db():
+    if SessionLocal is None:
+        yield None
+        return
+
     db = SessionLocal()
     try:
         yield db
