@@ -1,21 +1,25 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
-from backend.app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
-from backend.app.orchestrator.maestro import cleanup_resources, maestro_graph
-from backend.app.orchestrator.runtime_context import (
+from app.config import settings
+from app.models import AgentLog, AuditJob, FindingModel, SessionLocal, User
+from app.orchestrator.maestro import cleanup_resources, maestro_graph
+from app.orchestrator.runtime_context import (
     JobCancellationRequested,
     get_runtime_state,
     get_runtime_tracker,
     initialize_runtime_tracker,
     reset_runtime_tracker,
 )
-from backend.app.schemas import AuditState, JobStatus
-from backend.app.services.auth import decrypt_provider_token
+from app.schemas import AuditState, JobStatus
+from app.services.auth import decrypt_provider_token
 
 logger = logging.getLogger("firecrow.orchestrator.runtime")
+
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
 def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str, custom_email: str = "") -> AuditState:
@@ -63,8 +67,55 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         )
         db.commit()
 
-        graph_result = maestro_graph.invoke(initial_state)
-        result_state = AuditState.model_validate(graph_result)
+        try:
+            future = _executor.submit(maestro_graph.invoke, initial_state)
+            graph_result = future.result(timeout=settings.MAX_SCAN_DURATION)
+            result_state = AuditState.model_validate(graph_result)
+        except FuturesTimeoutError:
+            execution_error = TimeoutError(f"Orchestration exceeded maximum scan duration of {settings.MAX_SCAN_DURATION}s")
+            logger.error("Audit job %s timed out after %ds", job_id, settings.MAX_SCAN_DURATION)
+            
+            from app.orchestrator.runtime_context import get_runtime_tracker as get_tracker
+            tracker = get_tracker()
+            if tracker:
+                tracker_state = tracker.state
+
+                result_state = AuditState(
+                    job_id=job_id,
+                    user_id=user_id,
+                    repo_url=repo_url,
+                    repo_branch=repo_branch,
+                    status=JobStatus.FAILED,
+                    errors=[{"phase": "orchestration", "message": f"Scan timed out after {settings.MAX_SCAN_DURATION}s"}],
+                    custom_email=custom_email,
+                    sandbox_container_id=tracker_state.get("sandbox_container_id", ""),
+                )
+                from app.orchestrator.runtime_context import sync_runtime_state
+                sync_runtime_state(result_state)
+        except Exception as exc:
+            execution_error = exc
+            if not isinstance(exc, JobCancellationRequested):
+                logger.exception("Orchestrator graph execution or state validation failed: %s", exc)
+
+                from app.orchestrator.runtime_context import get_runtime_tracker as get_tracker
+                tracker = get_tracker()
+                if tracker:
+                    tracker_state = tracker.state
+
+                    # Fallback to a safe, failed state while preserving state collected so far
+                    result_state = AuditState(
+                        job_id=job_id,
+                        user_id=user_id,
+                        repo_url=repo_url,
+                        repo_branch=repo_branch,
+                        status=JobStatus.FAILED,
+                        errors=[{"phase": "orchestration", "message": f"State validation failed: {str(exc)}"}],
+                        custom_email=custom_email,
+                        sandbox_container_id=tracker_state.get("sandbox_container_id", ""),
+                    )
+                    # Ensure get_runtime_state() returns this fallback if accessed downstream
+                    from app.orchestrator.runtime_context import sync_runtime_state
+                    sync_runtime_state(result_state)
     except Exception as exc:
         execution_error = exc
         if not isinstance(exc, JobCancellationRequested):
@@ -87,7 +138,7 @@ def execute_audit_job(job_id: str, user_id: str, repo_url: str, repo_branch: str
         result_state = tracked_state
         reset_runtime_tracker(tracker_token)
         try:
-            from backend.app.services.housekeeping import run_housekeeping
+            from app.services.housekeeping import run_housekeeping
             run_housekeeping(db)
         except Exception as hk_err:
             logger.exception("Failed to run DB housekeeping after job execution: %s", hk_err)
@@ -164,8 +215,8 @@ def _persist_final_job_state(
 
     # Trigger Push Notification
     try:
-        from backend.app.models import PushSubscription
-        from backend.app.services.push_notify import send_web_push
+        from app.models import PushSubscription
+        from app.services.push_notify import send_web_push
         import json
         
         subscriptions = db.query(PushSubscription).filter(PushSubscription.user_id == job.user_id).all()

@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
-from backend.app.models.database import Base
-from backend.app.schemas.audit_state import JobStatus, Severity
+from app.models.database import Base
+from app.schemas.audit_state import JobStatus, Severity
 
 
 def generate_uuid() -> str:
@@ -29,6 +29,7 @@ class AuditJob(Base):
     report_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     security_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    legal_hold: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Relationships
     findings: Mapped[list["FindingModel"]] = relationship(

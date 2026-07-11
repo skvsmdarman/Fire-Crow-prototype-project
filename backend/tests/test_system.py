@@ -1,14 +1,15 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from backend.app.main import app
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.models import SessionLocal, User, get_db
+from app.main import app
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.models import SessionLocal, User, get_db
+from app.models.role import Role
 
 client = TestClient(app)
 
 
-def _register_user(username: str, role: str) -> tuple[dict[str, str], str]:
+def _register_user(username: str, role_name: str) -> tuple[dict[str, str], str]:
     # Register the user
     register_response = client.post(
         "/api/v1/auth/register",
@@ -21,12 +22,22 @@ def _register_user(username: str, role: str) -> tuple[dict[str, str], str]:
     )
     user_id = register_response.json()["user_id"]
     
-    # Update the user's role in the DB
+    # Create Role and link to user in the DB
     db = SessionLocal()
     try:
+        role = db.query(Role).filter(Role.name == role_name).first()
+        if not role:
+            role = Role(
+                name=role_name,
+                description=f"Test role: {role_name}",
+                can_start_scans=True,
+                can_view_reports=True,
+            )
+            db.add(role)
+            db.flush()
         user = db.query(User).filter(User.id == user_id).first()
         if user:
-            user.role_id = role
+            user.role_id = role.id
             db.commit()
     finally:
         db.close()

@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, String, Boolean
-from backend.app.models.database import Base
+from app.models.database import Base
 
 class Role(Base):
     __tablename__ = "roles"

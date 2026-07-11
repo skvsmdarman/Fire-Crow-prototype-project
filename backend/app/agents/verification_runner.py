@@ -1,6 +1,6 @@
 import logging
-from backend.app.orchestrator.runtime import execute_audit_job
-from backend.app.models import SessionLocal, AuditJob
+from app.orchestrator.runtime import execute_audit_job
+from app.models import SessionLocal, AuditJob
 
 logger = logging.getLogger("firecrow.verification")
 

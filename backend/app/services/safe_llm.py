@@ -3,7 +3,7 @@ import logging
 import urllib.request
 from typing import Optional
 
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("firecrow.safe_llm")
 
@@ -37,6 +37,16 @@ def safe_llm_call(prompt: str, max_tokens: int = 50, temperature: float = 0.0) -
     if not settings.GEMINI_API_KEY or not settings.GEMINI_MODEL:
         return None
 
+    # Check budget if we are inside a running job context
+    from app.orchestrator.runtime_context import get_runtime_tracker, apply_runtime_updates
+    tracker = get_runtime_tracker()
+    remaining_budget = 5.0
+    if tracker is not None:
+        remaining_budget = tracker.state.get("budget_remaining_usd", 5.0)
+        if remaining_budget <= 0.0:
+            logger.warning("AI budget exhausted for this job. Skipping LLM call.")
+            return None
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -54,6 +64,14 @@ def safe_llm_call(prompt: str, max_tokens: int = 50, temperature: float = 0.0) -
         with urllib.request.urlopen(req, timeout=getattr(settings, "GEMINI_TIMEOUT_SECONDS", 30)) as response:
             body = json.loads(response.read().decode("utf-8"))
             text = body["candidates"][0]["content"]["parts"][0]["text"]
+            
+            # Decrement budget by estimated cost per call (e.g. $0.002)
+            if tracker is not None:
+                cost = 0.002
+                new_budget = max(0.0, remaining_budget - cost)
+                apply_runtime_updates({"budget_remaining_usd": new_budget})
+                logger.info("Decremented job AI budget by $0.002. Remaining: $%.4f", new_budget)
+
             return text.strip() if text else None
     except Exception as exc:
         logger.warning("Safe LLM call failed: %s", exc)

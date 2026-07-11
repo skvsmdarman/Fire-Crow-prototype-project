@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import logging
@@ -8,16 +8,15 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings, WORKSPACE_DIR, _global_state
-from backend.app.models.compliance import ArtifactObject, Membership, RetentionPolicy
-from backend.app.models.user import User
-from backend.app.services.redaction import redact_text
-from backend.app.services.reporter import _is_r2_auth_error
+from app.config import settings, WORKSPACE_DIR, _global_state
+from app.models.compliance import ArtifactObject, Membership, RetentionPolicy
+from app.models.user import User
+from app.services.redaction import redact_text
+from app.services.reporter import _is_r2_auth_error
 
 logger = logging.getLogger("firecrow.services.storage")
 
@@ -114,7 +113,7 @@ class StorageService:
                     self._s3_disabled = True
                     self.s3_client = None
                 
-                from backend.app.config import settings
+                from app.config import settings
                 if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
                     logger.info("Falling back to local storage")
                     self._write_local_file(object_key, data)
@@ -122,7 +121,7 @@ class StorageService:
                 else:
                     raise HTTPException(status_code=500, detail="Cloud storage upload failed and local fallback is disabled.")
         else:
-            from backend.app.config import settings
+            from app.config import settings
             if getattr(settings, "REPORT_LOCAL_FALLBACK", True):
                 self._write_local_file(object_key, data)
                 storage_provider = "local"
@@ -169,7 +168,10 @@ class StorageService:
         if not user:
             return False
             
-        if user.role in ["admin", "superadmin"]:
+        if user.is_admin:
+            return True
+            
+        if user.tenant_id and user.tenant_id == organization_id:
             return True
             
         membership = db.query(Membership).filter(
@@ -188,7 +190,16 @@ class StorageService:
 
         # Verify access
         if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Not authorized to access this artifact")
+            has_job_access = False
+            if artifact.job_id:
+                try:
+                    from app.api.audit_queries import get_owned_job_or_404
+                    get_owned_job_or_404(db, artifact.job_id, user_id)
+                    has_job_access = True
+                except Exception:
+                    pass
+            if not has_job_access:
+                raise HTTPException(status_code=403, detail="Not authorized to access this artifact")
 
         # Get file data based on storage provider
         if artifact.storage_provider == "cloudflare_r2" and self.s3_client is not None:
@@ -218,6 +229,32 @@ class StorageService:
         artifact, file_path = result
         return file_path, artifact.object_key.split("/")[-1], artifact.mime_type
 
+    def get_presigned_url(
+        self,
+        db: Session,
+        artifact_id: str,
+        user_id: str,
+        *,
+        expires_in: int = 3600,
+    ) -> str:
+        result = self.get_artifact(db, artifact_id, user_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+
+        artifact, _ = result
+        if artifact.storage_provider != "cloudflare_r2" or self.s3_client is None:
+            raise HTTPException(status_code=400, detail="Presigned URLs are only available for cloud storage artifacts")
+
+        try:
+            return self.s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.r2_bucket, "Key": artifact.object_key},
+                ExpiresIn=expires_in,
+            )
+        except Exception as exc:
+            logger.error("Failed to generate presigned URL: %s", redact_text(str(exc)))
+            raise HTTPException(status_code=500, detail="Failed to generate presigned URL") from exc
+
     def delete_artifact(self, db: Session, artifact_id: str, user_id: str) -> bool:
         """
         Soft deletes an artifact from DB and optionally queues for hard deletion.
@@ -227,7 +264,16 @@ class StorageService:
             return False
 
         if not self.verify_tenant_access(db, user_id, artifact.organization_id):
-            raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
+            has_job_access = False
+            if artifact.job_id:
+                try:
+                    from app.api.audit_queries import get_owned_job_or_404
+                    get_owned_job_or_404(db, artifact.job_id, user_id)
+                    has_job_access = True
+                except Exception:
+                    pass
+            if not has_job_access:
+                raise HTTPException(status_code=403, detail="Not authorized to delete this artifact")
 
         artifact.deletion_status = "pending_deletion"
         artifact.deleted_at = datetime.now(timezone.utc)

@@ -6,14 +6,15 @@ from pathlib import Path
 import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from backend.app.services.limiter import limiter
+from app.services.limiter import limiter
 from sqlalchemy.orm import Session
 from typing import List
 from urllib.parse import unquote, urlparse
 
-from backend.app.api.audit_queries import get_owned_job_or_404
-from backend.app.config import WORKSPACE_DIR, settings
-from backend.app.models import (
+from app.api.audit_queries import get_owned_job_or_404
+from app.config import WORKSPACE_DIR, settings
+from app.graph.store import graph_store
+from app.models import (
     AgentLog,
     AuditArtifact,
     AuditJob,
@@ -21,10 +22,12 @@ from backend.app.models import (
     FindingModel,
     Membership,
     User,
+    DomainVerification,
     get_db,
 )
+from app.models.database import get_optional_db
 from sqlalchemy import or_
-from backend.app.schemas import (
+from app.schemas import (
     JobDetailResponse,
     JobResponse,
     JobStatus,
@@ -32,11 +35,12 @@ from backend.app.schemas import (
     build_job_detail_response,
     build_job_response,
 )
-from backend.app.orchestrator.runtime import execute_audit_job
-from backend.app.services.auth import get_current_user
-from backend.app.services.redaction import redact_text
-from backend.app.services.safe_llm import is_llm_enabled, safe_llm_call
-from backend.app.workers.celery_app import run_audit_job_task, celery_app
+from app.orchestrator.runtime import execute_audit_job
+from app.services.auth import get_current_user
+from app.services.redaction import redact_text
+from app.services.safe_llm import is_llm_enabled, safe_llm_call
+from app.services.security_log import record_user_activity
+from app.workers.celery_app import run_audit_job_task, celery_app
 
 logger = logging.getLogger("firecrow.api.audit")
 router = APIRouter(prefix="/audit", tags=["Security Auditing"])
@@ -44,6 +48,16 @@ router = APIRouter(prefix="/audit", tags=["Security Auditing"])
 REPORTS_DIR = WORKSPACE_DIR / "workspace" / "reports"
 
 _bg_semaphore = asyncio.Semaphore(5)
+
+import threading
+from collections import defaultdict
+
+_submission_locks = defaultdict(threading.Lock)
+_locks_mutex = threading.Lock()
+
+def _get_user_lock(user_id: str) -> threading.Lock:
+    with _locks_mutex:
+        return _submission_locks[user_id]
 
 
 def _is_broker_reachable() -> bool:
@@ -68,7 +82,7 @@ def _dispatch_audit_job(
     repo_branch: str,
     custom_email: str = "",
 ) -> None:
-    from backend.app.services.auth import _get_redis_client
+    from app.services.auth import _get_redis_client
     redis_client = _get_redis_client()
     
     celery_alive = False
@@ -77,6 +91,7 @@ def _dispatch_audit_job(
 
     if not celery_alive:
         logger.warning("Celery worker heartbeat missing or Redis unreachable. Falling back to local BackgroundTasks.")
+
         async def _run_with_limit():
             async with _bg_semaphore:
                 await asyncio.to_thread(
@@ -91,7 +106,7 @@ def _dispatch_audit_job(
         return
 
     try:
-        run_audit_job_task.apply_async(
+        run_audit_job_task.apply_async(  # type: ignore
             kwargs={
                 "job_id": job_id,
                 "user_id": user_id,
@@ -168,7 +183,7 @@ def _allowed_external_report_url(report_pdf_url: str) -> bool:
 
 
 def _persisted_report_html_response(db: Session, job_id: str) -> HTMLResponse | None:
-    from backend.app.models.audit_job import AuditReport
+    from app.models.audit_job import AuditReport
     report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
     if report and report.html_content:
         return HTMLResponse(content=report.html_content)
@@ -205,6 +220,28 @@ def _extract_repo_owner_name(url: str) -> tuple[str, str]:
     return "unknown", "unknown"
 
 
+def _extract_domain(url: str) -> str | None:
+    try:
+        if "github.com" in url:
+            parsed = urlparse(url)
+            path_parts = [p for p in parsed.path.split("/") if p]
+            if len(path_parts) >= 2:
+                repo_name = path_parts[1]
+                if repo_name.endswith(".git"):
+                    repo_name = repo_name[:-4]
+                if re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", repo_name.lower()):
+                    return repo_name.lower()
+        else:
+            parsed = urlparse(url)
+            netloc = parsed.netloc or parsed.path
+            domain = netloc.split(":")[0].lower()
+            if re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", domain):
+                return domain
+    except Exception:
+        pass
+    return None
+
+
 @router.post("/submit", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def submit_audit(
@@ -215,45 +252,74 @@ async def submit_audit(
     user_id: str = Depends(get_current_user)
 ):
     """Submit a security audit job for a remote repository. Dispatches Celery task or falls back to BackgroundTasks."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audit submission is not enabled in Neo4j mode until the orchestrator persistence path is migrated.",
+        )
+
     if payload.custom_email:
         from email_validator import validate_email, EmailNotValidError
         try:
             validate_email(payload.custom_email, check_deliverability=False)
         except EmailNotValidError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise HTTPException(status_code=422, detail="Invalid email address format.")
 
-    if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
+    lock = _get_user_lock(user_id)
+    with lock:
+        db.rollback()  # Reset transaction snapshot to read latest committed data
+
+        # Check domain verification if a domain-like target/repo is specified
+        target_domain = _extract_domain(payload.repo_url)
+        if target_domain:
+            verified_record = (
+                db.query(DomainVerification)
+                .filter(
+                    DomainVerification.domain == target_domain,
+                    DomainVerification.user_id == user_id,
+                    DomainVerification.verified == True,
+                )
+                .first()
+            )
+            if not verified_record:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"The domain '{target_domain}' must be verified before initiating a scan. "
+                           f"Please register and verify domain '{target_domain}' in Settings.",
+                )
+
+        if _active_job_count(db, user_id) >= settings.MAX_ACTIVE_JOBS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Active audit limit reached. Complete or cancel an audit before starting more than {settings.MAX_ACTIVE_JOBS_PER_USER}.",
+            )
+
+        from app.services.auth import _get_redis_client
+        redis_client = _get_redis_client()
+        celery_alive = False
+        if redis_client and redis_client.get("celery:heartbeat"):
+            celery_alive = True
+
+        if not celery_alive and _bg_semaphore.locked():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Server is currently at maximum background capacity. Please try again later.",
+            )
+
+        # Scoping job to user's tenant_id
+        user = db.query(User).filter(User.id == user_id).with_for_update(of=User).first()
+        tenant_id = user.tenant_id if user else None
+
+        job = AuditJob(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            repo_url=payload.repo_url,
+            repo_branch=payload.repo_branch,
+            status=JobStatus.QUEUED
         )
-
-    from backend.app.services.auth import _get_redis_client
-    redis_client = _get_redis_client()
-    celery_alive = False
-    if redis_client and redis_client.get("celery:heartbeat"):
-        celery_alive = True
-
-    if not celery_alive and _bg_semaphore.locked():
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Server is currently at maximum capacity. Please try again later.",
-        )
-
-    # Scoping job to user's tenant_id
-    user = db.query(User).filter(User.id == user_id).first()
-    tenant_id = user.tenant_id if user else None
-
-    job = AuditJob(
-        user_id=user_id,
-        tenant_id=tenant_id,
-        repo_url=payload.repo_url,
-        repo_branch=payload.repo_branch,
-        status=JobStatus.QUEUED
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+        db.add(job)
+        db.commit()
+        db.refresh(job)
 
     # Create authorization attestation record for compliance logging
     owner, name = _extract_repo_owner_name(payload.repo_url)
@@ -276,6 +342,18 @@ async def submit_audit(
     )
     db.add(attestation)
     db.commit()
+    
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="audit.submit",
+        request=request,
+        details={
+            "job_id": job.id,
+            "repo_url": payload.repo_url,
+            "repo_branch": payload.repo_branch,
+        }
+    )
 
     _dispatch_audit_job(
         background_tasks,
@@ -290,11 +368,17 @@ async def submit_audit(
 
 
 @router.get("/jobs", response_model=List[JobResponse])
+@limiter.limit("30/minute")
 async def list_jobs(
-    db: Session = Depends(get_db),
+    request: Request,
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user)
 ):
     """Retrieve all jobs submitted by the current authenticated tenant (Tenant Isolation)."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        jobs = graph_store.list_jobs_for_user(user_id)
+        return [build_job_response(job) for job in jobs]
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return []
@@ -320,25 +404,38 @@ async def list_jobs(
 
 
 @router.get("/job/{job_id}", response_model=JobDetailResponse)
+@limiter.limit("30/minute")
 async def get_job_detail(
     job_id: str,
-    db: Session = Depends(get_db),
+    request: Request,
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user)
 ):
     """Retrieve details and findings of a specific job (scoped to authenticated tenant)."""
     job = get_owned_job_or_404(db, job_id, user_id)
-    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+    if settings.DATABASE_BACKEND == "neo4j":
+        findings = graph_store.list_findings_for_job(job_id)
+    else:
+        findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
 
     return build_job_detail_response(job, findings)
 
 
 @router.delete("/job/{job_id}", status_code=status.HTTP_200_OK)
+@limiter.limit("10/minute")
 async def cancel_job(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
     """Request cancellation for a running or queued job and let the runtime finalize cleanup."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audit cancellation is not enabled in Neo4j mode until the orchestrator persistence path is migrated.",
+        )
+
     job = get_owned_job_or_404(db, job_id, user_id)
 
     if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.PARTIAL]:
@@ -365,117 +462,142 @@ async def cancel_job(
     db.add(cancel_log)
     db.commit()
 
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="audit.cancel",
+        request=request,
+        details={
+            "job_id": job_id,
+            "repo_url": job.repo_url,
+        }
+    )
+
     return {"message": "Job cancellation request recorded successfully", "job_id": job_id}
 
 
 @router.get("/job/{job_id}/report")
+@limiter.limit("15/minute")
 async def download_report(
     job_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
     """Authenticated endpoint to download PDF reports."""
-    try:
-        import os
-        job = get_owned_job_or_404(db, job_id, user_id)
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Report download is not yet enabled in Neo4j mode.",
+        )
 
-        # 1. Try structured database report first (on-the-fly compiling)
-        from backend.app.models.audit_job import AuditReport
-        from backend.app.services.report_service import generate_temp_pdf_report
-        
-        report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
-        if report and report.html_content:
-            try:
-                pdf_path = generate_temp_pdf_report(report.html_content, job_id)
-                if os.path.exists(pdf_path):
-                    # Cleanup task to delete temporary PDF file after serving
-                    def cleanup_temp_pdf(path: str):
-                        try:
-                            if os.path.exists(path):
-                                os.remove(path)
-                                logger.info("Deleted temporary PDF report at %s", path)
-                        except Exception as e:
-                            logger.error("Failed to delete temporary PDF report: %s", str(e))
-                    
-                    background_tasks.add_task(cleanup_temp_pdf, pdf_path)
-                    
-                    return FileResponse(
-                        path=pdf_path,
-                        filename=f"fire_crow_report_{job_id}.pdf",
-                        media_type="application/pdf"
-                    )
-            except Exception as e:
-                logger.error("Failed to generate on-the-fly PDF report: %s", redact_text(str(e)))
+    import os
+    job = get_owned_job_or_404(db, job_id, user_id)
 
-        # 2. Legacy fallback
-        if not job.report_pdf_url:
-            raise HTTPException(status_code=404, detail="Report not ready or missing")
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="report.download",
+        request=request,
+        details={
+            "job_id": job_id,
+            "repo_url": job.repo_url,
+            "report_pdf_url": job.report_pdf_url,
+        }
+    )
 
-        if job.report_pdf_url.startswith("artifact://"):
-            artifact_id = job.report_pdf_url.split("://")[1]
-            from backend.app.services.storage import storage_service
-            try:
-                if storage_service.is_s3_active():
-                    presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)
-                    return RedirectResponse(presigned_url)
-                else:
-                    file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
-                    # If an HTML version exists, serve that instead of a simulated PDF
-                    html_path = file_path.with_suffix(".html")
-                    if file_path.suffix.lower() == ".pdf" and html_path.exists():
-                        file_path = html_path
-                        file_name = html_path.name
-                        media_type = "text/html"
+    # 1. Try structured database report first (on-the-fly compiling)
+    from app.models.audit_job import AuditReport
+    from app.services.report_service import generate_temp_pdf_report
+    
+    report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
+    if report and report.html_content:
+        try:
+            pdf_path = generate_temp_pdf_report(report.html_content, job_id)
+            if os.path.exists(pdf_path):
+                def cleanup_temp_pdf(path: str):
+                    try:
+                        if os.path.exists(path):
+                            os.remove(path)
+                            logger.info("Deleted temporary PDF report at %s", path)
+                    except Exception as e:
+                        logger.error("Failed to delete temporary PDF report: %s", str(e))
+                
+                background_tasks.add_task(cleanup_temp_pdf, pdf_path)
+                
+                return FileResponse(
+                    path=pdf_path,
+                    filename=f"fire_crow_report_{job_id}.pdf",
+                    media_type="application/pdf"
+                )
+        except Exception as e:
+            logger.error("Failed to generate on-the-fly PDF report: %s", redact_text(str(e)))
 
-                    if not file_path.exists():
-                        html_response = _persisted_report_html_response(db, job_id)
-                        if html_response is not None:
-                            return html_response
-                        raise HTTPException(status_code=404, detail="Report file not found on disk")
+    # 2. Legacy fallback
+    if not job.report_pdf_url:
+        raise HTTPException(status_code=404, detail="Report not ready or missing")
 
-                    return FileResponse(path=file_path, filename=file_name, media_type=media_type)
-            except HTTPException as exc:
-                if exc.status_code == 404:
+    if job.report_pdf_url.startswith("artifact://"):
+        artifact_id = job.report_pdf_url.split("://")[1]
+        from app.services.storage import storage_service
+        try:
+            if storage_service.is_s3_active():
+                presigned_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=3600)
+                return RedirectResponse(presigned_url)
+            else:
+                file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
+                html_path = file_path.with_suffix(".html")
+                if file_path.suffix.lower() == ".pdf" and html_path.exists():
+                    file_path = html_path
+                    file_name = html_path.name
+                    media_type = "text/html"
+
+                if not file_path.exists():
                     html_response = _persisted_report_html_response(db, job_id)
                     if html_response is not None:
                         return html_response
-                raise
-            except Exception as e:
-                logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
-                raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
+                    raise HTTPException(status_code=404, detail="Report file not found on disk")
 
-        parsed_report_url = urlparse(job.report_pdf_url)
-        is_legacy_local_report = (
-            parsed_report_url.scheme in {"http", "https"}
-            and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
-            and parsed_report_url.path.startswith("/reports/")
-        )
-        if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
-            file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
-
-            # If an HTML version exists, serve that instead of a simulated PDF
-            html_path = file_path.with_suffix(".html")
-            if file_path.suffix.lower() == ".pdf" and html_path.exists():
-                file_path = html_path
-                file_name = html_path.name
-                media_type = "text/html"
-
-            if not file_path.exists():
+                return FileResponse(path=file_path, filename=file_name, media_type=media_type)
+        except HTTPException as exc:
+            if exc.status_code == 404:
                 html_response = _persisted_report_html_response(db, job_id)
                 if html_response is not None:
                     return html_response
-                raise HTTPException(status_code=404, detail="Report file not found on disk")
+            raise
+        except Exception as e:
+            logger.error("Failed to retrieve report artifact %s: %s", artifact_id, redact_text(str(e)))
+            raise HTTPException(status_code=500, detail="Failed to retrieve report from storage service")
 
-            return FileResponse(path=file_path, filename=file_name, media_type=media_type)
+    parsed_report_url = urlparse(job.report_pdf_url)
+    is_legacy_local_report = (
+        parsed_report_url.scheme in {"http", "https"}
+        and (parsed_report_url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+        and parsed_report_url.path.startswith("/reports/")
+    )
+    if job.report_pdf_url.startswith("/reports/") or is_legacy_local_report:
+        file_path, file_name, media_type = _safe_local_report_path(job.report_pdf_url)
 
-        if _allowed_external_report_url(job.report_pdf_url):
-            return RedirectResponse(job.report_pdf_url)
+        html_path = file_path.with_suffix(".html")
+        if file_path.suffix.lower() == ".pdf" and html_path.exists():
+            file_path = html_path
+            file_name = html_path.name
+            media_type = "text/html"
 
-        logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
-        raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")
-    finally:
-        db.close()
+        if not file_path.exists():
+            html_response = _persisted_report_html_response(db, job_id)
+            if html_response is not None:
+                return html_response
+            raise HTTPException(status_code=404, detail="Report file not found on disk")
+
+        return FileResponse(path=file_path, filename=file_name, media_type=media_type)
+
+    if _allowed_external_report_url(job.report_pdf_url):
+        return RedirectResponse(job.report_pdf_url)
+
+    logger.warning("Rejected unsafe report URL for job %s: %s", job_id, redact_text(job.report_pdf_url))
+    raise HTTPException(status_code=400, detail="Report URL is not from an allowed storage location")
 
 
 from pydantic import BaseModel
@@ -495,23 +617,31 @@ _SEVERITY_RANK = {
 
 
 @router.post("/job/{job_id}/email")
+@limiter.limit("5/minute")
 async def email_report(
     job_id: str,
     payload: EmailReportRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
     """On-demand endpoint to send/resend the PDF report to a user via email."""
+    if settings.DATABASE_BACKEND == "neo4j":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email report delivery is not yet enabled in Neo4j mode.",
+        )
+
     if payload.email:
         from email_validator import validate_email, EmailNotValidError
         try:
             validate_email(payload.email, check_deliverability=False)
         except EmailNotValidError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise HTTPException(status_code=422, detail="Invalid email address format.")
 
     import shutil
-    from backend.app.schemas.audit_state import Severity
-    from backend.app.services.reporter import ReportGenerator
+    from app.schemas.audit_state import Severity
+    from app.services.reporter import ReportGenerator
 
     # 1. Resolves the user job details & compiled findings counts
     job = get_owned_job_or_404(db, job_id, user_id)
@@ -547,8 +677,8 @@ async def email_report(
         )
 
     # 3. Resolves the report and generates a temporary PDF if structured DB report exists
-    from backend.app.models.audit_job import AuditReport
-    from backend.app.services.report_service import generate_temp_pdf_report
+    from app.models.audit_job import AuditReport
+    from app.services.report_service import generate_temp_pdf_report
     
     report = db.query(AuditReport).filter(AuditReport.job_id == job_id).first()
     
@@ -569,7 +699,7 @@ async def email_report(
         pdf_file_path = None
         if job.report_pdf_url.startswith("artifact://"):
             artifact_id = job.report_pdf_url.split("://")[1]
-            from backend.app.services.storage import storage_service
+            from app.services.storage import storage_service
             try:
                 file_path, file_name, media_type = storage_service.download_artifact_local(db, artifact_id, user_id)
                 pdf_file_path = file_path
@@ -599,18 +729,18 @@ async def email_report(
         try:
             shutil.copy2(pdf_file_path, temp_pdf_path)
         except Exception as copy_err:
-            logger.error("Failed to copy PDF report to temporary location: %s", str(copy_err))
+            logger.error("Failed to copy PDF report to temporary location: %s", redact_text(str(copy_err)))
             raise HTTPException(status_code=500, detail="Internal server error preparing report attachment")
 
         # Generate presigned URL specifically for the email link if remote storage
         email_url = job.report_pdf_url
         if job.report_pdf_url.startswith("artifact://"):
             artifact_id = job.report_pdf_url.split("://")[1]
-            from backend.app.services.storage import storage_service
+            from app.services.storage import storage_service
 
             if storage_service.is_s3_active():
                 try:
-                    email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)
+                    email_url = storage_service.get_presigned_url(db, artifact_id, user_id, expires_in=604800)  # type: ignore
                 except Exception:
                     email_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
             else:
@@ -631,20 +761,36 @@ async def email_report(
     if not success:
         raise HTTPException(status_code=500, detail="Failed to send report email.")
 
+    record_user_activity(
+        db,
+        user_id=user_id,
+        action="report.email",
+        request=request,
+        details={
+            "job_id": job_id,
+            "recipient": recipient,
+        }
+    )
+
     return {"message": "Email report triggered successfully.", "recipient": recipient}
 
 
 @router.get("/job/{job_id}/insight")
+@limiter.limit("20/minute")
 async def get_job_insight(
     job_id: str,
-    db: Session = Depends(get_db),
+    request: Request,
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user),
 ):
     if not is_llm_enabled("dashboard_insight"):
         return {"insight": None, "enabled": False}
 
     get_owned_job_or_404(db, job_id, user_id)
-    findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
+    if settings.DATABASE_BACKEND == "neo4j":
+        findings = graph_store.list_findings_for_job(job_id)
+    else:
+        findings = db.query(FindingModel).filter(FindingModel.job_id == job_id).all()
     if not findings:
         return {"insight": "No findings to summarize.", "enabled": True}
 
@@ -671,17 +817,22 @@ async def get_job_insight(
 
 
 @router.get("/job/{job_id}/graph")
+@limiter.limit("20/minute")
 async def get_attack_graph(
     job_id: str,
-    db: Session = Depends(get_db),
+    request: Request,
+    db: Session | None = Depends(get_optional_db),
     user_id: str = Depends(get_current_user)
 ):
     job = get_owned_job_or_404(db, job_id, user_id)
-    from backend.app.models import AuditArtifact
-    artifact = db.query(AuditArtifact).filter(
-        AuditArtifact.job_id == job_id,
-        AuditArtifact.artifact_type == "attack_graph"
-    ).first()
+    if settings.DATABASE_BACKEND == "neo4j":
+        artifact = graph_store.get_artifact_for_job(job_id, "attack_graph")
+    else:
+        from app.models import AuditArtifact
+        artifact = db.query(AuditArtifact).filter(
+            AuditArtifact.job_id == job_id,
+            AuditArtifact.artifact_type == "attack_graph"
+        ).first()
     if not artifact or not artifact.data_json:
         raise HTTPException(404, "Attack graph not generated yet")
     import json

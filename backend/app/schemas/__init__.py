@@ -1,6 +1,6 @@
 # Fire Crow Schemas Package
-from backend.app.schemas.audit_state import AuditState, Finding, JobStatus, Severity
-from backend.app.schemas.audit_api import (
+from app.schemas.audit_state import AuditState, Finding, JobStatus, Severity
+from app.schemas.audit_api import (
     FindingResponse,
     JobDetailResponse,
     JobResponse,
@@ -8,4 +8,10 @@ from backend.app.schemas.audit_api import (
     build_finding_response,
     build_job_detail_response,
     build_job_response,
+)
+from app.schemas.domain_verify import (
+    DomainVerifyRequest,
+    DomainVerifyResponse,
+    DomainCheckRequest,
+    DomainCheckResponse,
 )

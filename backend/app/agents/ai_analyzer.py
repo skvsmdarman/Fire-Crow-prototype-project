@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List, Tuple
 
-from backend.app.schemas import Finding, Severity
+from app.schemas import Finding, Severity
 
 logger = logging.getLogger("firecrow.agents.ai")
 

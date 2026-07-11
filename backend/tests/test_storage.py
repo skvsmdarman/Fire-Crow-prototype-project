@@ -12,14 +12,14 @@ mock_botocore = MagicMock()
 sys.modules['botocore'] = mock_botocore
 sys.modules['botocore.client'] = MagicMock()
 
-from backend.app.services.storage import StorageService
-from backend.app.config import _global_state
+from app.services.storage import StorageService
+from app.config import _global_state
 
 def test_storage_service_r2_disable_on_auth_failure():
     # Reset the disabled flag
     _global_state["r2_disabled"] = False
     
-    with patch("backend.app.services.storage.settings") as mock_settings:
+    with patch("app.services.storage.settings") as mock_settings:
         mock_settings.R2_ENDPOINT_URL = "http://localhost:9000"
         mock_settings.R2_ACCESS_KEY_ID = "invalid_key"
         mock_settings.R2_SECRET_ACCESS_KEY = "invalid_secret"
@@ -51,7 +51,7 @@ def test_storage_service_r2_disable_on_auth_failure():
             )
             
             assert artifact.storage_provider == "local"
-            assert _global_state["r2_disabled"] is True
+            assert _global_state["r2_disabled"]
             assert service.is_s3_active() is False
             
             # Verify subsequent calls immediately bypass S3

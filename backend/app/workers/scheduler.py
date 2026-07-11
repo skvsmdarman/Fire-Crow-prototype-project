@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from backend.app.workers.celery_app import celery_app
+from app.workers.celery_app import celery_app
 
 logger = logging.getLogger("firecrow.scheduler")
 
@@ -13,7 +13,7 @@ def setup_periodic_tasks(sender, **kwargs):
     # Calls trigger_scheduled_scans every day
     sender.add_periodic_task(
         86400.0,
-        trigger_scheduled_scans.s(),
+        trigger_scheduled_scans.s(),  # type: ignore
         name='daily_scheduled_scans'
     )
 

@@ -42,8 +42,8 @@ def upgrade() -> None:
     if _table_exists(inspector, "audit_jobs") and not _index_exists(inspector, "audit_jobs", op.f("ix_audit_jobs_tenant_id")):
         op.create_index(op.f("ix_audit_jobs_tenant_id"), "audit_jobs", ["tenant_id"], unique=False)
 
-    from backend.app.models import Base
-    from backend.app.models.compliance import (
+    from app.models import Base
+    from app.models.compliance import (
         ArtifactObject,
         AuthorizationAttestation,
         ComplianceEvent,
@@ -54,8 +54,8 @@ def upgrade() -> None:
         RetentionPolicy,
         SecretRedactionEvent,
     )
-    from backend.app.models.user import LoginFailure, UserSession
-    from backend.app.models.audit_job import PhaseLedgerModel
+    from app.models.user import LoginFailure, UserSession
+    from app.models.audit_job import PhaseLedgerModel
 
     required_tables = [
         Base.metadata.tables["organizations"],

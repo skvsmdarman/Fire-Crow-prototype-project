@@ -15,10 +15,10 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from backend.app.models.database import get_db
+from app.models.database import get_db
 
-from backend.app.config import settings
-from backend.app.services.crypto import crypto_manager
+from app.config import settings
+from app.services.crypto import crypto_manager
 
 logger = logging.getLogger("firecrow.services.auth")
 
@@ -29,12 +29,15 @@ JWT_ISSUER = "firecrow-api"
 JWT_AUDIENCE = "firecrow-web"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 ACCESS_TOKEN_EXPIRE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+REFRESH_TOKEN_EXPIRE_SECONDS = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 OAUTH_STATE_EXPIRE_MINUTES = 15
 AUTH_COOKIE_NAME = "fc_access_token"
+REFRESH_COOKIE_NAME = "fc_refresh_token"
 
 _password_hasher = PasswordHasher(
-    time_cost=3,
-    memory_cost=65536,
+    time_cost=2,
+    memory_cost=19456,
     parallelism=2,
     hash_len=32,
     salt_len=16,
@@ -74,10 +77,7 @@ def _get_redis_client():
         client.ping()
         _redis_client = client
     except Exception:
-        if settings.DEBUG:
-            logger.info("Redis token denylist unavailable in DEBUG mode.")
-        else:
-            logger.critical("Redis token denylist unavailable in production; token validation will fail closed.")
+        logger.critical("Redis unavailable. Token revocation checks will deny all tokens for safety (fail-closed). Set REDIS_URL or expect degraded auth.")
         _redis_client = None
 
     return _redis_client
@@ -123,7 +123,7 @@ def create_access_token(
     token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
     if db is not None:
-        from backend.app.models.user import UserSession
+        from app.models.user import UserSession
         ip_str = ip or "unknown"
         ua_str = user_agent or "unknown"
         ip_h = hashlib.sha256(ip_str.encode("utf-8")).hexdigest()
@@ -143,6 +143,71 @@ def create_access_token(
         db.commit()
 
     return token
+
+
+def create_refresh_token(
+    user_id: str,
+    username: Optional[str] = None,
+    *,
+    db: Optional[Session] = None,
+    token_family: Optional[str] = None,
+) -> str:
+    """Create a long-lived refresh token for session renewal."""
+    now, not_before, expire, jti = _claims(timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+    family = token_family or str(uuid.uuid4())
+    to_encode = {
+        "sub": user_id,
+        "username": username,
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "iat": _timestamp(now),
+        "nbf": _timestamp(not_before),
+        "exp": _timestamp(expire),
+        "jti": jti,
+        "token_family": family,
+        "type": "refresh",
+    }
+    token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+    if db is not None:
+        from app.models.user import UserSession
+        session_obj = UserSession(
+            id=jti,
+            user_id=user_id,
+            token_family=family,
+            ip_hash="refresh",
+            user_agent_hash="refresh",
+            created_at=now,
+            expires_at=expire,
+            is_revoked=False,
+        )
+        db.add(session_obj)
+        db.commit()
+
+    return token
+
+
+def verify_refresh_token(token: str, *, db: Optional[Session] = None) -> Optional[dict]:
+    """Verify a refresh token and return its payload if valid."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM],
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+            leeway=5,
+        )
+    except jwt.PyJWTError:
+        return None
+
+    if payload.get("type") != "refresh":
+        return None
+
+    if is_token_revoked(payload, db=db):
+        return None
+
+    return payload
 
 
 def create_oauth_state(
@@ -173,27 +238,86 @@ def is_token_revoked(payload: dict, db: Optional[Session] = None) -> bool:
     if not jti:
         return True
 
-    if not _get_redis_client() and not settings.DEBUG:
-        logger.critical("Redis unavailable in production – token validation impossible.")
-        return True  # fail closed
+    # Fast path: check database session table/graph directly
+    if settings.DATABASE_BACKEND == "neo4j":
+        sess = graph_store.get_user_session(str(jti))
+        if sess:
+            # Check database session expiration
+            now = _utc_now()
+            if sess.expires_at and _coerce_utc(sess.expires_at) < now:
+                return True
+            return bool(sess.is_revoked)
+        else:
+            return True  # Fail-closed: missing session is revoked
+    elif db is not None:
+        from app.models.user import UserSession
+        sess = db.query(UserSession).filter(UserSession.id == jti).first()
+        if sess:
+            # Check database session expiration
+            now = _utc_now()
+            if sess.expires_at and _coerce_utc(sess.expires_at) < now:
+                return True
+            return bool(sess.is_revoked)
+        else:
+            return True  # Fail-closed: missing session is revoked
 
+    # Fallback to Redis if DB session is missing or DB is not provided
     client = _get_redis_client()
     if client is not None:
         try:
             return bool(client.exists(_denylist_key(str(jti))))
         except Exception:
-            if not settings.DEBUG:
-                logger.critical("Redis denylist lookup failed; rejecting token jti=%s.", jti)
-                return True
-            logger.info("Redis denylist lookup failed in DEBUG mode.")
-
-    if db is not None:
-        from backend.app.models.user import UserSession
-        sess = db.query(UserSession).filter(UserSession.id == jti).first()
-        if sess and sess.is_revoked:
+            logger.error("Redis denylist lookup failed for jti=%s.", jti)
+            # Fail closed on Redis errors - deny the token
             return True
 
-    return False
+    if settings.DATABASE_BACKEND == "neo4j":
+        return True
+
+    if db is not None:
+        return True
+
+    # Fail closed when no revocation store is available
+    # This prevents token reuse if the revocation system is down
+    logger.warning("No revocation store available (DB/Redis). Denying token jti=%s for security.", jti)
+    return True
+
+
+def revoke_token_family(token_family: str, db: Optional[Session] = None) -> bool:
+    """Revoke all token sessions that belong to the same ``token_family``.
+    This is used during logout (or password change) to ensure that a stolen
+    refresh token cannot be used after the user has logged out.
+    Returns ``True`` if at least one session was revoked.
+    """
+    if not token_family:
+        return False
+
+    revoked_any = False
+    sessions: list = []
+    now = _utc_now()
+    if db is not None:
+        from app.models.user import UserSession
+        sessions = (
+            db.query(UserSession)
+            .filter(UserSession.token_family == token_family, UserSession.is_revoked == False)
+            .all()
+        )
+        for sess in sessions:
+            sess.is_revoked = True
+            sess.revocation_reason = "family_revoked"
+        if sessions:
+            db.commit()
+            revoked_any = True
+
+    client = _get_redis_client()
+    if client is not None and sessions:
+        for sess in sessions:
+            try:
+                ttl = max(int((sess.expires_at - now).total_seconds()), 1)
+                client.setex(_denylist_key(str(sess.id)), ttl, "1")
+            except Exception:
+                logger.error("Failed to write family revocation for jti=%s to Redis", sess.id)
+    return revoked_any
 
 
 def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Optional[str] = None) -> bool:
@@ -202,37 +326,34 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
     if not jti or not exp:
         return False
 
-    if not _get_redis_client() and not settings.DEBUG:
-        logger.critical("Redis unavailable in production – token validation impossible.")
-        return True  # fail closed
-
     try:
         expires_at = datetime.fromtimestamp(int(exp), tz=timezone.utc)
     except (TypeError, ValueError):
         return False
 
-    ttl = max(int((expires_at - _utc_now()).total_seconds()), 1)
-    client = _get_redis_client()
-    if client is not None:
-        try:
-            client.setex(_denylist_key(str(jti)), ttl, "1")
-        except Exception:
-            logger.error("Failed to write token jti=%s to Redis denylist.", jti)
-            if not settings.DEBUG and settings.REDIS_URL:
-                return False
-
+    revoked = False
     if db is not None:
-        from backend.app.models.user import UserSession
+        from app.models.user import UserSession
         sess = db.query(UserSession).filter(UserSession.id == jti).first()
         if sess:
             sess.is_revoked = True
             sess.revocation_reason = reason or "logout"
             db.commit()
+            revoked = True
 
-    return True
+    # Optionally write to Redis for cross-instance cache if available
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            ttl = max(int((expires_at - _utc_now()).total_seconds()), 1)
+            client.setex(_denylist_key(str(jti)), ttl, "1")
+        except Exception:
+            logger.error("Failed to write token jti=%s to Redis denylist.", jti)
+
+    return revoked or (client is not None)
 
 
-def verify_access_token(token: str, *, check_revocation: bool = True, db: Optional[Session] = None) -> Optional[dict]:
+def verify_access_token(token: str, *, check_revocation: bool = False, db: Optional[Session] = None) -> Optional[dict]:
     try:
         payload = jwt.decode(
             token,
@@ -279,7 +400,7 @@ def get_current_token_payload(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = verify_access_token(token, db=db)
+    payload = verify_access_token(token, check_revocation=True, db=db)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -303,11 +424,12 @@ def get_current_user(payload: dict = Depends(get_current_token_payload)) -> str:
 def get_optional_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db),
 ) -> Optional[str]:
     token = _extract_bearer_or_cookie_token(request, credentials)
     if not token:
         return None
-    payload = verify_access_token(token)
+    payload = verify_access_token(token, check_revocation=True, db=db)
     if not payload:
         return None
     subject = payload.get("sub")
@@ -381,7 +503,7 @@ def decrypt_provider_token(token: str | None) -> str:
 def create_exchange_code(user_id: str, username: str, token: str, *, db: Session) -> str:
     import secrets
 
-    from backend.app.models.user import AuthExchangeCode
+    from app.models.user import AuthExchangeCode
 
     now = _utc_now()
     expires_at = now + timedelta(seconds=60)
@@ -409,7 +531,7 @@ def create_exchange_code(user_id: str, username: str, token: str, *, db: Session
 
 
 def verify_and_consume_exchange_code(code: str, *, db: Session) -> Optional[dict]:
-    from backend.app.models.user import AuthExchangeCode
+    from app.models.user import AuthExchangeCode
 
     now = _utc_now()
     try:
@@ -457,7 +579,7 @@ def record_login_failure(db: Session, ip: str, username: str) -> None:
         except Exception:
             logger.error("Failed to write login failure key=%s to Redis.", key_hash)
 
-    from backend.app.models.user import LoginFailure
+    from app.models.user import LoginFailure
     db.add(LoginFailure(id=str(uuid.uuid4()), key_hash=key_hash, attempted_at=now))
     db.commit()
 
@@ -484,7 +606,7 @@ def check_login_lockout(db: Session, ip: str, username: str) -> bool:
         except Exception:
             logger.error("Failed to read login failures key=%s from Redis.", key_hash)
 
-    from backend.app.models.user import LoginFailure
+    from app.models.user import LoginFailure
     db.query(LoginFailure).filter(LoginFailure.attempted_at < window_start).delete()
     db.commit()
 
@@ -508,13 +630,13 @@ def clear_login_failures(db: Session, ip: str, username: str) -> None:
         except Exception:
             logger.error("Failed to clear login failures key=%s in Redis.", key_hash)
 
-    from backend.app.models.user import LoginFailure
+    from app.models.user import LoginFailure
     db.query(LoginFailure).filter(LoginFailure.key_hash == key_hash).delete()
     db.commit()
 
 
 def revoke_session_family(db: Session, token_family: str, reason: str = "family_revocation") -> None:
-    from backend.app.models.user import UserSession
+    from app.models.user import UserSession
     sessions = db.query(UserSession).filter(
         UserSession.token_family == token_family,
         UserSession.is_revoked == False
@@ -529,4 +651,106 @@ def revoke_session_family(db: Session, token_family: str, reason: str = "family_
                 client.setex(_denylist_key(sess.id), ttl, "1")
             except Exception:
                 pass
+    db.commit()
+
+
+def verify_refresh_token_with_rotation(
+    old_token: str,
+    *,
+    db: Session,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> Optional[dict]:
+    """Verify a refresh token, revoke it (rotation), and return its payload.
+
+    If the token was ALREADY revoked (reuse detected), revokes the entire
+    token family as a theft response and returns ``None``.
+
+    On success, returns a dict with ``old_payload``, ``new_access_token``,
+    and ``new_refresh_token`` so the caller can issue new credentials.
+    """
+    old_payload = verify_refresh_token(old_token, db=db)
+    if not old_payload:
+        return None
+
+    token_family = old_payload.get("token_family")
+    user_id = old_payload.get("sub")
+    username = old_payload.get("username") or user_id
+
+    if not user_id or not token_family:
+        return None
+
+    now = _utc_now()
+
+    old_jti = old_payload.get("jti")
+    if settings.DATABASE_BACKEND == "neo4j":
+        old_session = graph_store.get_user_session(str(old_jti))
+    else:
+        from app.models.user import UserSession
+        old_session = db.query(UserSession).filter(UserSession.id == old_jti).first()
+
+    if not old_session:
+        logger.warning("Refresh token session not found for jti=%s. Denying rotation.", old_jti)
+        return None
+
+    if old_session.is_revoked:
+        # Token reuse detected — revoke entire family
+        logger.warning("Refresh token reuse detected for user=%s family=%s. Revoking all sessions.", user_id, token_family)
+        revoke_token_family(token_family, db=db)
+        record_security_event_raw(
+            db, user_id=user_id,
+            action="auth.refresh_token_reuse_detected",
+            details={"token_family": token_family, "revoked_jti": old_jti},
+        )
+        return None
+
+    # Revoke old refresh token (rotation)
+    if settings.DATABASE_BACKEND == "neo4j":
+        graph_store.set_session_revoked(str(old_jti), "rotated")
+    else:
+        old_session.is_revoked = True
+        old_session.revocation_reason = "rotated"
+    
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            ttl = max(int((old_session.expires_at - now).total_seconds()), 1)
+            client.setex(_denylist_key(str(old_jti)), ttl, "1")
+        except Exception:
+            pass
+            
+    if settings.DATABASE_BACKEND != "neo4j":
+        db.commit()
+
+    new_access_token = create_access_token(
+        user_id=user_id, username=username,
+        db=db, ip=ip, user_agent=user_agent,
+        token_family=token_family,
+    )
+    new_refresh_token = create_refresh_token(
+        user_id=user_id, username=username,
+        db=db, token_family=token_family,
+    )
+
+    return {
+        "old_payload": old_payload,
+        "new_access_token": new_access_token,
+        "new_refresh_token": new_refresh_token,
+    }
+
+
+def record_security_event_raw(
+    db: Session,
+    user_id: str,
+    action: str,
+    details: Optional[dict] = None,
+) -> None:
+    import json
+    from app.models.security_log import SecurityLog
+    db.add(SecurityLog(
+        user_id=user_id,
+        action=action,
+        ip_address=None,
+        details=json.dumps(details) if details else None,
+    ))
     db.commit()

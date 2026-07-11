@@ -1,59 +1,86 @@
-# Production logs
+# Log files
 *.log
-logs/
-workspace/sent_emails/
-workspace/temp/
-workspace/storage/cache/
-workspace/scans/*/   # but keep the directory itself
 *.pid
+logs/
+artifacts/
 
-# Local development databases (not production)
-firecrow.db
-test_firecrow.db
-
-# Environment files with secrets
-*.env.local
-*.env.production
-!.env.example
-
-# Python cache
+# Python cache & virtualenvs
 __pycache__/
 *.pyc
-
-# Frontend build artifacts
-frontend/.next/
-frontend/out/
-
-# Backup files
-*.bak
-*.swp
-
-# OS junk
-.DS_Store
-Thumbs.db
-
-# General / Legacy Ignores
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
-.pyrightpy/
+*.pyo
+*.pyd
 .venv/
 venv/
 env/
 ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment files
+.env
+.env.local
+.env.*
+!.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+firecrow.db
+test_firecrow.db
+
+# Workspace
+workspace/
+workspace/sent_emails/
+workspace/temp/
+workspace/storage/cache/
+workspace/scans/*/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp scripts
+patch_*.py
+index.html
+
+# Build artifacts
+/build
+/dist
+*.egg-info/
+frontend/.next/
+frontend/out/
 node_modules/
+
+# IDE & Tool configurations
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+.agents/
+.codex/
+.codex-run/
+
+# VAPID Keys
+.vapid_keys.json
+
+# Celery beat scheduler
+celerybeat-schedule
+celerybeat-schedule.*
+
+# Log files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-workspace/
-backend/workspace/
-.idea/
-.vscode/
-__mocks__/
-mock_data/
-test_data/
-*.mock.ts
-*.mock.js
-*.mock.py
+
+# Python build and packaging
+.eggs/
+*.egg/
+*.bak
+.aider*

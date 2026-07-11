@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 import logging
-from sqlalchemy import select, desc, func
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from backend.app.models.audit_job import AuditJob, AgentLog, AuditArtifact
+from app.models.audit_job import AuditJob, AgentLog, AuditArtifact
 
 logger = logging.getLogger("firecrow.services.housekeeping")
 
@@ -10,6 +10,23 @@ logger = logging.getLogger("firecrow.services.housekeeping")
 RETENTION_DAYS_BULKY = 7      # Days to keep detailed logs and raw artifacts
 RETENTION_DAYS_JOB = 30       # Days to keep audit job records entirely
 MAX_JOBS_PER_USER = 20        # Maximum number of audit jobs retained per user
+
+
+def _cleanup_job_artifacts(db: Session, job_id: str, now: datetime):
+    from app.models.compliance import ArtifactObject
+    from app.services.storage import storage_service
+    job_artifacts = db.query(ArtifactObject).filter(
+        ArtifactObject.job_id == job_id,
+        ArtifactObject.deletion_status == "active",
+        ArtifactObject.legal_hold == False
+    ).all()
+    for artifact in job_artifacts:
+        try:
+            storage_service._hard_delete_file(artifact)
+            artifact.deletion_status = "deleted"
+            artifact.deleted_at = now
+        except Exception as e:
+            logger.error("Failed to delete artifact %s for job %s: %s", artifact.id, job_id, str(e))
 
 
 def run_housekeeping(db: Session) -> dict[str, int]:
@@ -30,6 +47,22 @@ def run_housekeeping(db: Session) -> dict[str, int]:
     }
 
     try:
+        # 0. Prune expired artifact objects
+        from app.models.compliance import ArtifactObject
+        from app.services.storage import storage_service
+        expired_artifacts = db.query(ArtifactObject).filter(
+            ArtifactObject.retention_until <= now,
+            ArtifactObject.deletion_status == "active",
+            ArtifactObject.legal_hold == False
+        ).all()
+        for artifact in expired_artifacts:
+            try:
+                storage_service._hard_delete_file(artifact)
+                artifact.deletion_status = "deleted"
+                artifact.deleted_at = now
+            except Exception as e:
+                logger.error("Failed to delete expired artifact %s: %s", artifact.id, str(e))
+
         # 1. Prune bulky logs and raw artifacts older than RETENTION_DAYS_BULKY
         bulky_cutoff = now - timedelta(days=RETENTION_DAYS_BULKY)
         
@@ -51,25 +84,33 @@ def run_housekeeping(db: Session) -> dict[str, int]:
             if deleted_logs > 0 or deleted_artifacts > 0:
                 logger.info("Pruned %d logs and %d artifacts from old finished jobs.", deleted_logs, deleted_artifacts)
 
-        # 2. Delete entire jobs older than RETENTION_DAYS_JOB
+        # 2. Delete entire jobs older than RETENTION_DAYS_JOB (skip legal hold)
         job_cutoff = now - timedelta(days=RETENTION_DAYS_JOB)
-        expired_jobs = db.query(AuditJob).filter(AuditJob.created_at < job_cutoff).all()
+        expired_jobs = db.query(AuditJob).filter(
+            AuditJob.created_at < job_cutoff,
+            AuditJob.legal_hold == False
+        ).all()
         for job in expired_jobs:
+            _cleanup_job_artifacts(db, job.id, now)
             db.delete(job)
             deleted_counts["deleted_jobs_expiry"] += 1
         
         if deleted_counts["deleted_jobs_expiry"] > 0:
             logger.info("Deleted %d expired audit jobs (older than %d days).", deleted_counts["deleted_jobs_expiry"], RETENTION_DAYS_JOB)
 
-        # 3. Limit total jobs per user to MAX_JOBS_PER_USER
+        # 3. Limit total jobs per user to MAX_JOBS_PER_USER (skip legal hold)
         # Group jobs by user_id to count them
         users_with_jobs = db.query(AuditJob.user_id).group_by(AuditJob.user_id).all()
         for (user_id,) in users_with_jobs:
             # Get all jobs for this user, ordered by creation date descending
-            user_jobs = db.query(AuditJob).filter(AuditJob.user_id == user_id).order_by(desc(AuditJob.created_at)).all()
+            user_jobs = db.query(AuditJob).filter(
+                AuditJob.user_id == user_id,
+                AuditJob.legal_hold == False
+            ).order_by(desc(AuditJob.created_at)).all()
             if len(user_jobs) > MAX_JOBS_PER_USER:
                 overflow_jobs = user_jobs[MAX_JOBS_PER_USER:]
                 for job in overflow_jobs:
+                    _cleanup_job_artifacts(db, job.id, now)
                     db.delete(job)
                     deleted_counts["deleted_jobs_overflow"] += 1
                 

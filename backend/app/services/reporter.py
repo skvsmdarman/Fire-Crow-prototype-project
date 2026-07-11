@@ -1,11 +1,13 @@
 import logging
 import os
 import html
+import json
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from backend.app.config import settings, WORKSPACE_DIR, _global_state
-from backend.app.schemas import Finding, Severity
-from backend.app.services.redaction import redact_text
+from app.config import settings, WORKSPACE_DIR, _global_state
+from app.schemas import Finding, Severity
+from app.services.frontend_urls import build_audit_job_url
+from app.services.redaction import redact_text
 
 # Ensure WeasyPrint can find GTK/Pango libraries on Windows
 if os.name == "nt" and "WEASYPRINT_DLL_DIRECTORIES" not in os.environ:
@@ -87,7 +89,290 @@ class ReportGenerator:
         self.resend_api_key = settings.RESEND_API_KEY
         self.sender_email = settings.SENDER_EMAIL
         if RESEND_AVAILABLE and self.resend_api_key:
-            resend.api_key = self.resend_api_key
+            resend.api_key = self.resend_api_key  # type: ignore
+
+    def _get_smart_finding_details(self, finding: Finding) -> Dict[str, str]:
+        """Uses LLM to enrich findings with non-technical assessment and step-by-step fixes."""
+        details = {
+            "non_technical_summary": f"This security issue is a {finding.severity.value} vulnerability which may expose sensitive application assets or logic. It was identified by {finding.agent_source} tools.",
+            "impact": "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the application, leading to unauthorized access, system degradation, or data disclosure.",
+            "remediation_steps": finding.remediation or "Follow secure coding practices, enforce strict parameter validation, sanitize all inputs, and use encrypted configuration parameters."
+        }
+
+        if not settings.GEMINI_API_KEY or not settings.GEMINI_MODEL:
+            return details
+
+        prompt = f"""You are a senior security researcher. Explain the following vulnerability so that even a non-technical manager (or junior developer) can understand:
+Title: {finding.title}
+Severity: {finding.severity.value}
+Description: {finding.description}
+CWE: {finding.cwe_id or 'N/A'}
+Evidence: {finding.evidence or 'None'}
+
+Provide your response in JSON format. Do not use markdown code block wrappers (like ```json). Respond with a raw JSON object containing these keys:
+- "non_technical_summary": A clear explanation of what this vulnerability means in plain English, why it is dangerous, and what the real-world business risk is.
+- "impact": The technical impact of this vulnerability on the systems and data.
+- "remediation_steps": Actionable, step-by-step coding instructions to fix the issue.
+"""
+        try:
+            from app.services.safe_llm import safe_llm_call
+            res = safe_llm_call(prompt, max_tokens=1000, temperature=0.2)
+            if res:
+                res_clean = res.strip()
+                if res_clean.startswith("```json"):
+                    res_clean = res_clean.removeprefix("```json").removesuffix("```").strip()
+                elif res_clean.startswith("```"):
+                    res_clean = res_clean.removeprefix("```").removesuffix("```").strip()
+                parsed = json.loads(res_clean)
+                if "non_technical_summary" in parsed and "impact" in parsed and "remediation_steps" in parsed:
+                    return {
+                        "non_technical_summary": parsed["non_technical_summary"],
+                        "impact": parsed["impact"],
+                        "remediation_steps": parsed["remediation_steps"]
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to generate smart details for finding {finding.title}: {e}")
+        
+        return details
+
+    def _get_fallback_report_insights(self, findings: List[Finding], repo_url: str) -> Dict[str, Any]:
+        """Provides high-quality deterministic fallback values for compliance and strategic insights when LLM is unavailable."""
+        repo_name = get_clean_repo_name(repo_url)
+        counts = {Severity.CRITICAL: 0, Severity.HIGH: 0, Severity.MEDIUM: 0, Severity.LOW: 0, Severity.INFO: 0}
+        for f in findings:
+            counts[f.severity] = counts.get(f.severity, 0) + 1
+            
+        total_issues = len(findings)
+        if total_issues == 0:
+            strategic_assessment = (
+                f"The security audit for repository '{repo_name}' concluded with no security vulnerabilities detected. "
+                f"The codebase demonstrates a strong security posture and adheres to baseline security requirements. "
+                f"Continuous monitoring and regular dependency audits are recommended to maintain this robust posture."
+            )
+        else:
+            critical_count = counts.get(Severity.CRITICAL, 0)
+            high_count = counts.get(Severity.HIGH, 0)
+            medium_count = counts.get(Severity.MEDIUM, 0)
+            
+            strategic_assessment = (
+                f"The security audit for repository '{repo_name}' identified {total_issues} security findings, including "
+                f"{critical_count} critical and {high_count} high severity issues. The overall security posture of the codebase "
+                f"requires immediate remediation. We suggest addressing the critical vulnerabilities immediately to prevent potential "
+                f"unauthorized access or system compromise, followed by remediation of the high and medium-severity findings "
+                f"in the upcoming development cycles. Systemic patterns suggest focusing on input validation and configuration hygiene."
+            )
+
+        owasp_mapping = {}
+        for f in findings:
+            title_lower = (f.title or "").lower()
+            desc_lower = (f.description or "").lower()
+            cwe = (f.cwe_id or "").lower()
+            
+            if "idor" in title_lower or "auth" in title_lower or "permission" in title_lower or "cwe-639" in cwe or "cwe-287" in cwe:
+                cat = "A01:2021-Broken Access Control"
+            elif "secret" in title_lower or "crypt" in title_lower or "cipher" in title_lower or "key" in title_lower or "cwe-798" in cwe or "cwe-327" in cwe:
+                cat = "A02:2021-Cryptographic Failures"
+            elif "inject" in title_lower or "sql" in title_lower or "xss" in title_lower or "cwe-89" in cwe or "cwe-79" in cwe or "cwe-78" in cwe:
+                cat = "A03:2021-Injection"
+            elif "insecure design" in title_lower or "design" in title_lower:
+                cat = "A04:2021-Insecure Design"
+            elif "misconfig" in title_lower or "config" in title_lower or "dockerfile" in title_lower or "cwe-16" in cwe:
+                cat = "A05:2021-Security Misconfiguration"
+            elif "vulnerable component" in title_lower or "outdated" in title_lower or "dependency" in title_lower or "cwe-1104" in cwe:
+                cat = "A06:2021-Vulnerable and Outdated Components"
+            elif "session" in title_lower or "csrf" in title_lower or "cwe-384" in cwe:
+                cat = "A07:2021-Identification and Authentication Failures"
+            elif "deserial" in title_lower or "integrity" in title_lower or "cwe-502" in cwe:
+                cat = "A08:2021-Software and Data Integrity Failures"
+            elif "log" in title_lower or "monitor" in title_lower or "cwe-778" in cwe:
+                cat = "A09:2021-Security Logging and Monitoring Failures"
+            elif "ssrf" in title_lower or "forgery" in title_lower or "cwe-918" in cwe:
+                cat = "A10:2021-Server-Side Request Forgery"
+            else:
+                cat = "A03:2021-Injection"
+            owasp_mapping[f.id] = cat
+
+        has_gaps = total_issues > 0
+        compliance_mapping = [
+            {
+                "standard": "SOC 2",
+                "control": "CC6.1 (Logical Access Security)",
+                "status": "Gap Identified" if has_gaps else "Compliant",
+                "details": "Vulnerabilities found in the repository codebase impact the logical access security controls." if has_gaps else "No access control vulnerabilities were detected in the repository codebase."
+            },
+            {
+                "standard": "ISO 27001",
+                "control": "A.8.20 (Network Security)",
+                "status": "Gap Identified" if any("network" in (f.agent_source or "").lower() or "port" in (f.title or "").lower() for f in findings) else "Compliant",
+                "details": "Vulnerabilities matching network configuration risks were detected." if any("network" in (f.agent_source or "").lower() or "port" in (f.title or "").lower() for f in findings) else "No network security configuration flaws were detected."
+            },
+            {
+                "standard": "PCI-DSS",
+                "control": "Requirement 6 (Secure Systems)",
+                "status": "Gap Identified" if has_gaps else "Compliant",
+                "details": "Security vulnerabilities must be addressed to comply with secure system components requirements." if has_gaps else "No vulnerabilities in system components were identified."
+            }
+        ]
+
+        enriched_findings = {}
+        for f in findings:
+            non_technical_summary = f"This issue represents a {f.severity.value} vulnerability which may expose sensitive application assets or logic. It was identified by {f.agent_source}."
+            impact = "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the application, leading to unauthorized access, system degradation, or data disclosure."
+            remediation_steps = f.remediation or "Follow secure coding practices, enforce strict parameter validation, sanitize all inputs, and use encrypted configuration parameters."
+            enriched_findings[f.id] = {
+                "non_technical_summary": non_technical_summary,
+                "impact": impact,
+                "remediation_steps": remediation_steps
+            }
+
+        return {
+            "strategic_assessment": strategic_assessment,
+            "owasp_mapping": owasp_mapping,
+            "compliance_mapping": compliance_mapping,
+            "enriched_findings": enriched_findings
+        }
+
+    def _get_smart_report_insights(self, findings: List[Finding], repo_url: str) -> Dict[str, Any]:
+        """Uses LLM to perform a single batch analysis and return a structured report insight object."""
+        if not settings.GEMINI_API_KEY or not settings.GEMINI_MODEL:
+            return self._get_fallback_report_insights(findings, repo_url)
+
+        findings_data = []
+        for idx, f in enumerate(findings, 1):
+            findings_data.append({
+                "id": f.id,
+                "index_id": f"FC-{idx:03d}",
+                "title": f.title,
+                "severity": f.severity.value,
+                "agent_source": f.agent_source,
+                "description": f.description[:500],
+                "cwe_id": f.cwe_id or "N/A",
+                "file_path": f.file_path or "N/A"
+            })
+            
+        if len(findings_data) > 25:
+            severity_order = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3, Severity.INFO: 4}
+            sorted_findings = sorted(findings, key=lambda x: severity_order.get(x.severity, 5))
+            findings_data = []
+            for idx, f in enumerate(sorted_findings[:25], 1):
+                findings_data.append({
+                    "id": f.id,
+                    "index_id": f"FC-{idx:03d}",
+                    "title": f.title,
+                    "severity": f.severity.value,
+                    "agent_source": f.agent_source,
+                    "description": f.description[:500],
+                    "cwe_id": f.cwe_id or "N/A",
+                    "file_path": f.file_path or "N/A"
+                })
+
+        findings_json_str = json.dumps(findings_data, indent=2) if findings_data else "[]"
+
+        if len(findings) > 0:
+            prompt = f"""You are a senior security architect and compliance officer.
+Analyze the following security findings for the repository '{repo_url}':
+{findings_json_str}
+
+Provide a comprehensive, high-quality assessment.
+Your response MUST be a valid JSON object. Do not include any markdown formatting or code block backticks (like ```json). Return only the raw JSON.
+The JSON object must have exactly the following structure:
+{{
+  "strategic_assessment": "Provide a detailed 2-3 paragraph overview of the repository's security posture. Connect the findings together and explain if they indicate systemic issues (e.g. poor input validation, outdated dependency hygiene, unsafe configuration management) or are isolated mistakes, and how this impacts business and operational risks (data breaches, compliance failures).",
+  "owasp_mapping": {{
+     "finding_id_1": "OWASP Top 10 category (e.g. A01:2021-Broken Access Control)",
+     "finding_id_2": "..."
+  }},
+  "compliance_mapping": [
+    {{
+      "standard": "SOC 2",
+      "control": "CC6.1 (Logical Access Security)",
+      "status": "Gap Identified" or "Compliant",
+      "details": "Explanation of how findings violate or support this control."
+    }},
+    {{
+      "standard": "ISO 27001",
+      "control": "A.8.20 (Network Security)",
+      "status": "Gap Identified" or "Compliant",
+      "details": "..."
+    }},
+    {{
+      "standard": "PCI-DSS",
+      "control": "Requirement 6 (Secure Systems)",
+      "status": "Gap Identified" or "Compliant",
+      "details": "..."
+    }}
+  ],
+  "enriched_findings": {{
+     "finding_id_1": {{
+       "non_technical_summary": "A clear explanation of what this vulnerability means in plain English, why it is dangerous, and what the real-world business risk is.",
+       "impact": "The technical impact of this vulnerability on the systems and data.",
+       "remediation_steps": "Actionable, step-by-step coding instructions or system configuration steps to fix the issue."
+     }}
+  }}
+}}
+"""
+        else:
+            prompt = f"""You are a senior security architect and compliance officer.
+The security scan for the repository '{repo_url}' completed with 0 findings.
+Provide a comprehensive, high-quality security posture assessment.
+Your response MUST be a valid JSON object. Do not include any markdown formatting or code block backticks (like ```json). Return only the raw JSON.
+The JSON object must have exactly the following structure:
+{{
+  "strategic_assessment": "Provide a 1-2 paragraph overview of the repository's security posture. Explain that the audit found no vulnerabilities and that the repository shows a strong security baseline, noting best practices for continuous security monitoring.",
+  "owasp_mapping": {{}},
+  "compliance_mapping": [
+    {{
+      "standard": "SOC 2",
+      "control": "CC6.1 (Logical Access Security)",
+      "status": "Compliant",
+      "details": "No access control vulnerabilities were detected in the repository codebase."
+    }},
+    {{
+      "standard": "ISO 27001",
+      "control": "A.8.20 (Network Security)",
+      "status": "Compliant",
+      "details": "No network security configuration flaws were detected."
+    }},
+    {{
+      "standard": "PCI-DSS",
+      "control": "Requirement 6 (Secure Systems)",
+      "status": "Compliant",
+      "details": "No vulnerabilities in system components were identified."
+    }}
+  ],
+  "enriched_findings": {{}}
+}}
+"""
+
+        try:
+            from app.services.safe_llm import safe_llm_call
+            res = safe_llm_call(prompt, max_tokens=3000, temperature=0.2)
+            if res:
+                res_clean = res.strip()
+                if res_clean.startswith("```json"):
+                    res_clean = res_clean.removeprefix("```json").removesuffix("```").strip()
+                elif res_clean.startswith("```"):
+                    res_clean = res_clean.removeprefix("```").removesuffix("```").strip()
+                
+                parsed = json.loads(res_clean)
+                if "strategic_assessment" in parsed and "owasp_mapping" in parsed and "compliance_mapping" in parsed:
+                    # Fill missing enriched findings
+                    for f in findings:
+                        if f.id not in parsed.get("enriched_findings", {}):
+                            if "enriched_findings" not in parsed:
+                                parsed["enriched_findings"] = {}
+                            parsed["enriched_findings"][f.id] = {
+                                "non_technical_summary": f"This issue is a {f.severity.value} vulnerability identified by {f.agent_source}.",
+                                "impact": "Exploitation of this vulnerability may compromise the integrity, availability, or confidentiality of the systems.",
+                                "remediation_steps": f.remediation or "Follow secure coding practices."
+                            }
+                        if f.id not in parsed.get("owasp_mapping", {}):
+                            parsed["owasp_mapping"][f.id] = "A03:2021-Injection"
+                    return parsed
+        except Exception as e:
+            logger.warning(f"Failed to generate smart report insights: {e}")
+        
+        return self._get_fallback_report_insights(findings, repo_url)
 
     def generate_compliance_report(self, job_id: str, findings: List[Finding], standard: str = "SOC2") -> str:
         """
@@ -95,15 +380,26 @@ class ReportGenerator:
         Maps findings to specific compliance controls.
         """
         logger.info(f"Generating {standard} compliance report for job {job_id}")
-
-        for finding in findings:
-            if finding.evidence:
-                finding.evidence = finding.evidence[:settings.REPORT_MAX_EVIDENCE_CHARS]
-            if finding.remediation:
-                finding.remediation = finding.remediation[:settings.REPORT_MAX_REMEDIATION_CHARS]
-
-        # Mock logic
-        return f"Compliance Report ({standard}) for Job {job_id} generated successfully."
+        insights = self._get_smart_report_insights(findings, "")
+        
+        md = []
+        md.append(f"# {standard} Compliance Assessment Report")
+        md.append(f"- **Job ID:** {job_id}")
+        md.append(f"- **Assessment Date:** {datetime.now(timezone.utc).strftime('%B %d, %Y')}")
+        md.append(f"- **Compliance Target Framework:** {standard}\n")
+        
+        md.append("## Executive Strategic Assessment")
+        md.append(insights.get("strategic_assessment", "No assessment available."))
+        md.append("")
+        
+        md.append("## Control Mappings & Gap Analysis")
+        md.append("| Standard | Control | Status | Details & Guidance |")
+        md.append("| --- | --- | --- | --- |")
+        for item in insights.get("compliance_mapping", []):
+            if item.get("standard", "").upper() == standard.upper() or standard == "ALL":
+                md.append(f"| {item.get('standard')} | {item.get('control')} | {item.get('status')} | {item.get('details')} |")
+                
+        return "\n".join(md)
 
     def generate_html_report(
         self,
@@ -112,14 +408,14 @@ class ReportGenerator:
         branch: str,
         findings: List[Finding],
         scanner_execution: Dict[str, Any] | None = None,
+        phase_durations: Dict[str, float] | None = None,
     ) -> str:
-        """Generates a premium executive vulnerability audit HTML string."""
+        """Generates a premium executive vulnerability audit HTML string with charts."""
         for finding in findings:
             if finding.evidence:
                 finding.evidence = finding.evidence[:settings.REPORT_MAX_EVIDENCE_CHARS]
             if finding.remediation:
                 finding.remediation = finding.remediation[:settings.REPORT_MAX_REMEDIATION_CHARS]
-
         safe_job_id = html.escape(job_id)
         safe_repo_url = html.escape(repo_url)
         safe_branch = html.escape(branch)
@@ -134,22 +430,75 @@ class ReportGenerator:
 
         total_issues = len(findings)
         
+        # Call batch insights
+        insights = self._get_smart_report_insights(findings, repo_url)
+        strategic_assessment = insights.get("strategic_assessment", "")
+        owasp_mapping = insights.get("owasp_mapping", {})
+        compliance_mapping = insights.get("compliance_mapping", [])
+        enriched_findings = insights.get("enriched_findings", {})
+
+        compliance_rows = ""
+        for item in compliance_mapping:
+            std = html.escape(item.get("standard", ""))
+            ctrl = html.escape(item.get("control", ""))
+            status = html.escape(item.get("status", ""))
+            details = html.escape(item.get("details", ""))
+            status_cls = "status-gap" if "gap" in status.lower() else "status-compliant"
+            compliance_rows += f"""
+            <tr>
+                <td><strong>{std}</strong></td>
+                <td>{ctrl}</td>
+                <td><span class="status-badge {status_cls}">{status}</span></td>
+                <td>{details}</td>
+            </tr>
+            """
+
         # Determine overall risk level
         if counts[Severity.CRITICAL] > 0:
             risk_label = "CRITICAL RISK"
             risk_color = "#ef4444"
+            risk_narrative = "Immediate action required. Critical vulnerabilities were discovered that could lead to severe data breaches, remote code execution, or complete system compromise."
         elif counts[Severity.HIGH] > 0:
             risk_label = "HIGH RISK"
             risk_color = "#f97316"
+            risk_narrative = "Urgent remediation recommended. High-severity issues expose the application to significant attack surface that could be exploited by motivated adversaries."
         elif counts[Severity.MEDIUM] > 0:
             risk_label = "MEDIUM RISK"
             risk_color = "#eab308"
+            risk_narrative = "Remediation advised within the current development cycle. Medium-severity findings represent defense-in-depth weaknesses that should be addressed proactively."
         elif counts[Severity.LOW] > 0:
             risk_label = "LOW RISK"
             risk_color = "#3b82f6"
+            risk_narrative = "The application demonstrates solid security posture with only minor improvements recommended. These findings are informational and best-practice enhancements."
         else:
             risk_label = "SECURE"
             risk_color = "#10b981"
+            risk_narrative = "No security vulnerabilities were identified during this audit. The application follows security best practices across all tested attack vectors."
+
+        # Build severity distribution chart (SVG donut)
+        severity_colors_hex = {
+            Severity.CRITICAL: "#ef4444",
+            Severity.HIGH: "#f97316",
+            Severity.MEDIUM: "#eab308",
+            Severity.LOW: "#3b82f6",
+            Severity.INFO: "#94a3b8",
+        }
+        
+        # Donut chart calculation
+        donut_chart = self._build_donut_chart(counts, total_issues, severity_colors_hex)
+
+        # Build findings-by-scanner bar chart
+        scanner_counts: Dict[str, Dict[str, int]] = {}
+        for f in findings:
+            src = f.scanner_name or f.agent_source or "Unknown"
+            if src not in scanner_counts:
+                scanner_counts[src] = {s.value: 0 for s in Severity}
+            scanner_counts[src][f.severity.value] = scanner_counts[src].get(f.severity.value, 0) + 1
+
+        bar_chart = self._build_scanner_bar_chart(scanner_counts, severity_colors_hex)
+
+        # Build findings-by-severity bar chart
+        severity_bar = self._build_severity_bar_chart(counts, severity_colors_hex)
 
         findings_rows = ""
         detailed_findings = ""
@@ -163,6 +512,13 @@ class ReportGenerator:
             Severity.INFO: {"bg": "#f3f4f6", "text": "#374151", "border": "#e5e7eb"}
         }
 
+        # Count CWE occurrences
+        cwe_counts: Dict[str, int] = {}
+        for f in findings:
+            if f.cwe_id:
+                cwe_counts[f.cwe_id] = cwe_counts.get(f.cwe_id, 0) + 1
+        top_cwes = sorted(cwe_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
         for idx, f in enumerate(findings, 1):
             colors = severity_colors.get(f.severity, severity_colors[Severity.INFO])
             
@@ -170,13 +526,26 @@ class ReportGenerator:
             safe_agent = html.escape(f.agent_source)
             safe_cwe = html.escape(f.cwe_id) if f.cwe_id else ""
             safe_desc = html.escape(f.description)
-            safe_evidence = html.escape(redact_text(f.evidence)) if f.evidence else ""
+            evidence_text = (f.evidence or "")[:settings.REPORT_MAX_EVIDENCE_CHARS]
+            safe_evidence = html.escape(redact_text(evidence_text)) if evidence_text else ""
             safe_cvss_vector = html.escape(f.cvss_vector) if f.cvss_vector else "N/A"
             safe_cvss_score = html.escape(str(f.cvss_score)) if f.cvss_score is not None else "N/A"
-            remediation_val = getattr(f, "remediation", None)
-            safe_remediation = html.escape(remediation_val) if remediation_val else ""
+            safe_file = html.escape(f.file_path) if f.file_path else ""
+            safe_line = str(f.line_number) if f.line_number else ""
+            
+            # Fetch smart details
+            finding_enriched = enriched_findings.get(f.id, {})
+            if not finding_enriched:
+                finding_enriched = self._get_smart_finding_details(f)
+            safe_non_tech = html.escape(finding_enriched.get("non_technical_summary") or "")
+            safe_impact = html.escape(finding_enriched.get("impact") or "")
+            safe_remediation = html.escape(finding_enriched.get("remediation_steps") or "")
+            
+            owasp_cat = owasp_mapping.get(f.id, f.owasp_category or "N/A")
+            owasp_badge = f"<span class='badge-cwe' style='background-color: #faf5ff; color: #a855f7; border: 1px solid #d8b4fe;'>{html.escape(owasp_cat)}</span>"
             
             cwe_badge = f"<span class='badge-cwe'>{safe_cwe}</span>" if safe_cwe else ""
+            location_info = f"<strong>File:</strong> {safe_file}" + (f" (line {safe_line})" if safe_line else "") if safe_file else ""
             
             # Row for overview table
             findings_rows += f"""
@@ -186,6 +555,7 @@ class ReportGenerator:
                 <td><span class="badge" style="background-color: {colors['bg']}; color: {colors['text']}; border: 1px solid {colors['border']}">{f.severity.value.upper()}</span></td>
                 <td>{safe_agent}</td>
                 <td>{safe_cwe or "N/A"}</td>
+                <td>{safe_cvss_score}</td>
             </tr>
             """
 
@@ -208,18 +578,26 @@ class ReportGenerator:
                 </div>
                 
                 <div class="finding-meta">
-                    <strong>Source Agent:</strong> {safe_agent} &nbsp;|&nbsp; 
-                    <strong>CWE Link:</strong> {cwe_badge or "N/A"} &nbsp;|&nbsp;
+                    <strong>Source:</strong> {safe_agent} &nbsp;|&nbsp; 
+                    <strong>CWE:</strong> {cwe_badge or "N/A"} &nbsp;|&nbsp;
+                    <strong>OWASP Category:</strong> {owasp_badge} &nbsp;|&nbsp;
                     <strong>CVSS:</strong> {safe_cvss_score} ({safe_cvss_vector})
+                    {f" &nbsp;|&nbsp; <strong>Location:</strong> {location_info}" if location_info else ""}
                 </div>
- 
-                <div class="section-title">Vulnerability Description</div>
+
+                <div class="section-title">Plain English Summary (For Non-Technical Users)</div>
+                <p class="description-text">{safe_non_tech}</p>
+
+                <div class="section-title">Technical Description</div>
                 <p class="description-text">{safe_desc}</p>
- 
+
+                <div class="section-title">Security & Business Impact</div>
+                <p class="description-text">{safe_impact}</p>
+
                 {evidence_block}
- 
-                <div class="section-title">Remediation Guidance</div>
-                <p class="remediation-text">{safe_remediation or "Follow standard secure coding patterns, validate all entry points, and sanitise parameters."}</p>
+
+                <div class="section-title">Actionable Remediation Guide</div>
+                <p class="remediation-text" style="white-space: pre-wrap;">{safe_remediation}</p>
             </div>
             """
 
@@ -229,9 +607,17 @@ class ReportGenerator:
             "recon": "Recon",
             "regex_sast": "Regex SAST",
             "semgrep": "Semgrep",
+            "eslint": "ESLint Security",
             "dependency": "Dependency scan",
+            "sbom": "SBOM Analysis",
+            "iac": "IaC Scan",
+            "cicd": "CI/CD Scan",
+            "container": "Container Scan",
+            "config": "Config Scan",
             "dynamic": "Dynamic validation",
             "sandbox": "Sandbox mode",
+            "network": "Network Scan",
+            "attack": "Attack Simulation",
         }
         for key, label in scanner_labels.items():
             value = scanner_execution.get(key, {})
@@ -252,6 +638,35 @@ class ReportGenerator:
             </tr>
             """
 
+        # Phase execution timeline
+        phase_rows = ""
+        phase_durations = phase_durations or {}
+        total_duration = sum(phase_durations.values()) if phase_durations else 0
+        for phase_name, duration in sorted(phase_durations.items(), key=lambda x: x[1], reverse=True):
+            pct = (duration / total_duration * 100) if total_duration > 0 else 0
+            phase_rows += f"""
+            <tr>
+                <td>{html.escape(phase_name.replace('_', ' ').title())}</td>
+                <td>{duration:.1f}s</td>
+                <td>
+                    <div class="phase-bar-container">
+                        <div class="phase-bar" style="width: {min(pct, 100):.0f}%"></div>
+                    </div>
+                </td>
+                <td>{pct:.1f}%</td>
+            </tr>
+            """
+
+        # Top CWEs table
+        cwe_rows = ""
+        for cwe_id, count in top_cwes:
+            cwe_rows += f"""
+            <tr>
+                <td><span class="badge-cwe">{html.escape(cwe_id)}</span></td>
+                <td>{count}</td>
+            </tr>
+            """
+
         html_template = f"""
         <!DOCTYPE html>
         <html>
@@ -261,26 +676,28 @@ class ReportGenerator:
             <style>
                 @page {{
                     size: A4;
-                    margin: 20mm;
+                    margin: 18mm 20mm;
                     @bottom-right {{
-                        content: counter(page);
+                        content: counter(page) " / " counter(pages);
                         font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                        font-size: 9pt;
+                        font-size: 8pt;
                         color: #94a3b8;
                     }}
                     @bottom-left {{
-                        content: "Fire Crow Security Audit • {safe_repo_name} ({safe_branch})";
+                        content: "Fire Crow Security Audit \u2022 {safe_repo_name} ({safe_branch})";
                         font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                        font-size: 9pt;
+                        font-size: 8pt;
                         color: #94a3b8;
                     }}
                 }}
 
+                * {{ box-sizing: border-box; }}
+
                 body {{
                     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                     color: #1e293b;
-                    line-height: 1.5;
-                    font-size: 10.5pt;
+                    line-height: 1.6;
+                    font-size: 10pt;
                     margin: 0;
                     background-color: #ffffff;
                 }}
@@ -291,7 +708,7 @@ class ReportGenerator:
                     display: flex;
                     flex-direction: column;
                     justify-content: space-between;
-                    padding-top: 40mm;
+                    padding-top: 35mm;
                 }}
 
                 .cover-header {{
@@ -300,24 +717,24 @@ class ReportGenerator:
                 }}
 
                 .cover-title {{
-                    font-size: 32pt;
+                    font-size: 28pt;
                     font-weight: 700;
-                    margin: 0 0 10px 0;
+                    margin: 0 0 8px 0;
                     color: #0f172a;
                     letter-spacing: -1px;
                 }}
 
                 .cover-subtitle {{
-                    font-size: 16pt;
+                    font-size: 14pt;
                     color: #64748b;
                     margin: 0;
                     font-weight: 400;
                 }}
 
                 .cover-metadata {{
-                    margin-top: 50mm;
+                    margin-top: 40mm;
                     background-color: #f8fafc;
-                    padding: 20px;
+                    padding: 18px;
                     border-radius: 8px;
                     border: 1px solid #e2e8f0;
                 }}
@@ -334,25 +751,27 @@ class ReportGenerator:
                 .metadata-label {{
                     display: table-cell;
                     font-weight: 600;
-                    padding: 8px 10px;
+                    padding: 6px 10px;
                     color: #475569;
-                    width: 30%;
+                    width: 28%;
+                    font-size: 9.5pt;
                 }}
 
                 .metadata-value {{
                     display: table-cell;
-                    padding: 8px 10px;
+                    padding: 6px 10px;
                     color: #0f172a;
+                    font-size: 9.5pt;
                 }}
 
                 .section-header {{
-                    font-size: 20pt;
+                    font-size: 16pt;
                     font-weight: 700;
                     color: #0f172a;
-                    margin-top: 30px;
-                    margin-bottom: 15px;
-                    border-bottom: 2px solid #f1f5f9;
-                    padding-bottom: 8px;
+                    margin-top: 28px;
+                    margin-bottom: 12px;
+                    border-bottom: 2px solid #e2e8f0;
+                    padding-bottom: 6px;
                     page-break-before: always;
                 }}
 
@@ -363,8 +782,8 @@ class ReportGenerator:
                 .card-grid {{
                     display: flex;
                     justify-content: space-between;
-                    margin-bottom: 25px;
-                    gap: 10px;
+                    margin-bottom: 20px;
+                    gap: 8px;
                 }}
 
                 .stat-card {{
@@ -372,50 +791,51 @@ class ReportGenerator:
                     background-color: #f8fafc;
                     border: 1px solid #e2e8f0;
                     border-radius: 6px;
-                    padding: 15px;
+                    padding: 12px;
                     text-align: center;
                 }}
 
                 .stat-number {{
-                    font-size: 24pt;
+                    font-size: 22pt;
                     font-weight: 700;
                     color: #0f172a;
                     line-height: 1;
                 }}
 
                 .stat-label {{
-                    font-size: 8.5pt;
+                    font-size: 8pt;
                     color: #64748b;
                     text-transform: uppercase;
-                    margin-top: 5px;
+                    margin-top: 4px;
                     font-weight: 500;
                 }}
 
                 .risk-banner {{
-                    background-color: {risk_color}15;
+                    background-color: {risk_color}12;
                     border-left: 4px solid {risk_color};
-                    padding: 15px 20px;
+                    padding: 14px 18px;
                     border-radius: 4px;
-                    margin-bottom: 30px;
+                    margin-bottom: 24px;
                 }}
 
                 .risk-title {{
                     font-weight: 700;
                     color: {risk_color};
-                    font-size: 14pt;
-                    margin-bottom: 5px;
+                    font-size: 13pt;
+                    margin-bottom: 6px;
                 }}
 
                 .risk-desc {{
                     margin: 0;
-                    font-size: 10pt;
+                    font-size: 9.5pt;
                     color: #334155;
+                    line-height: 1.5;
                 }}
 
                 table {{
                     width: 100%;
                     border-collapse: collapse;
-                    margin-bottom: 30px;
+                    margin-bottom: 24px;
                 }}
 
                 th {{
@@ -423,21 +843,23 @@ class ReportGenerator:
                     color: #475569;
                     text-align: left;
                     font-weight: 600;
-                    font-size: 9.5pt;
-                    padding: 10px 12px;
+                    font-size: 8.5pt;
+                    padding: 8px 10px;
                     border-bottom: 2px solid #cbd5e1;
+                    text-transform: uppercase;
+                    letter-spacing: 0.03em;
                 }}
 
                 td {{
-                    padding: 12px;
-                    font-size: 10pt;
+                    padding: 10px;
+                    font-size: 9.5pt;
                     border-bottom: 1px solid #e2e8f0;
                 }}
 
                 .badge {{
                     display: inline-block;
-                    padding: 2px 8px;
-                    font-size: 8pt;
+                    padding: 2px 7px;
+                    font-size: 7.5pt;
                     font-weight: 600;
                     border-radius: 4px;
                     text-transform: uppercase;
@@ -447,7 +869,7 @@ class ReportGenerator:
                     background-color: #f1f5f9;
                     color: #475569;
                     padding: 1px 5px;
-                    font-size: 8.5pt;
+                    font-size: 8pt;
                     border-radius: 3px;
                     font-family: monospace;
                 }}
@@ -455,68 +877,70 @@ class ReportGenerator:
                 .finding-card {{
                     background-color: #ffffff;
                     border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    padding: 20px;
-                    margin-bottom: 25px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+                    border-radius: 6px;
+                    padding: 16px;
+                    margin-bottom: 18px;
+                    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
                 }}
 
                 .finding-title-bar {{
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
-                    margin-bottom: 10px;
+                    margin-bottom: 8px;
                 }}
 
                 .finding-id {{
                     font-family: monospace;
                     font-weight: 700;
-                    font-size: 11pt;
+                    font-size: 10pt;
                     color: #64748b;
-                    margin-right: 10px;
+                    margin-right: 8px;
                 }}
 
                 .finding-title {{
-                    font-size: 13pt;
+                    font-size: 12pt;
                     font-weight: 700;
                     color: #0f172a;
                     flex-grow: 1;
                 }}
 
                 .finding-meta {{
-                    font-size: 8.5pt;
+                    font-size: 8pt;
                     color: #64748b;
                     border-bottom: 1px solid #f1f5f9;
-                    padding-bottom: 8px;
-                    margin-bottom: 15px;
+                    padding-bottom: 6px;
+                    margin-bottom: 12px;
                 }}
 
                 .section-title {{
-                    font-size: 10pt;
+                    font-size: 9pt;
                     font-weight: 600;
                     text-transform: uppercase;
                     color: #475569;
-                    margin-top: 15px;
-                    margin-bottom: 5px;
+                    margin-top: 12px;
+                    margin-bottom: 4px;
+                    letter-spacing: 0.04em;
                 }}
 
                 .description-text, .remediation-text {{
                     margin: 0;
-                    font-size: 10pt;
+                    font-size: 9.5pt;
                     color: #334155;
+                    line-height: 1.5;
                 }}
 
                 .evidence-container {{
-                    margin-top: 12px;
+                    margin-top: 10px;
                     border: 1px solid #e2e8f0;
-                    border-radius: 6px;
+                    border-radius: 4px;
                     overflow: hidden;
                 }}
 
                 .evidence-header {{
                     background-color: #f8fafc;
-                    padding: 6px 12px;
-                    font-size: 8.5pt;
+                    padding: 4px 10px;
+                    font-size: 8pt;
                     font-weight: 500;
                     color: #64748b;
                     border-bottom: 1px solid #e2e8f0;
@@ -524,17 +948,145 @@ class ReportGenerator:
 
                 .evidence-code {{
                     margin: 0;
-                    padding: 12px;
+                    padding: 10px;
                     background-color: #0f172a;
                     color: #e2e8f0;
                     font-family: 'Courier New', Courier, monospace;
-                    font-size: 8.5pt;
+                    font-size: 8pt;
                     white-space: pre-wrap;
                     overflow-x: auto;
+                    line-height: 1.4;
                 }}
 
                 .page-break-avoid {{
                     page-break-inside: avoid;
+                }}
+
+                .chart-container {{
+                    display: flex;
+                    gap: 20px;
+                    margin-bottom: 24px;
+                    page-break-inside: avoid;
+                }}
+
+                .chart-box {{
+                    flex: 1;
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                    padding: 16px;
+                    text-align: center;
+                }}
+
+                .chart-title {{
+                    font-size: 9pt;
+                    font-weight: 600;
+                    color: #475569;
+                    text-transform: uppercase;
+                    margin-bottom: 12px;
+                    letter-spacing: 0.04em;
+                }}
+
+                .phase-bar-container {{
+                    width: 100%;
+                    height: 8px;
+                    background: #e2e8f0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }}
+
+                .phase-bar {{
+                    height: 100%;
+                    background: linear-gradient(90deg, #7c3aed, #a78bfa);
+                    border-radius: 4px;
+                }}
+
+                .recommendation-card {{
+                    background: #f0fdf4;
+                    border: 1px solid #bbf7d0;
+                    border-left: 4px solid #22c55e;
+                    border-radius: 4px;
+                    padding: 12px 16px;
+                    margin-bottom: 12px;
+                }}
+
+                .recommendation-title {{
+                    font-weight: 700;
+                    color: #166534;
+                    font-size: 10pt;
+                    margin-bottom: 4px;
+                }}
+
+                .recommendation-text {{
+                    margin: 0;
+                    font-size: 9pt;
+                    color: #15803d;
+                    line-height: 1.4;
+                }}
+
+                .info-card {{
+                    background: #eff6ff;
+                    border: 1px solid #bfdbfe;
+                    border-left: 4px solid #3b82f6;
+                    border-radius: 4px;
+                    padding: 12px 16px;
+                    margin-bottom: 12px;
+                }}
+
+                .info-card .recommendation-title {{
+                    color: #1e40af;
+                }}
+
+                .info-card .recommendation-text {{
+                    color: #1d4ed8;
+                }}
+
+                /* Compliance & Strategic Assessment Styles */
+                .compliance-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 24px;
+                }}
+                .compliance-table th {{
+                    background-color: #f8fafc;
+                    color: #475569;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    font-size: 8pt;
+                    padding: 8px 10px;
+                    border-bottom: 2px solid #cbd5e1;
+                }}
+                .compliance-table td {{
+                    padding: 8px 10px;
+                    border-bottom: 1px solid #e2e8f0;
+                    font-size: 9pt;
+                }}
+                .status-badge {{
+                    display: inline-block;
+                    padding: 2px 8px;
+                    font-size: 7.5pt;
+                    font-weight: 600;
+                    border-radius: 4px;
+                    text-transform: uppercase;
+                }}
+                .status-compliant {{
+                    background-color: #dcfce7;
+                    color: #15803d;
+                    border: 1px solid #bbf7d0;
+                }}
+                .status-gap {{
+                    background-color: #fee2e2;
+                    color: #991b1b;
+                    border: 1px solid #fca5a5;
+                }}
+                .strategic-assessment-box {{
+                    margin-top: 18px;
+                    margin-bottom: 24px;
+                    padding: 16px;
+                    background: #faf5ff;
+                    border: 1px solid #e9d5ff;
+                    border-left: 5px solid #a855f7;
+                    border-radius: 6px;
                 }}
             </style>
         </head>
@@ -543,30 +1095,34 @@ class ReportGenerator:
             <div class="cover-page">
                 <div class="cover-header">
                     <h1 class="cover-title">Fire Crow Audit Report</h1>
-                    <p class="cover-subtitle">Continuous Offensive Security & SAST Agent Analysis</p>
+                    <p class="cover-subtitle">Autonomous Security Intelligence Analysis</p>
                 </div>
                 
                 <div class="cover-metadata">
                     <div class="metadata-grid">
                         <div class="metadata-row">
-                            <div class="metadata-label">Job ID:</div>
+                            <div class="metadata-label">Job ID</div>
                             <div class="metadata-value">{safe_job_id}</div>
                         </div>
                         <div class="metadata-row">
-                            <div class="metadata-label">Repository URL:</div>
+                            <div class="metadata-label">Repository</div>
                             <div class="metadata-value">{safe_repo_url}</div>
                         </div>
                         <div class="metadata-row">
-                            <div class="metadata-label">Branch:</div>
+                            <div class="metadata-label">Branch</div>
                             <div class="metadata-value">{safe_branch}</div>
                         </div>
                         <div class="metadata-row">
-                            <div class="metadata-label">Audit Date:</div>
-                            <div class="metadata-value">{datetime.now(timezone.utc).strftime('%B %d, %Y')}</div>
+                            <div class="metadata-label">Audit Date</div>
+                            <div class="metadata-value">{datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}</div>
                         </div>
                         <div class="metadata-row">
-                            <div class="metadata-label">Total Findings:</div>
+                            <div class="metadata-label">Total Findings</div>
                             <div class="metadata-value">{total_issues}</div>
+                        </div>
+                        <div class="metadata-row">
+                            <div class="metadata-label">Risk Level</div>
+                            <div class="metadata-value" style="color: {risk_color}; font-weight: 700;">{risk_label}</div>
                         </div>
                     </div>
                 </div>
@@ -577,42 +1133,107 @@ class ReportGenerator:
             
             <div class="risk-banner">
                 <div class="risk-title">OVERALL POSTURE: {risk_label}</div>
-                <p class="risk-desc">Fire Crow completed an authorization-only defensive security review of the submitted repository and recorded evidence-backed findings from the configured scanners.</p>
+                <p class="risk-desc">{risk_narrative}</p>
+            </div>
+
+            <!-- Strategic Posture Assessment -->
+            <div class="section-header">Executive Strategic Posture Assessment</div>
+            <div class="strategic-assessment-box">
+                <p style="margin: 0; font-size: 9.5pt; color: #581c87; line-height: 1.6; font-style: italic;">
+                    {html.escape(strategic_assessment) if strategic_assessment else "No strategic assessment details available."}
+                </p>
             </div>
 
             <div class="card-grid">
                 <div class="stat-card" style="border-top: 3px solid #ef4444;">
-                    <div class="stat-number">{counts[Severity.CRITICAL]}</div>
+                    <div class="stat-number" style="color: #ef4444;">{counts[Severity.CRITICAL]}</div>
                     <div class="stat-label">Critical</div>
                 </div>
                 <div class="stat-card" style="border-top: 3px solid #f97316;">
-                    <div class="stat-number">{counts[Severity.HIGH]}</div>
+                    <div class="stat-number" style="color: #f97316;">{counts[Severity.HIGH]}</div>
                     <div class="stat-label">High</div>
                 </div>
                 <div class="stat-card" style="border-top: 3px solid #eab308;">
-                    <div class="stat-number">{counts[Severity.MEDIUM]}</div>
+                    <div class="stat-number" style="color: #eab308;">{counts[Severity.MEDIUM]}</div>
                     <div class="stat-label">Medium</div>
                 </div>
                 <div class="stat-card" style="border-top: 3px solid #3b82f6;">
-                    <div class="stat-number">{counts[Severity.LOW]}</div>
+                    <div class="stat-number" style="color: #3b82f6;">{counts[Severity.LOW]}</div>
                     <div class="stat-label">Low</div>
                 </div>
+                <div class="stat-card" style="border-top: 3px solid #94a3b8;">
+                    <div class="stat-number" style="color: #94a3b8;">{counts[Severity.INFO]}</div>
+                    <div class="stat-label">Info</div>
+                </div>
             </div>
+
+            <!-- Charts -->
+            <div class="chart-container">
+                <div class="chart-box">
+                    <div class="chart-title">Severity Distribution</div>
+                    {donut_chart}
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">Findings by Severity</div>
+                    {severity_bar}
+                </div>
+            </div>
+
+            {f"""
+            <div class="chart-box" style="margin-bottom: 24px;">
+                <div class="chart-title">Findings by Scanner</div>
+                {bar_chart}
+            </div>
+            """ if scanner_counts else ""}
+
+            {f"""
+            <!-- Top CWEs -->
+            <div class="section-header" style="page-break-before: avoid;">Top CWE Weaknesses</div>
+            <table style="max-width: 400px;">
+                <thead>
+                    <tr><th>CWE ID</th><th>Occurrences</th></tr>
+                </thead>
+                <tbody>
+                    {cwe_rows}
+                </tbody>
+            </table>
+            """ if top_cwes else ""}
+
+            <!-- Recommendations -->
+            <div class="section-header">Security Recommendations</div>
+            {self._build_recommendations(counts, findings)}
 
             <!-- Findings Table -->
             <div class="section-header">Summary Table of Findings</div>
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
+                        <th style="width: 60px;">ID</th>
                         <th>Title</th>
-                        <th>Severity</th>
-                        <th>Source</th>
-                        <th>CWE</th>
+                        <th style="width: 70px;">Severity</th>
+                        <th style="width: 100px;">Source</th>
+                        <th style="width: 80px;">CWE</th>
+                        <th style="width: 50px;">CVSS</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {findings_rows or "<tr><td colspan='5' style='text-align: center; color: #64748b;'>No security issues detected. Clean audit report.</td></tr>"}
+                    {findings_rows or "<tr><td colspan='6' style='text-align: center; color: #64748b;'>No security issues detected. Clean audit report.</td></tr>"}
+                </tbody>
+            </table>
+
+            <!-- Compliance Control Mapping -->
+            <div class="section-header">Compliance Framework Control Mapping</div>
+            <table class="compliance-table">
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Standard</th>
+                        <th style="width: 200px;">Control</th>
+                        <th style="width: 120px;">Status</th>
+                        <th>Details & Remediation Impact</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {compliance_rows or "<tr><td colspan='4' style='text-align: center; color: #64748b;'>No compliance mapping data available.</td></tr>"}
                 </tbody>
             </table>
 
@@ -628,41 +1249,193 @@ class ReportGenerator:
                     </tr>
                 </thead>
                 <tbody>
-                    {scanner_rows}
+                    {scanner_rows or "<tr><td colspan='4' style='text-align: center; color: #64748b;'>No scanner execution data recorded.</td></tr>"}
                 </tbody>
             </table>
 
+            {f"""
+            <!-- Phase Execution Timeline -->
+            <div class="section-header">Pipeline Execution Timeline</div>
+            <p style="font-size: 9pt; color: #64748b; margin-bottom: 12px;">Total execution time: {total_duration:.1f} seconds</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 180px;">Phase</th>
+                        <th style="width: 80px;">Duration</th>
+                        <th>Progress</th>
+                        <th style="width: 70px;">% of Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {phase_rows}
+                </tbody>
+            </table>
+            """ if phase_durations else ""}
+
             <!-- Detailed Findings -->
             <div class="section-header">Detailed Findings & Proofs</div>
-            {detailed_findings or "<p style='color: #64748b;'>No vulnerabilities were found during static signature auditing or sandbox execution runs.</p>"}
+            {detailed_findings or "<div class='info-card'><div class='recommendation-title'>No Vulnerabilities Found</div><div class='recommendation-text'>No vulnerabilities were identified during this audit. The application follows security best practices across all tested attack vectors.</div></div>"}
+
+            <!-- Footer -->
+            <div style="margin-top: 40px; padding-top: 16px; border-top: 2px solid #e2e8f0; text-align: center; font-size: 8pt; color: #94a3b8;">
+                <p style="margin: 0;">Generated by <strong>Fire Crow</strong> &mdash; Autonomous Security Intelligence Platform</p>
+                <p style="margin: 4px 0 0 0;">Nova Devs &copy; {datetime.now(timezone.utc).year}. Report timestamp: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+            </div>
         </body>
         </html>
         """
         return html_template
 
+    def _build_donut_chart(self, counts: Dict[Severity, int], total: int, colors: Dict[Severity, str]) -> str:
+        """Build an SVG donut chart for severity distribution."""
+        if total == 0:
+            return '<svg width="160" height="160" viewBox="0 0 160 160"><circle cx="80" cy="80" r="60" fill="none" stroke="#e2e8f0" stroke-width="20"/><text x="80" y="85" text-anchor="middle" font-size="14" fill="#94a3b8" font-family="system-ui">No findings</text></svg>'
+
+        import math
+        cx, cy, r = 80, 80, 55
+        circumference = 2 * math.pi * r
+        offset = 0
+        arcs = []
+        
+        for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]:
+            count = counts.get(severity, 0)
+            if count == 0:
+                continue
+            pct = count / total
+            dash = pct * circumference
+            gap = circumference - dash
+            color = colors.get(severity, "#94a3b8")
+            arcs.append(
+                f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" '
+                f'stroke-width="22" stroke-dasharray="{dash:.1f} {gap:.1f}" '
+                f'stroke-dashoffset="-{offset:.1f}" transform="rotate(-90 {cx} {cy})"/>'
+            )
+            offset += dash
+
+        center_text = f'<text x="{cx}" y="{cy - 4}" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a" font-family="system-ui">{total}</text>'
+        center_label = f'<text x="{cx}" y="{cy + 14}" text-anchor="middle" font-size="9" fill="#64748b" font-family="system-ui">findings</text>'
+        
+        legend_items = []
+        y_offset = 10
+        for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]:
+            count = counts.get(severity, 0)
+            if count == 0:
+                continue
+            color = colors.get(severity, "#94a3b8")
+            legend_items.append(
+                f'<rect x="150" y="{y_offset}" width="10" height="10" rx="2" fill="{color}"/>'
+                f'<text x="165" y="{y_offset + 8.5}" font-size="8" fill="#475569" font-family="system-ui">{severity.value.upper()}: {count}</text>'
+            )
+            y_offset += 16
+
+        return f'<svg width="300" height="160" viewBox="0 0 300 160">{"".join(arcs)}{center_text}{center_label}{"".join(legend_items)}</svg>'
+
+    def _build_severity_bar_chart(self, counts: Dict[Severity, int], colors: Dict[Severity, str]) -> str:
+        """Build a horizontal bar chart for severity counts."""
+        max_count = max(counts.values()) if counts else 1
+        bars = []
+        y = 10
+        for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]:
+            count = counts.get(severity, 0)
+            color = colors.get(severity, "#94a3b8")
+            bar_width = (count / max_count * 180) if max_count > 0 else 0
+            bars.append(
+                f'<text x="65" y="{y + 10}" text-anchor="end" font-size="9" fill="#475569" font-family="system-ui">{severity.value.upper()}</text>'
+                f'<rect x="70" y="{y}" width="{bar_width}" height="14" rx="3" fill="{color}"/>'
+                f'<text x="{70 + bar_width + 6}" y="{y + 10.5}" font-size="9" fill="#0f172a" font-weight="600" font-family="system-ui">{count}</text>'
+            )
+            y += 22
+        return f'<svg width="280" height="{y + 5}" viewBox="0 0 280 {y + 5}">{"".join(bars)}</svg>'
+
+    def _build_scanner_bar_chart(self, scanner_counts: Dict[str, Dict[str, int]], colors: Dict[Severity, str]) -> str:
+        """Build a stacked horizontal bar chart for findings by scanner."""
+        if not scanner_counts:
+            return ""
+        
+        bars = []
+        y = 10
+        max_total = max(sum(sc.values()) for sc in scanner_counts.values()) if scanner_counts else 1
+        
+        for scanner, sc in sorted(scanner_counts.items(), key=lambda x: sum(x[1].values()), reverse=True):
+            total = sum(sc.values())
+            x_offset = 70
+            label = scanner[:20] + ("..." if len(scanner) > 20 else "")
+            bars.append(f'<text x="65" y="{y + 10}" text-anchor="end" font-size="8" fill="#475569" font-family="system-ui">{html.escape(label)}</text>')
+            
+            for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]:
+                count = sc.get(severity.value, 0)
+                if count == 0:
+                    continue
+                seg_width = (count / max_total * 200) if max_total > 0 else 0
+                color = colors.get(severity, "#94a3b8")
+                bars.append(f'<rect x="{x_offset}" y="{y}" width="{seg_width}" height="14" rx="2" fill="{color}"/>')
+                x_offset += seg_width
+            
+            bars.append(f'<text x="{x_offset + 5}" y="{y + 10.5}" font-size="8" fill="#0f172a" font-weight="600" font-family="system-ui">{total}</text>')
+            y += 20
+        
+        return f'<svg width="100%" height="{y + 5}" viewBox="0 0 500 {y + 5}" preserveAspectRatio="xMinYMin meet">{"".join(bars)}</svg>'
+
+    def _build_recommendations(self, counts: Dict[Severity, int], findings: List[Finding]) -> str:
+        """Build contextual security recommendations."""
+        recs = []
+        
+        if counts[Severity.CRITICAL] > 0:
+            recs.append(("Immediate Action Required", "Critical vulnerabilities were identified that could lead to severe data breaches or system compromise. Prioritize patching these issues before deploying to production. Consider conducting a focused penetration test on the affected attack surfaces."))
+        
+        if counts[Severity.HIGH] > 0:
+            recs.append(("Urgent Remediation", "High-severity findings expose significant attack vectors. Address these within the current sprint cycle. Implement additional input validation, output encoding, and access control checks."))
+        
+        if counts[Severity.MEDIUM] > 0:
+            recs.append(("Planned Remediation", "Medium-severity issues should be addressed in the next development cycle. These represent defense-in-depth weaknesses that could be chained with other vulnerabilities."))
+        
+        # Check for specific patterns
+        cwe_findings = {}
+        for f in findings:
+            if f.cwe_id:
+                cwe_findings.setdefault(f.cwe_id, []).append(f)
+        
+        if "CWE-89" in cwe_findings or "CWE-89" in str([f.cwe_id for f in findings]):
+            recs.append(("SQL Injection Detected", "SQL injection vulnerabilities allow attackers to execute arbitrary database queries. Use parameterized queries or ORM methods. Never concatenate user input into SQL strings."))
+        
+        if "CWE-79" in str([f.cwe_id for f in findings]):
+            recs.append(("Cross-Site Scripting (XSS)", "XSS vulnerabilities enable attackers to inject malicious scripts. Implement Content Security Policy headers, sanitize all user inputs, and use context-appropriate output encoding."))
+        
+        if "CWE-22" in str([f.cwe_id for f in findings]):
+            recs.append(("Path Traversal", "Path traversal vulnerabilities allow access to files outside the intended directory. Validate and sanitize file paths, use allowlists for permitted directories."))
+        
+        # Always add general recommendations
+        recs.append(("Security Best Practices", "Enable Content Security Policy (CSP) headers, implement rate limiting on all API endpoints, use HTTPS everywhere, and maintain dependency updates. Consider adding automated security scanning to your CI/CD pipeline."))
+        recs.append(("Monitoring & Logging", "Implement comprehensive logging for all security-relevant events. Set up alerting for anomalous patterns, failed authentication attempts, and unauthorized access attempts."))
+        
+        html_recs = ""
+        for title, text in recs:
+            html_recs += f"""
+            <div class="recommendation-card">
+                <div class="recommendation-title">{html.escape(title)}</div>
+                <p class="recommendation-text">{html.escape(text)}</p>
+            </div>
+            """
+        return html_recs
+
     def compile_pdf(self, html_content: str, output_path: str) -> bool:
-        """Compiles HTML template into PDF file on disk."""
         if not WEASYPRINT_AVAILABLE:
-            logger.warning("WeasyPrint is not available on this platform. PDF generation is falling back to simulated files and HTML layout.")
+            logger.warning("WeasyPrint not available. PDF generation skipped for %s.", output_path)
+            fallback_path = output_path.replace(".pdf", ".html")
             try:
-                # Write HTML content as output file as fallback
-                fallback_path = output_path.replace(".pdf", ".html")
                 with open(fallback_path, "w", encoding="utf-8") as f:
                     f.write(html_content)
-                # Create a blank file with pdf extension to avoid downstream failures
-                with open(output_path, "wb") as f:
-                    f.write(b"%PDF-1.4 Simulated PDF Document")
-                return True
+                logger.info("Wrote HTML fallback to %s", fallback_path)
             except Exception as e:
-                logger.error(f"Failed writing simulated report output: {str(e)}")
-                return False
+                logger.error("Failed to write HTML fallback: %s", e)
+            return False
 
         try:
-            logger.info(f"Compiling HTML to PDF using WeasyPrint: {output_path}")
+            logger.info("Compiling HTML to PDF using WeasyPrint: %s", output_path)
             weasyprint.HTML(string=html_content).write_pdf(output_path)
             return True
         except Exception as e:
-            logger.exception(f"WeasyPrint PDF compilation failed: {str(e)}")
+            logger.exception("WeasyPrint PDF compilation failed: %s", e)
             return False
 
     def upload_to_r2(self, pdf_path: str, job_id: str) -> str:
@@ -735,7 +1508,7 @@ class ReportGenerator:
     ) -> bool:
         """Sends a beautiful transactional email with the PDF link and attachment via Google/SMTP or Resend."""
         if report_url.startswith("/"):
-            report_link = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard?job_id={job_id}"
+            report_link = build_audit_job_url(job_id)
         else:
             report_link = report_url
 
@@ -1084,7 +1857,7 @@ class ReportGenerator:
                                 "filename": os.path.basename(pdf_path),
                             }
                         ]
-                    resend.Emails.send(params)
+                    resend.Emails.send(params)  # type: ignore
                     logger.info("Transactional email successfully sent via Resend.")
                     success = True
                 except Exception as e:
@@ -1152,13 +1925,13 @@ class ReportGenerator:
                     
             return success
         finally:
-            if pdf_path:
+            if pdf_path and success:
                 try:
                     if os.path.exists(pdf_path):
                         os.remove(pdf_path)
                     html_path = pdf_path.replace(".pdf", ".html")
                     if os.path.exists(html_path):
                         os.remove(html_path)
-                    logger.info("Purged local report file copies after email dispatch.")
+                    logger.info("Purged local report file copies after successful email dispatch.")
                 except Exception as delete_error:
                     logger.warning("Failed to delete local report copies after email dispatch: %s", str(delete_error))

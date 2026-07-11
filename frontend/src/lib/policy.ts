@@ -1,44 +1,20 @@
-import { buildApiUrl } from "../shared/api/baseUrl";
-export const PRIVACY_POLICY_VERSION = "2026-06-06";
-export const TERMS_VERSION = "2026-06-06";
+import { request } from "./request";
 
-interface PolicyEventInput {
-  eventType: "link_click" | "page_view";
+export async function recordPolicyEvent(payload: {
+  policy: "terms" | "privacy_policy";
+  event_type: "link_click" | "page_view";
+  policy_version: string;
+  source?: string;
   href?: string;
-  pagePath?: string;
-  policy: "privacy_policy" | "terms";
-  policyVersion: string;
-  referrerPath?: string;
-  source: string;
-}
-
-export async function logPolicyEvent(input: PolicyEventInput): Promise<void> {
-  if (typeof window === "undefined") {
-    return;
+  page_path?: string;
+  referrer_path?: string;
+}): Promise<void> {
+  try {
+    await request<{ status: string }>("/auth/policy-events", {
+      method: "POST",
+      body: payload,
+    });
+  } catch {
+    // Legal event tracking should never block the user.
   }
-
-  const token = window.localStorage.getItem("fc_token");
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  await fetch(buildApiUrl("/auth/policy-events"), {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify({
-      event_type: input.eventType,
-      href: input.href,
-      page_path: input.pagePath,
-      policy: input.policy,
-      policy_version: input.policyVersion,
-      referrer_path: input.referrerPath,
-      source: input.source,
-    }),
-    keepalive: true,
-  }).catch(() => undefined);
 }

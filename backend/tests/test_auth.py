@@ -5,17 +5,17 @@ from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.main import app
-from backend.app.models import AuthExchangeCode, SecurityLog, SessionLocal, User
-from backend.app.services.auth import (
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.main import app
+from app.models import AuthExchangeCode, SecurityLog, SessionLocal, User, UserActivityEvent
+from app.services.auth import (
     AUTH_COOKIE_NAME,
     create_access_token,
     create_exchange_code,
     legacy_hash_password_for_tests,
     verify_access_token,
 )
-from backend.app.config import settings
+from app.config import settings
 
 client = TestClient(app)
 
@@ -105,7 +105,7 @@ def test_logout_revokes_token_with_redis_configured(monkeypatch):
             self.revoked[key] = (ttl, value)
 
     fake_redis = FakeRedis()
-    monkeypatch.setattr("backend.app.services.auth._get_redis_client", lambda: fake_redis)
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: fake_redis)
     monkeypatch.setattr(settings, "DEBUG", False)
     monkeypatch.setattr(settings, "REDIS_URL", "redis://cache.firecrow.test:6379/0")
 
@@ -173,7 +173,7 @@ def test_registration_and_login_flow():
         assert f"{AUTH_COOKIE_NAME}=" in reg_cookie
         assert "HttpOnly" in reg_cookie
         assert "Secure" in reg_cookie
-        assert "SameSite=lax" in reg_cookie
+        assert "SameSite=strict" in reg_cookie
 
         login_ok = client.post(
             "/api/v1/auth/login",
@@ -188,7 +188,7 @@ def test_registration_and_login_flow():
         assert f"{AUTH_COOKIE_NAME}=" in login_cookie
         assert "HttpOnly" in login_cookie
         assert "Secure" in login_cookie
-        assert "SameSite=lax" in login_cookie
+        assert "SameSite=strict" in login_cookie
 
         login_fail = client.post(
             "/api/v1/auth/login",
@@ -221,7 +221,42 @@ def test_login_requires_privacy_consent():
     assert "Privacy Policy consent" in response.json()["detail"]
 
 
-def test_oauth_redirects_fail_when_provider_not_configured():
+def test_policy_context_hides_unconfigured_oauth_providers(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+
+    response = client.get("/api/v1/auth/policy-context")
+
+    assert response.status_code == 200
+    providers = response.json()["providers"]
+    assert providers["github"] is False
+    assert providers["google"] is False
+    assert providers["password"] is True
+
+
+def test_policy_context_sets_local_csrf_cookie_without_secure_flag_in_debug(monkeypatch):
+    monkeypatch.setattr(settings, "CSRF_ENABLED", True)
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:3000")
+    monkeypatch.setattr(settings, "AUTH_COOKIE_SECURE", True)
+    with TestClient(app) as local_client:
+        response = local_client.get("/api/v1/auth/policy-context")
+
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "fc_csrf_token=" in set_cookie
+    assert "Secure" not in set_cookie
+
+
+def test_oauth_redirects_fail_when_provider_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
     github_response = client.get(
         "/api/v1/auth/github",
         params={
@@ -289,7 +324,7 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
                 )
             return FakeResponse([])
 
-    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
     monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.firecrow.test")
@@ -316,7 +351,7 @@ def test_github_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     assert f"{AUTH_COOKIE_NAME}=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    assert "SameSite=strict" in set_cookie
 
     db = SessionLocal()
     try:
@@ -357,7 +392,7 @@ def test_github_oauth_callback_uses_request_origin_when_frontend_url_missing(mon
                 )
             return FakeResponse([])
 
-    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "github-client")
     monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "github-secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "")
@@ -404,7 +439,7 @@ def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):
         async def get(self, *args, **kwargs):
             return FakeResponse({"id": "google-123", "email": "GoogleUser@Example.com"})
 
-    monkeypatch.setattr("backend.app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("app.api.routes_auth.httpx.AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-client")
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "https://app.firecrow.test")
@@ -431,7 +466,7 @@ def test_google_oauth_callback_sets_cookie_without_token_url(monkeypatch):
     assert f"{AUTH_COOKIE_NAME}=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    assert "SameSite=strict" in set_cookie
 
 
 def test_policy_event_logging_records_security_log():
@@ -490,7 +525,6 @@ def test_policy_event_logging_redacts_sensitive_details():
 
 
 def test_oauth_code_exchange():
-    token = create_access_token(user_id="usr_test_oauth", username="oauth_tester")
     original_frontend_url = settings.FRONTEND_URL
     original_debug = settings.DEBUG
     settings.FRONTEND_URL = "https://app.firecrow.test"
@@ -498,6 +532,7 @@ def test_oauth_code_exchange():
 
     db = SessionLocal()
     try:
+        token = create_access_token(user_id="usr_test_oauth", username="oauth_tester", db=db)
         code = create_exchange_code(user_id="usr_test_oauth", username="oauth_tester", token=token, db=db)
 
         stored_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()
@@ -513,7 +548,7 @@ def test_oauth_code_exchange():
         assert f"{AUTH_COOKIE_NAME}=" in set_cookie
         assert "HttpOnly" in set_cookie
         assert "Secure" in set_cookie
-        assert "SameSite=lax" in set_cookie
+        assert "SameSite=strict" in set_cookie
 
         db.expire_all()
         consumed_code = db.query(AuthExchangeCode).filter(AuthExchangeCode.code == code).first()
@@ -535,6 +570,15 @@ def test_policy_context_reports_password_auth_available():
 
 def test_user_activity_logging():
     username = f"logtester_{uuid.uuid4().hex[:6]}"
+
+    def fetch_activity_rows(db_session, target_user_id: str) -> list[UserActivityEvent]:
+        return (
+            db_session.query(UserActivityEvent)
+            .filter(UserActivityEvent.user_id == target_user_id)
+            .order_by(UserActivityEvent.created_at.desc())
+            .all()
+        )
+
     # 1. Register a new user
     reg_payload = _register_payload(username)
     reg_payload["email"] = f"{username}@example.com"
@@ -546,7 +590,7 @@ def test_user_activity_logging():
     user_id = reg_response.json()["user_id"]
     token = reg_response.json()["access_token"]
 
-    from backend.app.api.routes_auth import TERMS_VERSION
+    from app.api.routes_auth import TERMS_VERSION
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
@@ -555,13 +599,10 @@ def test_user_activity_logging():
         assert user.terms_accepted_at is not None
         assert user.first_login_at is not None
         assert user.last_login_at is not None
-        assert user.activity_log is not None
-        
-        # Verify JSON activity log
-        activity_history = json.loads(user.activity_log)
-        assert len(activity_history) >= 2
-        assert activity_history[0]["action"] == "login"
-        assert activity_history[1]["action"] == "register"
+        activity_history = fetch_activity_rows(db, user_id)
+        activity_actions = [entry.action for entry in activity_history]
+        assert "login" in activity_actions
+        assert "register" in activity_actions
     finally:
         db.close()
 
@@ -577,13 +618,11 @@ def test_user_activity_logging():
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-        assert user is not None
-        assert user.activity_log is not None
-        activity_history = json.loads(user.activity_log)
+        activity_history = fetch_activity_rows(db, user_id)
         assert len(activity_history) >= 3
-        assert activity_history[0]["action"] == "login"
-        assert activity_history[0]["details"]["provider"] == "password"
+        assert activity_history[0].action == "login"
+        assert activity_history[0].details_json is not None
+        assert json.loads(activity_history[0].details_json)["provider"] == "password"
     finally:
         db.close()
 
@@ -605,12 +644,9 @@ def test_user_activity_logging():
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-        assert user is not None
-        assert user.activity_log is not None
-        activity_history = json.loads(user.activity_log)
+        activity_history = fetch_activity_rows(db, user_id)
         assert len(activity_history) >= 4
-        assert activity_history[0]["action"] == "policy_privacy_policy_link_click"
+        assert activity_history[0].action == "policy_privacy_policy_link_click"
     finally:
         db.close()
 
@@ -626,9 +662,152 @@ def test_user_activity_logging():
         user = db.query(User).filter(User.id == user_id).first()
         assert user is not None
         assert user.last_logout_at is not None
-        assert user.activity_log is not None
-        activity_history = json.loads(user.activity_log)
+        activity_history = fetch_activity_rows(db, user_id)
         assert len(activity_history) >= 5
-        assert activity_history[0]["action"] == "logout"
+        assert activity_history[0].action == "logout"
     finally:
         db.close()
+
+def test_redis_miss_falls_back_to_db(monkeypatch):
+    class FakeRedis:
+        def exists(self, key: str) -> int:
+            return 0  # Cache miss
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            pass
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: fake_redis)
+
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("redis_miss"))
+    token = reg_response.json()["access_token"]
+
+    # Log out (this should write to DB)
+    logout_response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    assert logout_response.status_code == 200
+
+    # Test that /me rejects it despite Redis missing the key, because it falls back to DB
+    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+def test_redis_outage_falls_back_to_db(monkeypatch):
+    class CrashingRedis:
+        def exists(self, key: str) -> int:
+            raise Exception("Connection timeout")
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            raise Exception("Connection timeout")
+
+    crashing_redis = CrashingRedis()
+    monkeypatch.setattr("app.services.auth._get_redis_client", lambda: crashing_redis)
+
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("redis_outage"))
+    token = reg_response.json()["access_token"]
+
+    # Log out
+    client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+
+    # Token should still be revoked
+    response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+def test_auth_me_bearer_no_cookies():
+    # Register user with standard client (sets cookies on standard client)
+    reg_response = client.post("/api/v1/auth/register", json=_register_payload("cleanclient"))
+    assert reg_response.status_code == 200
+    token = reg_response.json()["access_token"]
+    user_id = reg_response.json()["user_id"]
+
+    # Use a brand new client with no cookies
+    clean_client = TestClient(app)
+    response = clean_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["user_id"] == user_id
+    assert response.json()["username"] == "cleanclient"
+
+
+def test_github_mock_oauth_flow(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "mock_github_client_id")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "mock_github_client_secret")
+
+    # Step 1: Login redirect
+    login_response = client.get(
+        "/api/v1/auth/github",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    )
+    assert login_response.status_code in {302, 307}
+    location = login_response.headers["location"]
+    
+    # Parse the redirect URL
+    parsed = urlparse(location)
+    query_params = parse_qs(parsed.query)
+    assert "code" in query_params
+    assert "state" in query_params
+    
+    code = query_params["code"][0]
+    state = query_params["state"][0]
+    assert code == "mock_github_code"
+    
+    # Step 2: Callback
+    callback_response = client.get(
+        "/api/v1/auth/github/callback",
+        params={
+            "code": code,
+            "state": state,
+        },
+        follow_redirects=False,
+    )
+    assert callback_response.status_code in {302, 307}
+    callback_location = callback_response.headers["location"]
+    assert "code=" in callback_location
+
+
+def test_google_mock_oauth_flow(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "mock_google_client_id")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "mock_google_client_secret")
+
+    # Step 1: Login redirect
+    login_response = client.get(
+        "/api/v1/auth/google",
+        params={
+            "privacy_policy_accepted": "true",
+            "privacy_policy_version": PRIVACY_POLICY_VERSION,
+        },
+        follow_redirects=False,
+    )
+    assert login_response.status_code in {302, 307}
+    location = login_response.headers["location"]
+    
+    # Parse the redirect URL
+    parsed = urlparse(location)
+    query_params = parse_qs(parsed.query)
+    assert "code" in query_params
+    assert "state" in query_params
+    
+    code = query_params["code"][0]
+    state = query_params["state"][0]
+    assert code == "mock_google_code"
+    
+    # Step 2: Callback
+    callback_response = client.get(
+        "/api/v1/auth/google/callback",
+        params={
+            "code": code,
+            "state": state,
+        },
+        follow_redirects=False,
+    )
+    assert callback_response.status_code in {302, 307}
+    callback_location = callback_response.headers["location"]
+    assert "code=" in callback_location
+

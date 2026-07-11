@@ -1,6 +1,6 @@
 import pytest
-from backend.app.services.evidence_normalizer import normalize_finding
-from backend.app.schemas.audit_state import Severity
+from app.services.evidence_normalizer import normalize_finding
+from app.schemas.audit_state import Severity
 
 def test_test_fixture_secret_downgrade():
     result = normalize_finding(

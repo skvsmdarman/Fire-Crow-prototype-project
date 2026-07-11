@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.api.routes_auth import PRIVACY_POLICY_VERSION
-from backend.app.models import AuditJob, FindingModel, PushSubscription, SessionLocal
-from backend.app.schemas import JobStatus, Severity
+from app.main import app
+from app.api.routes_auth import PRIVACY_POLICY_VERSION
+from app.models import AuditJob, FindingModel, PushSubscription, SessionLocal
+from app.schemas import JobStatus, Severity
 
 client = TestClient(app)
 
@@ -99,7 +99,7 @@ def test_leaderboard_returns_score_contract_with_critical_counts():
 
 def test_push_subscribe_returns_subscribed_and_persists(monkeypatch):
     headers, user_id = _auth_session("push-contract-user")
-    monkeypatch.setattr("backend.app.api.routes_push.load_or_generate_vapid_keys", lambda: ("private", "public"))
+    monkeypatch.setattr("app.api.routes_push.load_or_generate_vapid_keys", lambda: ("private", "public"))
 
     response = client.post(
         "/api/v1/push/subscribe",

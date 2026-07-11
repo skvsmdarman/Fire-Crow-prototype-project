@@ -1,9 +1,9 @@
 import logging
 import os
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
 
-from backend.app.config import settings
-from backend.app.services.redaction import redact_text, truncate_text
+from app.config import settings
+from app.services.redaction import redact_text, truncate_text
 
 logger = logging.getLogger("firecrow.services.sandbox")
 
@@ -32,11 +32,13 @@ class SandboxManager:
         self.unavailable_reason = ""
         
         if settings.FIRE_CROW_MOCK_SANDBOX:
+            if not settings.DEBUG:
+                raise RuntimeError("FIRE_CROW_MOCK_SANDBOX is not allowed in production (DEBUG=False).")
             self.mock_mode = True
-            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in sandbox simulation mode.")
+            logger.info("FIRE_CROW_MOCK_SANDBOX is enabled. Running in sandbox simulation mode (DEBUG only).")
         elif DOCKER_AVAILABLE:
             try:
-                self.client = docker.from_env()
+                self.client = docker.from_env()  # type: ignore
                 # Ping daemon to confirm it is actually running and responsive
                 self.client.ping()
                 logger.info("Docker daemon connected. Sandbox manager running in active mode.")
@@ -50,6 +52,7 @@ class SandboxManager:
                     )
                 else:
                     logger.error("Docker daemon unavailable in production; refusing sandbox simulation.", exc_info=True)
+                    raise RuntimeError("Docker daemon is required for sandbox operations in production.")
         else:
             self.unavailable_reason = "Docker python SDK is not installed."
             if settings.DEBUG:
@@ -57,6 +60,7 @@ class SandboxManager:
                 logger.warning("Docker python SDK not installed. Running in DEBUG simulation mode.")
             else:
                 logger.error("Docker python SDK missing in production; refusing sandbox simulation.")
+                raise RuntimeError("Docker python SDK is required for sandbox operations in production.")
 
     def _container_security_options(self, job_id: str, role: str) -> dict[str, Any]:
         return {
@@ -108,28 +112,35 @@ class SandboxManager:
     ) -> Tuple[bool, str, str, str, str]:
         """
         Provisions private bridge network, target application container, and Kali testing container.
-        Returns: Tuple of (success, network_name, target_container_id, kali_container_id, kali_ip)
+        Returns: Tuple of (success, network_name, target_container_id, kali_container_id, target_ip)
         """
         net_name = f"fc-net-{job_id}"
         target_cid = f"fc-target-{job_id}"
         kali_cid = f"fc-kali-{job_id}"
+        target_ip = "172.20.0.3"
         kali_ip = "172.20.0.5"
 
         if self.mock_mode:
+            if not settings.DEBUG:
+                raise RuntimeError("Sandbox simulation mode is not allowed in production.")
             logger.info(f"[SIMULATOR] Created virtual private bridge network '{net_name}'")
             profile_name, _, _, _ = self._detect_launch_profile(clone_path)
             if profile_name == "unsupported":
-                logger.warning(f"[SIMULATOR] Unsupported repository tech stack; skipped target container run.")
+                logger.warning("[SIMULATOR] Unsupported repository tech stack; skipped target container run.")
                 target_cid_sim = ""
             else:
                 logger.info(f"[SIMULATOR] Deployed target application container '{target_cid}' with path '{clone_path}' (profile: {profile_name})")
                 target_cid_sim = target_cid
             logger.info(f"[SIMULATOR] Deployed Kali pentest agent container '{kali_cid}' connected to private network.")
-            return True, net_name, target_cid_sim, kali_cid, kali_ip
+            return True, net_name, target_cid_sim, kali_cid, target_ip
 
         if not self.client:
             logger.error("Docker client not initialized. %s", self.unavailable_reason)
-            return False, "", "", "", ""
+            if settings.DEBUG:
+                self.mock_mode = True
+                logger.warning("Falling back to DEBUG simulation mode due to missing Docker client.")
+                return self.provision_sandbox(job_id, clone_path, entry_points)
+            raise RuntimeError("Docker client is required for sandbox operations in production.")
 
         client = self.client
 
@@ -180,13 +191,18 @@ class SandboxManager:
             )
 
             logger.info(f"Docker sandbox successfully provisioned for job {job_id}.")
-            
-            # Inspect Kali container network settings to retrieve private IP address
-            kali_container.reload()
-            net_settings = kali_container.attrs["NetworkSettings"]["Networks"].get(net_name, {})
-            ip_address = net_settings.get("IPAddress", kali_ip)
 
-            return True, net_name, target_container_id_str, str(kali_container.id or ""), str(ip_address or "")
+            target_ip_addr = target_ip
+            if target_container_id_str:
+                try:
+                    target_container_ref = client.containers.get(target_container_id_str)
+                    target_container_ref.reload()
+                    target_net_settings = target_container_ref.attrs["NetworkSettings"]["Networks"].get(net_name, {})
+                    target_ip_addr = target_net_settings.get("IPAddress", target_ip)
+                except Exception as e:
+                    logger.warning("Failed to retrieve target container IP: %s", redact_text(str(e)))
+
+            return True, net_name, target_container_id_str, str(kali_container.id or ""), str(target_ip_addr or target_ip)
 
         except Exception as e:
             logger.exception("Failed to provision docker containers: %s", redact_text(str(e)))
@@ -207,18 +223,8 @@ class SandboxManager:
             logger.warning("DEBUG mode allowing non-standard scanner command: %s", executable)
 
         if self.mock_mode:
-            logger.info(f"[SIMULATOR] Executing Kali command: {' '.join(command)}")
-            # Custom mock outputs for testing
-            cmd_str = " ".join(command)
-            if "nmap" in cmd_str:
-                return 0, "Host: 172.20.0.3 (fc-target)\nPORT     STATE SERVICE\n8000/tcp open  http\n"
-            elif "sqlmap" in cmd_str:
-                return 0, "[INFO] POST parameter 'username' is vulnerable to SQL injection (DBMS: SQLite)"
-            elif "nuclei" in cmd_str:
-                return 0, "[CVE-2021-44228] Critical Apache Log4j RCE vulnerability detected"
-            elif "curl" in cmd_str:
-                return 0, "HTTP/1.1 200 OK\nServer: BaseHTTP"
-            return 0, f"Simulated output for: {cmd_str}"
+            logger.warning(f"Simulated executing Kali command has been disabled to preserve demo integrity. Tool unavailable: {' '.join(command)}")
+            return 1, "Tool execution unavailable."
 
         if not self.client:
             return 1, "Docker client not initialized"
@@ -266,8 +272,8 @@ class SandboxManager:
                     container.stop(timeout=5)
                     container.remove(force=True)
                     logger.info(f"Removed container {cid}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to remove container {cid}: {str(e)}")
 
         # Remove bridge network
         if network_name:
@@ -275,5 +281,5 @@ class SandboxManager:
                 network = client.networks.get(network_name)
                 network.remove()
                 logger.info(f"Removed network {network_name}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to remove network {network_name}: {str(e)}")

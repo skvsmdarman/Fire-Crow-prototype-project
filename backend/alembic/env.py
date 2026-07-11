@@ -18,11 +18,11 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-root = Path(__file__).resolve().parents[2]
+root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root))
 
-from backend.app.config import settings
-from backend.app.models import Base
+from app.config import settings
+from app.models import Base
 
 target_metadata = Base.metadata
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
@@ -64,7 +64,7 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    from backend.app.models.database import engine
+    from app.models.database import engine
 
     with engine.connect() as connection:
         context.configure(

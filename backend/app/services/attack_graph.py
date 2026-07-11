@@ -1,6 +1,6 @@
-from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState, Finding, Severity
-from backend.app.services.safe_llm import is_llm_enabled, safe_llm_call
+from typing import Any, Dict
+from app.schemas.audit_state import AuditState
+from app.services.safe_llm import is_llm_enabled, safe_llm_call
 
 
 def generate_chain_name(chain_description: str) -> str:
@@ -60,8 +60,7 @@ def build_attack_graph(state: AuditState) -> Dict[str, Any]:
 
     # 4. Form basic chains
     for route in state.api_surface:
-        route_path = route.get("path", "")
-        # Connect IDOR findings to routes
+        route_path = route.get("path", "unknown")
         for f in state.authz_findings:
             if f.route == route_path or (f.file_path and f.file_path == route.get("file")):
                 edges.append({
@@ -86,13 +85,13 @@ def build_attack_graph(state: AuditState) -> Dict[str, Any]:
 def attack_graph_body(db: Any, state: AuditState) -> Dict[str, Any]:
     graph = build_attack_graph(state)
 
-    from backend.app.orchestrator.maestro import log_agent_message
+    from app.orchestrator.maestro import log_agent_message
     log_agent_message(db, state.job_id, "ATTACK_GRAPH", f"Built attack graph with {len(graph['nodes'])} nodes and {len(graph['edges'])} edges.")
 
     # Save graph as JSON artifact
     try:
         import json
-        from backend.app.models.audit_job import AuditArtifact
+        from app.models.audit_job import AuditArtifact
         artifact = AuditArtifact(
             job_id=state.job_id,
             artifact_type="attack_graph",

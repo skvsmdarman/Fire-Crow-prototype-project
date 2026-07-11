@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-from backend.app.schemas.audit_state import Finding, Severity
+from app.schemas.audit_state import Finding
 
 def score_confidence(finding: Finding) -> Finding:
     """

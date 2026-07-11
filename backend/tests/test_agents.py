@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
-from backend.app.agents.ai_analyzer import ai_analyzer_body, run_ai_analyzer
-from backend.app.agents.google_agent import run_google_agent
-from backend.app.schemas.audit_state import AuditState, Finding, Severity
+from app.agents.ai_analyzer import ai_analyzer_body, run_ai_analyzer
+from app.agents.google_agent import run_google_agent
+from app.schemas.audit_state import AuditState, Finding, Severity
 
 
 def test_ai_analyzer_deduplicates_deterministically_without_remediations():
@@ -78,7 +78,7 @@ def test_google_agent_uses_deterministic_risk_assessment_without_llm():
         )
     ]
 
-    with patch("urllib.request.urlopen") as mock_urlopen, patch("smtplib.SMTP") as mock_smtp, patch("backend.app.agents.google_agent.settings") as mock_settings:
+    with patch("urllib.request.urlopen") as mock_urlopen, patch("smtplib.SMTP") as mock_smtp, patch("app.agents.google_agent.settings") as mock_settings:
         mock_settings.SMTP_USER = "security@example.com"
         mock_settings.SMTP_PASSWORD = "topsecret"
         mock_settings.SMTP_HOST = "smtp.gmail.com"

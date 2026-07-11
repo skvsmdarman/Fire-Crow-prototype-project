@@ -1,0 +1,55 @@
+# Ignore node modules and build outputs
+**/node_modules
+**/.next
+**/out
+node_modules
+.next
+out
+
+# Ignore virtual environments
+.venv
+venv
+env
+ENV
+
+# Ignore databases and sqlite files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+firecrow.db
+
+# Ignore IDE and settings files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Ignore git and local config files
+.git
+.github
+.gitignore
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*.local
+
+# Ignore OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Ignore test caches and artifacts
+.pytest_cache
+.coverage
+htmlcov
+artifacts
+workspace
+agent_logs
+temp

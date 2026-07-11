@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-from backend.app.schemas.audit_state import AuditState, Finding
+from app.schemas.audit_state import AuditState, Finding
 
 def generate_remediation_plan(findings: List[Finding]) -> Dict[str, Any]:
     """
@@ -8,15 +8,15 @@ def generate_remediation_plan(findings: List[Finding]) -> Dict[str, Any]:
     tasks = []
 
     for f in findings:
-        if not f.remediation and f.severity.value in ["critical", "high"]:
-            # Provide generic remediation if none exists for high severity
-            f.remediation = "Review the affected code and apply standard security best practices to mitigate this vulnerability."
+        remediation = f.remediation
+        if not remediation and f.severity.value in ["critical", "high"]:
+            remediation = "Review the affected code and apply standard security best practices to mitigate this vulnerability."
 
-        if f.remediation:
+        if remediation:
             task = {
                 "finding_id": f.id,
                 "title": f"Fix: {f.title}",
-                "description": f.remediation,
+                "description": remediation,
                 "severity": f.severity.value,
                 "file_path": f.file_path,
                 "priority": 1 if f.severity.value == "critical" else 2 if f.severity.value == "high" else 3
@@ -40,7 +40,7 @@ def remediation_planner_body(db: Any, state: AuditState) -> Dict[str, Any]:
 
     plan = generate_remediation_plan(all_vulns)
 
-    from backend.app.orchestrator.maestro import log_agent_message
+    from app.orchestrator.maestro import log_agent_message
     log_agent_message(db, state.job_id, "REMEDIATION_PLANNER", f"Remediation plan generated with {len(plan['tasks'])} tasks.")
 
     return {

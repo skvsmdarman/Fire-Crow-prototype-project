@@ -1,10 +1,10 @@
-from sqlalchemy import String, DateTime, ForeignKey, Float, Integer, Boolean, Text
+from sqlalchemy import String, DateTime, ForeignKey, Integer, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
-from backend.app.models.database import Base
+from app.models.database import Base
 
 
 def generate_uuid() -> str:

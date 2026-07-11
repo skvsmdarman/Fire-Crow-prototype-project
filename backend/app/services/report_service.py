@@ -1,14 +1,13 @@
 import os
-import tempfile
 import logging
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings, WORKSPACE_DIR
-from backend.app.models import AuditJob, AuditReport
-from backend.app.schemas import Finding, Severity
-from backend.app.services.reporter import ReportGenerator, get_clean_repo_name
+from app.config import settings, WORKSPACE_DIR
+from app.models import AuditJob, AuditReport
+from app.schemas import Finding, Severity
+from app.services.reporter import ReportGenerator, get_clean_repo_name
 
 logger = logging.getLogger("firecrow.services.report_service")
 
@@ -41,9 +40,9 @@ def generate_markdown_report(
         risk_label = "SECURE"
 
     md = []
-    md.append(f"# Fire Crow Security Audit Report")
-    md.append(f"**Continuous Offensive Security & SAST Agent Analysis**\n")
-    md.append(f"## Metadata")
+    md.append("# Fire Crow Security Audit Report")
+    md.append("**Continuous Offensive Security & SAST Agent Analysis**\n")
+    md.append("## Metadata")
     md.append(f"- **Job ID:** {job_id}")
     md.append(f"- **Repository:** {repo_url}")
     md.append(f"- **Branch:** {branch}")
@@ -51,14 +50,14 @@ def generate_markdown_report(
     md.append(f"- **Total Findings:** {total_issues}")
     md.append(f"- **Overall Posture:** {risk_label}\n")
     
-    md.append(f"## Summary of Findings")
+    md.append("## Summary of Findings")
     md.append(f"- **Critical:** {counts[Severity.CRITICAL]}")
     md.append(f"- **High:** {counts[Severity.HIGH]}")
     md.append(f"- **Medium:** {counts[Severity.MEDIUM]}")
     md.append(f"- **Low:** {counts[Severity.LOW]}")
     md.append(f"- **Info:** {counts[Severity.INFO]}\n")
     
-    md.append(f"## Findings Table")
+    md.append("## Findings Table")
     if total_issues > 0:
         md.append("| ID | Title | Severity | Agent | CWE |")
         md.append("| --- | --- | --- | --- | --- |")
@@ -81,13 +80,13 @@ def generate_markdown_report(
             md.append(f"- **Source Agent:** {f.agent_source}")
             md.append(f"- **CWE:** {cwe}")
             md.append(f"- **CVSS:** {cvss_score} ({cvss_vector})")
-            md.append(f"\n#### Description")
+            md.append("\n#### Description")
             md.append(f"{f.description}")
             if f.evidence:
-                md.append(f"\n#### Evidence")
+                md.append("\n#### Evidence")
                 md.append(f"```\n{f.evidence}\n```")
             if f.remediation:
-                md.append(f"\n#### Remediation")
+                md.append("\n#### Remediation")
                 md.append(f"{f.remediation}")
             md.append("\n---\n")
     else:
@@ -139,10 +138,12 @@ def create_report_in_db(
     
     # 4. Update AuditJob to link this report
     job = db.query(AuditJob).filter(AuditJob.id == job_id).first()
-    if job:
-        job.report_id = report.id
-        db.add(job)
-        
+    if not job:
+        db.rollback()
+        raise RuntimeError(f"AuditJob {job_id} not found. Cannot create report.")
+
+    job.report_id = report.id
+    db.add(job)
     db.commit()
     logger.info("Successfully created structured report %s for job %s", report.id, job_id)
     return report

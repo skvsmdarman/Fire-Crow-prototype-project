@@ -5,9 +5,8 @@ import subprocess
 import uuid
 from typing import Any, List
 
-from backend.app.config import settings
-from backend.app.schemas import Finding, Severity
-from backend.app.services.redaction import redact_text, truncate_text
+from app.schemas import Finding, Severity
+from app.services.redaction import redact_text, truncate_text
 
 logger = logging.getLogger("firecrow.agents.dependency")
 
@@ -23,6 +22,36 @@ def _severity(value: str | None) -> Severity:
     if normalized in {"low"}:
         return Severity.LOW
     return Severity.INFO
+
+
+def _severity_from_cvss_vector(vector: str | None) -> Severity:
+    """Parse a CVSS vector string and map to severity.
+
+    CVSS v2/v3 vectors look like:
+      CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+    """
+    if not vector or not vector.startswith("CVSS:"):
+        return Severity.INFO
+    parts = vector.split("/")
+    c = "N"
+    i = "N"
+    a = "N"
+    for part in parts:
+        if part.startswith("C:"):
+            c = part[2:]
+        elif part.startswith("I:"):
+            i = part[2:]
+        elif part.startswith("A:"):
+            a = part[2:]
+    impacts = (c, i, a)
+    high_count = sum(1 for v in impacts if v == "H")
+    if high_count >= 2:
+        return Severity.CRITICAL
+    if high_count >= 1:
+        return Severity.HIGH
+    if "L" in impacts:
+        return Severity.MEDIUM
+    return Severity.LOW
 
 
 def _run_json_command(command: list[str], clone_path: str) -> dict[str, Any] | None:
@@ -67,7 +96,7 @@ def _findings_from_osv(data: dict[str, Any]) -> list[Finding]:
                 severity = Severity.MEDIUM
                 severity_records = vuln.get("severity") or []
                 if severity_records:
-                    severity = _severity(severity_records[0].get("score"))
+                    severity = _severity_from_cvss_vector(severity_records[0].get("score"))
                 findings.append(
                     Finding(
                         id=str(uuid.uuid4()),
@@ -161,6 +190,4 @@ def run_dependency_scan(clone_path: str, dependency_manifests: List[str]) -> Lis
             return _findings_from_trivy(data)
 
     logger.info("Dependency scanner unavailable; no dependency findings will be generated.")
-    if settings.DEBUG:
-        return _simulated_findings(dependency_manifests)
     return []

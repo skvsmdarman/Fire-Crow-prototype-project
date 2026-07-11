@@ -3,11 +3,18 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any
-from backend.app.schemas import Finding, Severity
-from backend.app.config import settings, WORKSPACE_DIR
-from backend.app.services.redaction import redact_text
+from app.schemas import Finding, Severity
+from app.config import settings, WORKSPACE_DIR
+from app.services.frontend_urls import build_audit_job_url
+from app.services.redaction import redact_text
 
 logger = logging.getLogger("firecrow.agents.google_agent")
+
+
+def html_escape(text: str) -> str:
+    """Escapes HTML special characters."""
+    import html
+    return html.escape(text)
 
 
 def _deterministic_pr_risk_analysis(findings: List[Finding], remediations: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -132,7 +139,7 @@ def run_google_agent(
         </ul>
 
         <div style="text-align: center; margin-top: 35px; margin-bottom: 15px;">
-            <a href="http://localhost:3000/dashboard" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
+            <a href="{html_escape(build_audit_job_url(job_id))}" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: background-color 0.2s;">View Full Security Dashboard</a>
         </div>
         
         <p style="font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 30px; text-align: center;">This analysis was autonomously formulated by the Fire Crow Google Security Agent orchestrator.</p>
@@ -238,8 +245,3 @@ def run_google_agent(
         "google_agent_risk_report": pr_risk_analysis,
         "google_agent_logs": logs
     }
-
-def html_escape(text: str) -> str:
-    """Escapes HTML special characters."""
-    import html
-    return html.escape(text)

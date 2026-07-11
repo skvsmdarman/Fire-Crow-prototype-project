@@ -5,9 +5,8 @@ import subprocess
 import uuid
 from typing import Any, List
 
-from backend.app.config import settings
-from backend.app.schemas import Finding, Severity
-from backend.app.services.redaction import redact_text, truncate_text
+from app.schemas import Finding, Severity
+from app.services.redaction import redact_text, truncate_text
 
 logger = logging.getLogger("firecrow.agents.semgrep")
 
@@ -117,6 +116,4 @@ def run_semgrep_scan(clone_path: str, tech_stack: List[str]) -> List[Finding]:
         return [_finding_from_result(result) for result in data.get("results", [])]
 
     logger.info("Semgrep unavailable; no Semgrep findings will be generated.")
-    if settings.DEBUG:
-        return _simulated_findings(tech_stack)
     return []

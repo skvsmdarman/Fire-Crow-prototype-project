@@ -1,16 +1,17 @@
 import asyncio
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import AsyncGenerator
 
-from backend.app.api.audit_queries import get_owned_job_or_404
-from backend.app.models import get_db, AuditJob, AgentLog
-from backend.app.schemas import JobStatus
-from backend.app.services.auth import get_current_user
-from backend.app.services.redaction import redact_text
+from app.api.audit_queries import get_owned_job_or_404
+from app.models import get_db, AuditJob, AgentLog
+from app.schemas import JobStatus
+from app.services.auth import get_current_user
+from app.services.limiter import limiter
+from app.services.redaction import redact_text
 from collections import defaultdict
 import uuid
 
@@ -22,8 +23,10 @@ logger = logging.getLogger("firecrow.sse")
 
 
 @router.get("/{job_id}/stream")
+@limiter.limit("30/minute")
 async def stream_audit_logs(
     job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
@@ -31,7 +34,7 @@ async def stream_audit_logs(
     Establish a Server-Sent Events (SSE) stream for live agent log updates.
     Ensures tenant isolation by checking job ownership before streaming.
     """
-    if len(_active_connections[user_id]) >= MAX_SSE_CONNECTIONS_PER_USER:
+    if user_id in _active_connections and len(_active_connections[user_id]) >= MAX_SSE_CONNECTIONS_PER_USER:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Maximum number of active streams ({MAX_SSE_CONNECTIONS_PER_USER}) reached."
@@ -59,16 +62,13 @@ async def stream_audit_logs(
             while connection_active:
                 # We create a new DB session inside the loop to avoid keeping the transaction open long-term
                 # and to fetch the latest state updates.
-                from backend.app.models import SessionLocal
+                from app.models import SessionLocal
                 loop_db = SessionLocal()
                 try:
                     # Refresh job status
-                    current_job = (
-                        loop_db.query(AuditJob)
-                        .filter(AuditJob.id == job_id, AuditJob.user_id == user_id)
-                        .first()
-                    )
-                    if not current_job:
+                    try:
+                        current_job = get_owned_job_or_404(loop_db, job_id, user_id)
+                    except HTTPException:
                         yield f"event: error\ndata: {json.dumps({'error': 'Job is unavailable or access is no longer authorized'})}\n\n"
                         break
 

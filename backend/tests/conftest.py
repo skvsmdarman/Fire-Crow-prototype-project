@@ -9,20 +9,22 @@ from starlette.testclient import TestClient
 
 # 1. Set environment variables at the very top to force a dedicated SQLite database for tests
 # This must happen before any backend imports are triggered.
-TEST_DB_PATH = Path(tempfile.gettempdir()) / "firecrow_pytest.db"
-
-if TEST_DB_PATH.exists():
-    TEST_DB_PATH.unlink()
+import uuid
+TEST_DB_PATH = Path(tempfile.gettempdir()) / f"firecrow_pytest_{uuid.uuid4().hex}.db"
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"
+os.environ["ENCRYPTION_KEY"] = "test_encryption_key_32_bytes_minimum"
 os.environ["DEBUG"] = "True"
 os.environ["FIRE_CROW_MOCK_SANDBOX"] = "True"
+os.environ["CSRF_ENABLED"] = "False"
+os.environ["AUTH_COOKIE_SECURE"] = "True"
+os.environ["AUTH_COOKIE_SAMESITE"] = "strict"
 
-from backend.app.services.limiter import limiter
+from app.services.limiter import limiter
 limiter.enabled = False
 
-from backend.app.models.database import Base, engine
+from app.models.database import Base, engine
 
 
 @pytest.fixture(autouse=True, scope="function")

@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, List, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, field_validator, Field
 import re
-from backend.app.schemas.audit_state import JobStatus
+from app.schemas.audit_state import JobStatus
 
 if TYPE_CHECKING:
-    from backend.app.models.audit_job import AuditJob, FindingModel
+    from app.models.audit_job import AuditJob, FindingModel
 
 
 class SubmitJobRequest(BaseModel):
@@ -27,8 +27,10 @@ class SubmitJobRequest(BaseModel):
     @field_validator("repo_url")
     @classmethod
     def validate_repo_url(cls, v: str) -> str:
-        if not re.match(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(\.git)?$", v):
-            raise ValueError("Only public GitHub HTTPS URLs are supported.")
+        is_github = bool(re.match(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(\.git)?$", v))
+        is_web = bool(re.match(r"^https?://[a-zA-Z0-9._-]+(?::\d+)?(?:/.*)?$", v))
+        if not (is_github or is_web):
+            raise ValueError("Only public GitHub HTTPS URLs or HTTP/HTTPS target URLs are supported.")
         return v
 
     @field_validator("repo_branch")
