@@ -32,9 +32,11 @@ except ImportError:
 class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def normalize_sqlite_database_url(cls, value: Any) -> Any:
+    def normalize_database_url(cls, value: Any) -> Any:
         if not isinstance(value, str):
             return value
+        if value.startswith("postgres://"):
+            value = value.replace("postgres://", "postgresql://", 1)
         if not value.startswith("sqlite:///"):
             return value
 
@@ -151,10 +153,10 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000, validation_alias="PORT")
     HOST: str = Field(default="0.0.0.0", validation_alias="HOST")
     DEBUG: bool = Field(default=False, validation_alias="DEBUG")
-    SECRET_KEY: str = Field(default="", validation_alias="SECRET_KEY")
+    SECRET_KEY: str = Field(default="a7f3b8c29e4d5f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a", validation_alias="SECRET_KEY")
     ENCRYPTION_KEY: str = Field(default="", validation_alias="ENCRYPTION_KEY")
-    FRONTEND_URL: str = Field(default="", validation_alias="FRONTEND_URL")
-    CORS_ORIGINS: str = Field(default="", validation_alias="CORS_ORIGINS")
+    FRONTEND_URL: str = Field(default="https://fire-crow.onrender.com", validation_alias="FRONTEND_URL")
+    CORS_ORIGINS: str = Field(default="https://fire-crow.onrender.com", validation_alias="CORS_ORIGINS")
 
     # --- Security and Compliance Constants ---
     PRIVACY_POLICY_VERSION: str = Field(default="2026-06-06", validation_alias="PRIVACY_POLICY_VERSION")
@@ -171,13 +173,13 @@ class Settings(BaseSettings):
     LOGIN_FAILURE_WINDOW_MINUTES: int = Field(default=10, validation_alias="LOGIN_FAILURE_WINDOW_MINUTES")
     LOGIN_FAILURE_LIMIT: int = Field(default=5, validation_alias="LOGIN_FAILURE_LIMIT")
     MIN_PASSWORD_LENGTH: int = Field(default=12, validation_alias="MIN_PASSWORD_LENGTH")
-    MAX_REQUEST_BODY_BYTES: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB
-    MAX_JSON_BODY_BYTES: int = Field(default=2 * 1024 * 1024, validation_alias="MAX_JSON_BODY_BYTES")  # 2MB
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    MAX_REQUEST_BODY_BYTES: int = Field(default=10485760, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB
+    MAX_JSON_BODY_BYTES: int = Field(default=2097152, validation_alias="MAX_JSON_BODY_BYTES")  # 2MB
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
     AUTH_COOKIE_NAME: str = Field(default="fc_access_token", validation_alias="AUTH_COOKIE_NAME")
     AUTH_COOKIE_SECURE: bool = Field(default=True, validation_alias="AUTH_COOKIE_SECURE")
     AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
-    AUTH_COOKIE_SAMESITE: Literal['lax', 'strict', 'none'] | None = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
+    AUTH_COOKIE_SAMESITE: Literal['lax', 'strict', 'none'] | None = Field(default="lax", validation_alias="AUTH_COOKIE_SAMESITE")
     CSRF_ENABLED: bool = Field(default=True, validation_alias="CSRF_ENABLED")
 
     # --- MFA Settings ---
@@ -205,7 +207,7 @@ class Settings(BaseSettings):
     # --- Database & Cache ---
     DATABASE_BACKEND: Literal["postgresql", "neo4j"] = Field(default="postgresql", validation_alias="DATABASE_BACKEND")
     DATABASE_URL: str = Field(
-        default="",
+        default="postgresql://neondb_owner:npg_c6aUlVjpNeP1@ep-twilight-night-aolox43p-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
         validation_alias="DATABASE_URL"
     )
     DATABASE_POOL_SIZE: int = Field(default=50)
@@ -227,25 +229,25 @@ class Settings(BaseSettings):
         validation_alias="REDIS_URL"
     )
     REDIS_PASSWORD: str = Field(default="", validation_alias="REDIS_PASSWORD")
-    FIRE_CROW_MOCK_SANDBOX: bool = Field(default=False, validation_alias="FIRE_CROW_MOCK_SANDBOX")
+    FIRE_CROW_MOCK_SANDBOX: bool = Field(default=True, validation_alias="FIRE_CROW_MOCK_SANDBOX")
     FIRE_CROW_SCANNER_IMAGE: str = Field(
         default="ghcr.io/johan-droid/firecrow-scanner:2026-06-06",
         validation_alias="FIRE_CROW_SCANNER_IMAGE",
     )
 
     # --- GitHub Integrations ---
-    GITHUB_CLIENT_ID: str = Field(default="", validation_alias="GITHUB_CLIENT_ID")
-    GITHUB_CLIENT_SECRET: str = Field(default="", validation_alias="GITHUB_CLIENT_SECRET")
-    GITHUB_TOKEN: str = Field(default="", validation_alias="GITHUB_TOKEN")
+    GITHUB_CLIENT_ID: str = Field(default="YOUR_GITHUB_CLIENT_ID", validation_alias="GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET: str = Field(default="YOUR_GITHUB_CLIENT_SECRET", validation_alias="GITHUB_CLIENT_SECRET")
+    GITHUB_TOKEN: str = Field(default="YOUR_GITHUB_TOKEN", validation_alias="GITHUB_TOKEN")
 
     # --- Google Integrations ---
-    GOOGLE_CLIENT_ID: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
-    GOOGLE_CLIENT_SECRET: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
+    GOOGLE_CLIENT_ID: str = Field(default="YOUR_GOOGLE_CLIENT_ID", validation_alias="GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: str = Field(default="YOUR_GOOGLE_CLIENT_SECRET", validation_alias="GOOGLE_CLIENT_SECRET")
 
     # --- Communication ---
-    RESEND_API_KEY: str = Field(default="", validation_alias="RESEND_API_KEY")
+    RESEND_API_KEY: str = Field(default="YOUR_RESEND_API_KEY", validation_alias="RESEND_API_KEY")
     BREVO_API_KEY: str = Field(default="", validation_alias="BREVO_API_KEY")
-    SENDER_EMAIL: str = Field(default="reports@firecrow.dev", validation_alias="SENDER_EMAIL")
+    SENDER_EMAIL: str = Field(default="onboarding@resend.dev", validation_alias="SENDER_EMAIL")
 
     # --- Google/SMTP Mail ---
     SMTP_HOST: str = Field(default="smtp.gmail.com", validation_alias="SMTP_HOST")
@@ -260,32 +262,32 @@ class Settings(BaseSettings):
     R2_BUCKET_NAME: str = Field(default="firecrow-reports", validation_alias="R2_BUCKET_NAME")
 
     # --- AI Models API Keys ---
-    GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
-    GEMINI_MODEL: str = Field(default="gemini-1.5-flash", validation_alias="GEMINI_MODEL")
+    GEMINI_API_KEY: str = Field(default="YOUR_GEMINI_API_KEY", validation_alias="GEMINI_API_KEY")
+    GEMINI_MODEL: str = Field(default="gemini-2.0-flash", validation_alias="GEMINI_MODEL")
 
     # --- Gemini Tuning ---
-    GEMINI_FALLBACK_MODEL: str = Field(default="gemini-1.5-pro", validation_alias="GEMINI_FALLBACK_MODEL")
-    GEMINI_ENABLE_FALLBACK_MODEL: bool = Field(default=True, validation_alias="GEMINI_ENABLE_FALLBACK_MODEL")
-    GEMINI_MAX_ATTEMPTS: int = Field(default=3, validation_alias="GEMINI_MAX_ATTEMPTS")
+    GEMINI_FALLBACK_MODEL: str = Field(default="gemini-1.5-flash", validation_alias="GEMINI_FALLBACK_MODEL")
+    GEMINI_ENABLE_FALLBACK_MODEL: bool = Field(default=False, validation_alias="GEMINI_ENABLE_FALLBACK_MODEL")
+    GEMINI_MAX_ATTEMPTS: int = Field(default=2, validation_alias="GEMINI_MAX_ATTEMPTS")
     GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias="GEMINI_TIMEOUT_SECONDS")
-    GEMINI_MAX_FINDINGS_PER_CALL: int = Field(default=50, validation_alias="GEMINI_MAX_FINDINGS_PER_CALL")
-    GEMINI_MAX_PROMPT_CHARS: int = Field(default=100000, validation_alias="GEMINI_MAX_PROMPT_CHARS")
-    GEMINI_DAILY_SOFT_LIMIT: int = Field(default=1000, validation_alias="GEMINI_DAILY_SOFT_LIMIT")
-    GEMINI_MIN_SECONDS_BETWEEN_CALLS: int = Field(default=1, validation_alias="GEMINI_MIN_SECONDS_BETWEEN_CALLS")
+    GEMINI_MAX_FINDINGS_PER_CALL: int = Field(default=25, validation_alias="GEMINI_MAX_FINDINGS_PER_CALL")
+    GEMINI_MAX_PROMPT_CHARS: int = Field(default=60000, validation_alias="GEMINI_MAX_PROMPT_CHARS")
+    GEMINI_DAILY_SOFT_LIMIT: int = Field(default=100, validation_alias="GEMINI_DAILY_SOFT_LIMIT")
+    GEMINI_MIN_SECONDS_BETWEEN_CALLS: int = Field(default=2, validation_alias="GEMINI_MIN_SECONDS_BETWEEN_CALLS")
 
     # --- Orchestration Tunables ---
-    MAX_ACTIVE_JOBS_PER_USER: int = Field(default=5, validation_alias="MAX_ACTIVE_JOBS_PER_USER")
+    MAX_ACTIVE_JOBS_PER_USER: int = Field(default=2, validation_alias="MAX_ACTIVE_JOBS_PER_USER")
     BROKER_CONNECTION_TIMEOUT: float = Field(default=0.5, validation_alias="BROKER_CONNECTION_TIMEOUT")
-    SSE_POLL_INTERVAL: float = Field(default=0.5, validation_alias="SSE_POLL_INTERVAL")
+    SSE_POLL_INTERVAL: float = Field(default=1.5, validation_alias="SSE_POLL_INTERVAL")
     SSE_HEARTBEAT_INTERVAL: float = Field(default=15.0, validation_alias="SSE_HEARTBEAT_INTERVAL")
-    REPORT_PRESIGNED_TTL: int = Field(default=3600, validation_alias="REPORT_PRESIGNED_TTL")
+    REPORT_PRESIGNED_TTL: int = Field(default=900, validation_alias="REPORT_PRESIGNED_TTL")
     REPORT_LOCAL_FALLBACK: bool = Field(default=True, validation_alias="REPORT_LOCAL_FALLBACK")
-    MAX_SCAN_DURATION: int = Field(default=2700, validation_alias="MAX_SCAN_DURATION")
-    DEFAULT_BUDGET_USD: float = Field(default=5.0, validation_alias="DEFAULT_BUDGET_USD")
-    SCANNER_COMMAND_TIMEOUT: int = Field(default=600, validation_alias="SCANNER_COMMAND_TIMEOUT")
-    SCANNER_OUTPUT_MAX_LENGTH: int = Field(default=50000, validation_alias="SCANNER_OUTPUT_MAX_LENGTH")
-    API_DISCOVERY_LIMIT: int = Field(default=50, validation_alias="API_DISCOVERY_LIMIT")
-    GEMINI_FINDINGS_CHUNK_SIZE: int = Field(default=50, validation_alias="GEMINI_FINDINGS_CHUNK_SIZE")
+    MAX_SCAN_DURATION: int = Field(default=1800, validation_alias="MAX_SCAN_DURATION")
+    DEFAULT_BUDGET_USD: float = Field(default=1.0, validation_alias="DEFAULT_BUDGET_USD")
+    SCANNER_COMMAND_TIMEOUT: int = Field(default=300, validation_alias="SCANNER_COMMAND_TIMEOUT")
+    SCANNER_OUTPUT_MAX_LENGTH: int = Field(default=20000, validation_alias="SCANNER_OUTPUT_MAX_LENGTH")
+    API_DISCOVERY_LIMIT: int = Field(default=30, validation_alias="API_DISCOVERY_LIMIT")
+    GEMINI_FINDINGS_CHUNK_SIZE: int = Field(default=25, validation_alias="GEMINI_FINDINGS_CHUNK_SIZE")
     LLM_CHAT_ASSISTANT: bool = Field(default=False, validation_alias="LLM_CHAT_ASSISTANT")
     LLM_DASHBOARD_INSIGHT: bool = Field(default=False, validation_alias="LLM_DASHBOARD_INSIGHT")
     LLM_ATTACK_CHAIN_NAMING: bool = Field(default=False, validation_alias="LLM_ATTACK_CHAIN_NAMING")
@@ -304,10 +306,10 @@ class Settings(BaseSettings):
 
     # --- Reporter Tuning ---
     REPORT_COMPACT_MODE: bool = Field(default=True, validation_alias="REPORT_COMPACT_MODE")
-    REPORT_MAX_PAGES: int = Field(default=50, validation_alias="REPORT_MAX_PAGES")
-    REPORT_MAX_FINDINGS_IN_PDF: int = Field(default=100, validation_alias="REPORT_MAX_FINDINGS_IN_PDF")
-    REPORT_MAX_EVIDENCE_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_EVIDENCE_CHARS")
-    REPORT_MAX_REMEDIATION_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_REMEDIATION_CHARS")
+    REPORT_MAX_PAGES: int = Field(default=30, validation_alias="REPORT_MAX_PAGES")
+    REPORT_MAX_FINDINGS_IN_PDF: int = Field(default=50, validation_alias="REPORT_MAX_FINDINGS_IN_PDF")
+    REPORT_MAX_EVIDENCE_CHARS: int = Field(default=1200, validation_alias="REPORT_MAX_EVIDENCE_CHARS")
+    REPORT_MAX_REMEDIATION_CHARS: int = Field(default=1200, validation_alias="REPORT_MAX_REMEDIATION_CHARS")
     REPORT_INCLUDE_DETAILED_FINDINGS: bool = Field(default=True, validation_alias="REPORT_INCLUDE_DETAILED_FINDINGS")
     REPORT_STORE_FULL_ARTIFACT_JSON: bool = Field(default=True, validation_alias="REPORT_STORE_FULL_ARTIFACT_JSON")
     REPORT_STORE_HTML_IN_DB: bool = Field(default=True, validation_alias="REPORT_STORE_HTML_IN_DB")
@@ -316,6 +318,14 @@ class Settings(BaseSettings):
     REPORT_TEMP_DIR: str = Field(default="", validation_alias="REPORT_TEMP_DIR")
     REPORT_DELETE_TEMP_PDF: bool = Field(default=True, validation_alias="REPORT_DELETE_TEMP_PDF")
     OPENAI_API_KEY: str = Field(default="", validation_alias="OPENAI_API_KEY")
+
+    # --- Additional specific fields requested ---
+    FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD: bool = Field(default=False, validation_alias="FIRE_CROW_ALLOW_UNTRUSTED_DOCKERFILE_BUILD")
+    NEXT_PUBLIC_API_URL: str = Field(default="https://fire-crow.onrender.com/api/v1", validation_alias="NEXT_PUBLIC_API_URL")
+    OAUTH_EXCHANGE_CODE_TTL_SECONDS: int = Field(default=120, validation_alias="OAUTH_EXCHANGE_CODE_TTL_SECONDS")
+    PASSWORD_AUTH_ENABLED: bool = Field(default=True, validation_alias="PASSWORD_AUTH_ENABLED")
+    SESSION_LAST_SEEN_UPDATE_INTERVAL_SECONDS: int = Field(default=60, validation_alias="SESSION_LAST_SEEN_UPDATE_INTERVAL_SECONDS")
+
 
     model_config = SettingsConfigDict(
         env_file=(

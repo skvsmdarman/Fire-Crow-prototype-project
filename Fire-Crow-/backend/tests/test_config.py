@@ -186,3 +186,11 @@ def test_settings_reject_remote_neo4j_without_tls():
             NEO4J_USER="neo4j",
             NEO4J_PASSWORD="a_secure_neo4j_password",
         )
+
+
+def test_settings_normalizes_heroku_postgres_url():
+    configured = _prod_settings(
+        DATABASE_URL="postgres://user:pass@host:5432/db"
+    )
+    assert configured.DATABASE_URL == "postgresql://user:pass@host:5432/db"
+

@@ -43,6 +43,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if not settings.CSRF_ENABLED:
             return await call_next(request)
 
+        # Bypass CSRF checks for Bearer token requests (common for API clients like Expo/mobile)
+        # since CSRF only applies to cookie-based authentication sessions.
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.strip().lower().startswith("bearer "):
+            return await call_next(request)
+
         # Safe methods (GET/HEAD/OPTIONS/TRACE) do not require CSRF validation.
         if request.method in SAFE_METHODS:
             response = await call_next(request)

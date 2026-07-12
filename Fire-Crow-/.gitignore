@@ -22,6 +22,10 @@ htmlcov/
 .env.local
 .env.*
 !.env.example
+backend/.env
+backend/.env.local
+backend/.env.*
+!backend/.env.example
 
 # Database files
 *.db
@@ -46,3 +50,16 @@ workspace/scans/*/
 .agents/
 .codex/
 .codex-run/
+
+# VAPID Keys
+.vapid_keys.json
+
+# Celery beat scheduler
+celerybeat-schedule
+celerybeat-schedule.*
+
+# Python build and packaging
+.eggs/
+*.egg/
+*.bak
+.aider*

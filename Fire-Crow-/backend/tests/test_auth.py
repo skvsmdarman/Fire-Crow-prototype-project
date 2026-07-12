@@ -811,3 +811,23 @@ def test_google_mock_oauth_flow(monkeypatch):
     callback_location = callback_response.headers["location"]
     assert "code=" in callback_location
 
+
+def test_csrf_bypass_for_bearer_tokens():
+    original_csrf_enabled = settings.CSRF_ENABLED
+    settings.CSRF_ENABLED = True
+    try:
+        response_no_auth = client.post("/api/v1/auth/logout")
+        assert response_no_auth.status_code == 403
+        assert "CSRF token missing or invalid" in response_no_auth.json()["detail"]
+
+        response_bearer = client.post(
+            "/api/v1/auth/logout",
+            headers={"Authorization": "Bearer invalid_or_expired_token"}
+        )
+        assert response_bearer.status_code == 401
+        assert "Could not validate credentials" in response_bearer.json()["detail"]
+    finally:
+        settings.CSRF_ENABLED = original_csrf_enabled
+
+
+
