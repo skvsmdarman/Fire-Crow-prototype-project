@@ -481,11 +481,6 @@ async def health_live(request: Request):
     return {"status": "live"}
 
 
-frontend_dist_dir = Path(WORKSPACE_DIR) / "frontend" / "out"
-if frontend_dist_dir.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist_dir), html=True), name="frontend")
-
-
 def _write_openapi(stream) -> None:
     import yaml
 
