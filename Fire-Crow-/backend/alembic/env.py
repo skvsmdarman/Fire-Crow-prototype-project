@@ -66,6 +66,10 @@ def run_migrations_online() -> None:
     """
     from app.models.database import engine
 
+    if engine is None:
+        print("SQLAlchemy database engine is None (DATABASE_BACKEND is set to neo4j). Skipping online migrations.")
+        return
+
     with engine.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata

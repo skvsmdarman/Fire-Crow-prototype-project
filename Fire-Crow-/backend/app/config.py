@@ -214,7 +214,7 @@ class Settings(BaseSettings):
     # --- Database & Cache ---
     DATABASE_BACKEND: Literal["postgresql", "neo4j"] = Field(default="neo4j", validation_alias="DATABASE_BACKEND")
     DATABASE_URL: str = Field(
-        default="postgresql://neondb_owner:npg_c6aUlVjpNeP1@ep-twilight-night-aolox43p-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+        default="postgresql://localhost/firecrow",
         validation_alias="DATABASE_URL"
     )
     DATABASE_POOL_SIZE: int = Field(default=50)
