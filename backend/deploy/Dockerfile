@@ -1,19 +1,4 @@
-FROM node:20-slim AS frontend-build
-WORKDIR /app/frontend
-
-COPY frontend/package*.json ./
-# Skip install-time scripts for optional native packages; the frontend build
-# does not need them because image optimization is disabled and linting is
-# skipped during production builds.
-RUN npm ci --prefer-offline --no-audit --ignore-scripts
-
-COPY frontend/ ./
-ENV NEXT_STATIC_EXPORT=true
-ENV NEXT_PUBLIC_API_URL=/api/v1
-ENV NODE_OPTIONS="--max-old-space-size=1024"
-RUN npm run build
-
-FROM python:3.12-slim AS backend-build
+FROM python:3.12-slim
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -43,7 +28,6 @@ COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ backend/
-COPY --from=frontend-build /app/frontend/out frontend/out
 
 EXPOSE 10000
 
