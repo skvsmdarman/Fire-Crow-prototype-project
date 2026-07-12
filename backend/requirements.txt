@@ -9,6 +9,8 @@ langgraph>=1.2.7
 langchain-core>=1.4.8
 celery>=5.3.6
 redis>=8.0.1
+# Kombu's msgpack serializer check expects a real msgpack package at import time.
+msgpack==1.0.8
 docker>=7.0.0
 weasyprint>=61.1
 resend>=2.32.2
