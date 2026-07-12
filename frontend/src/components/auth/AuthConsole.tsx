@@ -141,7 +141,6 @@ function AuthConsoleContent({ mode }: AuthConsoleProps) {
   useEffect(() => {
     const code = searchParams.get("code");
     if (!code) {
-      setValidating(false);
       return;
     }
 
