@@ -26,8 +26,14 @@ The backend uses Pydantic Settings. All variables can be configured via environm
 * `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`: `1440` (24 hours)
 
 ### Databases & Cache
-* `DATABASE_BACKEND`: `postgresql`
-* `DATABASE_URL`: `postgresql://neondb_owner:npg_c6aUlVjpNeP1@ep-twilight-night-aolox43p-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
+* `DATABASE_BACKEND`: `neo4j`
+* `NEO4J_URI`: `bolt://localhost:7687`
+* `NEO4J_USER`: `neo4j`
+* `NEO4J_PASSWORD`: `your_strong_password_here`
+* `NEO4J_DATABASE`: `neo4j`
+* `NEO4J_MAX_CONNECTION_POOL_SIZE`: `100`
+* `NEO4J_CONNECTION_TIMEOUT_SECONDS`: `15`
+* `NEO4J_ENFORCE_TLS`: `True`
 * `FIRE_CROW_MOCK_SANDBOX`: `True` (Enables mocked execution for sandbox trials)
 
 ### Integrations & Services

@@ -7,7 +7,14 @@ from pydantic import Field, field_validator, model_validator
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-WORKSPACE_DIR = Path(__file__).resolve().parents[2]
+# If the backend is running as the root directory (like on Heroku /app),
+# parents[2] resolves to the root filesystem "/", which is read-only.
+# In that case, we fallback to BACKEND_DIR as our WORKSPACE_DIR.
+parents_2 = Path(__file__).resolve().parents[2]
+if parents_2.parent == parents_2:
+    WORKSPACE_DIR = BACKEND_DIR
+else:
+    WORKSPACE_DIR = parents_2
 
 # Load env files into the OS environment BEFORE instantiating Settings.
 # This sidesteps a pydantic-settings bug (v2.14.x) where its env_file
@@ -205,7 +212,7 @@ class Settings(BaseSettings):
     IAM_SERVICE_TOKEN_PREFIX: str = Field(default="fc_svc_", validation_alias="IAM_SERVICE_TOKEN_PREFIX")
 
     # --- Database & Cache ---
-    DATABASE_BACKEND: Literal["postgresql", "neo4j"] = Field(default="postgresql", validation_alias="DATABASE_BACKEND")
+    DATABASE_BACKEND: Literal["postgresql", "neo4j"] = Field(default="neo4j", validation_alias="DATABASE_BACKEND")
     DATABASE_URL: str = Field(
         default="postgresql://neondb_owner:npg_c6aUlVjpNeP1@ep-twilight-night-aolox43p-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
         validation_alias="DATABASE_URL"
@@ -215,9 +222,9 @@ class Settings(BaseSettings):
     DATABASE_POOL_TIMEOUT: int = Field(default=30)
     DATABASE_POOL_RECYCLE: int = Field(default=1800)
     POSTGRES_MIGRATION_SOURCE_URL: str = Field(default="", validation_alias="POSTGRES_MIGRATION_SOURCE_URL")
-    NEO4J_URI: str = Field(default="", validation_alias="NEO4J_URI")
-    NEO4J_USER: str = Field(default="", validation_alias="NEO4J_USER")
-    NEO4J_PASSWORD: str = Field(default="", validation_alias="NEO4J_PASSWORD")
+    NEO4J_URI: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
+    NEO4J_USER: str = Field(default="neo4j", validation_alias="NEO4J_USER")
+    NEO4J_PASSWORD: str = Field(default="your_strong_password_here", validation_alias="NEO4J_PASSWORD")
     NEO4J_DATABASE: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")
     NEO4J_MAX_CONNECTION_POOL_SIZE: int = Field(default=100, validation_alias="NEO4J_MAX_CONNECTION_POOL_SIZE")
     NEO4J_CONNECTION_TIMEOUT_SECONDS: int = Field(default=15, validation_alias="NEO4J_CONNECTION_TIMEOUT_SECONDS")
